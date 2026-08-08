@@ -105,6 +105,25 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
     }
 }
 
+// `--focus <pid>` runs just the tab-raising path for one session and reports what happened.
+// Clicking a tile is otherwise the only way to exercise it, which makes a silent failure —
+// a missing Automation permission, usually — awkward to tell apart from a layout problem.
+if let i = CommandLine.arguments.firstIndex(of: "--focus"),
+   i + 1 < CommandLine.arguments.count,
+   let pid = pid_t(CommandLine.arguments[i + 1]) {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        guard let session = registry.refresh().first(where: { $0.proc.pid == pid }) else {
+            print("no session with pid \(pid)")
+            exit(1)
+        }
+        let ok = TerminalFocus.focus(session: session)
+        print("focus \(session.dirName) (tty \(session.proc.tty)): \(ok ? "ok" : "failed")")
+        exit(ok ? 0 : 1)
+    }
+}
+
 // Optional override: --idle <seconds>
 if let i = CommandLine.arguments.firstIndex(of: "--idle"),
    i + 1 < CommandLine.arguments.count,

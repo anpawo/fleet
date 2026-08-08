@@ -61,6 +61,9 @@ struct TranscriptInfo {
     var permissionMode: String?
     var hasPendingTool: Bool
     var pendingToolNames: [String]
+    /// The last thing on the main thread is your prompt, with nothing back from Claude yet.
+    /// No tool is pending, but the turn is very much not over.
+    var awaitingReply: Bool
     var lastActivity: Date
     var preview: [PreviewLine]
 }
@@ -113,7 +116,8 @@ struct Session: Identifiable {
     var currentStep: String? {
         guard state == .running else { return nil }
         let names = transcript?.pendingToolNames ?? []
-        guard !names.isEmpty else { return nil }
+        // Working with no tool out means it is composing a reply rather than doing something.
+        guard !names.isEmpty else { return "thinking…" }
         return names.count == 1 ? names[0] : "\(names[0]) +\(names.count - 1)"
     }
 }

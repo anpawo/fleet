@@ -100,6 +100,7 @@ final class TranscriptStore {
         var permissionMode: String?
         var pending: [String: String] = [:]     // tool_use id -> tool name
         var preview: [PreviewLine] = []
+        var awaitingReply = false
 
         for raw in lines {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(raw)) as? [String: Any]
@@ -129,6 +130,17 @@ final class TranscriptStore {
 
             guard let message = obj["message"] as? [String: Any] else { continue }
             let blocks = contentBlocks(message["content"])
+
+            // Between sending a prompt and Claude's first token there is no pending tool and
+            // no assistant message — the transcript looks exactly like a finished turn. Track
+            // who spoke last so that window doesn't read as "ready".
+            if type == "assistant" {
+                awaitingReply = false
+            } else if blocks.contains(where: { $0["type"] as? String == "text" }) {
+                // A user entry carrying real text is a prompt. Tool results are also "user"
+                // entries, but they mean the opposite, so they must not count here.
+                awaitingReply = !isInterruption(blocks)
+            }
 
             for block in blocks {
                 guard let kind = block["type"] as? String else { continue }
@@ -164,9 +176,19 @@ final class TranscriptStore {
             permissionMode: permissionMode,
             hasPendingTool: !pending.isEmpty,
             pendingToolNames: Array(pending.values),
+            awaitingReply: awaitingReply,
             lastActivity: mtime,
             preview: preview
         )
+    }
+
+    /// Cancelling a turn with Esc appends a user entry too. Without this the session would
+    /// sit at "working" forever, since no assistant reply is ever coming.
+    private static func isInterruption(_ blocks: [[String: Any]]) -> Bool {
+        blocks.contains { block in
+            guard let text = block["text"] as? String else { return false }
+            return text.hasPrefix("[Request interrupted")
+        }
     }
 
     /// Message content is either a bare string or an array of typed blocks.

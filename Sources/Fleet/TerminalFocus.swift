@@ -19,33 +19,51 @@ struct NSRunningApplicationBox {
 @MainActor
 enum TerminalFocus {
 
-    static func focus(session: Session) {
+    @discardableResult
+    static func focus(session: Session) -> Bool {
         let host = ProcessScanner.hostApplication(of: session.proc.pid)?.app
         let bundleID = host?.bundleIdentifier ?? ""
-
         let tty = session.proc.tty
+
+        // Selecting the tab and raising the app are separate problems. AppleScript is the only
+        // way to do the first, and it is the part that can be denied by permission; the second
+        // always works. So do both, rather than treating the script as all-or-nothing.
         switch bundleID {
         case "com.apple.Terminal":
-            if runScript(appleTerminalScript(tty: tty)) { return }
+            runScript(appleTerminalScript(tty: tty), what: "Terminal tab \(tty)")
         case "com.googlecode.iterm2":
-            if runScript(iTermScript(tty: tty)) { return }
+            runScript(iTermScript(tty: tty), what: "iTerm2 session \(tty)")
         default:
-            break   // terminal without tab-level scripting; activate the app instead
+            break   // terminal without tab-level scripting; raising the app is all we can do
         }
 
-        host?.activate(options: [.activateAllWindows])
+        guard let host else {
+            NSLog("Fleet: no host application found for pid \(session.proc.pid)")
+            return false
+        }
+        let ok = host.activate(options: [.activateAllWindows])
+        NSLog("Fleet: activated \(bundleID) for pid \(session.proc.pid) -> \(ok)")
+        return ok
     }
 
-    /// Returns true when the script found and raised the tab.
-    private static func runScript(_ source: String) -> Bool {
+    /// Returns true when the script found and selected the tab.
+    @discardableResult
+    private static func runScript(_ source: String, what: String) -> Bool {
         guard let script = NSAppleScript(source: source) else { return false }
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)
         if let error {
-            NSLog("Fleet: AppleScript failed: \(error)")
+            // -1743 is "not authorised to send Apple events", i.e. the Automation permission
+            // was never granted or was reset — which it is by a rename, since approval is
+            // recorded against the bundle identifier.
+            NSLog("Fleet: could not raise \(what): \(error)")
             return false
         }
-        return result.stringValue == "ok"
+        guard result.stringValue == "ok" else {
+            NSLog("Fleet: no match for \(what)")
+            return false
+        }
+        return true
     }
 
     private static func appleTerminalScript(tty: String) -> String {

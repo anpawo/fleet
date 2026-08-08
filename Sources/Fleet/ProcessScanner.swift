@@ -183,17 +183,40 @@ enum ProcessScanner {
         return args
     }
 
+    /// pid -> ppid for every process on the machine.
+    ///
+    /// `proc_pidinfo` cannot be used to walk a terminal session's ancestry. The chain runs
+    /// `claude -> shell -> login -> Terminal`, and `login` is setuid root, so reading it that
+    /// way returns nothing for an unprivileged caller — the walk died one step short of the
+    /// terminal every single time, which is why clicking a tile did nothing. sysctl reports
+    /// the whole process table regardless of owner.
+    private static func parentMap() -> [pid_t: pid_t] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [:] }
+
+        let stride = MemoryLayout<kinfo_proc>.stride
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / stride)
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [:] }
+
+        var map: [pid_t: pid_t] = [:]
+        // The table can shrink between sizing and reading, so trust the returned size.
+        for proc in procs.prefix(size / stride) {
+            map[proc.kp_proc.p_pid] = proc.kp_eproc.e_ppid
+        }
+        return map
+    }
+
     /// Walks up the parent chain looking for a process that owns a GUI app — the terminal
     /// emulator hosting this session (Terminal.app, iTerm2, Ghostty, …).
+    ///
+    /// Only ever called on a click, so reading the full process table here is free; it is not
+    /// on any polling path.
     static func hostApplication(of pid: pid_t) -> NSRunningApplicationBox? {
+        let parents = parentMap()
         var current = pid
-        for _ in 0..<8 {
-            var bsd = proc_bsdinfo()
-            let sz = proc_pidinfo(current, PROC_PIDTBSDINFO, 0, &bsd,
-                                  Int32(MemoryLayout<proc_bsdinfo>.size))
-            guard sz > 0 else { return nil }
-            let parent = pid_t(bsd.pbi_ppid)
-            if parent <= 1 { return nil }
+        for _ in 0..<12 {
+            guard let parent = parents[current], parent > 1 else { return nil }
             if let app = NSRunningApplicationBox.app(forPID: parent) { return app }
             current = parent
         }

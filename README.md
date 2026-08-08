@@ -111,7 +111,11 @@ Bindings are sticky once resolved. A session you've launched but not yet prompte
 transcript at all, and shows up as a ready tile with just its directory.
 
 **Deciding the colour.** The transcript is walked to find tool calls with no matching result. No
-pending tool means the turn ended cleanly — green. A pending `AskUserQuestion` or `ExitPlanMode`
+pending tool usually means the turn ended cleanly — green. The exception is the window between
+you sending a prompt and Claude's first token: nothing is pending and no reply exists yet, so it
+looks *exactly* like a finished turn. Who spoke last breaks that tie — a trailing user message
+means the turn is still open, so it's red. Cancelling with <kbd>Esc</kbd> also appends a user
+message, so that one marker is recognised and excluded, or the session would sit at red forever. A pending `AskUserQuestion` or `ExitPlanMode`
 is unambiguously blue.
 
 Anything else pending is genuinely ambiguous: "running a long command" and "showing you a
@@ -126,9 +130,18 @@ Sub-agent traffic is excluded from this so it doesn't produce phantom pending ca
 sub-agent still shows up as a pending `Task` on the main thread.
 
 **Focusing a tab.** Every session has a distinct TTY, and both Terminal.app and iTerm2 expose a
-tab's `tty` to AppleScript, so the exact tab gets raised. Terminals without that scripting
-surface (Ghostty, kitty, WezTerm, Alacritty) fall back to activating the application — the host
-app is found by walking the process's parent chain until something owns a GUI app.
+tab's `tty` to AppleScript, so the exact tab gets selected. Raising the app is a separate step
+that always works, so both are done rather than treating the script as all-or-nothing —
+terminals without that scripting surface (Ghostty, kitty, WezTerm, Alacritty) simply get the
+second half.
+
+The host app is found by walking the process's parent chain until something owns a GUI app. That
+walk reads the process table through `sysctl(KERN_PROC_ALL)` rather than `proc_pidinfo`,
+because a terminal session's ancestry runs `claude → shell → login → Terminal` and `login` is
+setuid root: `proc_pidinfo` returns nothing for it to an unprivileged caller, which stopped the
+walk one step short of the terminal every time. If you run two instances of the same terminal
+application, AppleScript can only address one of them, so sessions in the other get the app
+raised without the tab being selected.
 
 ## Checking it works
 
@@ -163,6 +176,7 @@ Prints every session it can see, with the transcript it bound, the state it deri
 | `--idle <seconds>` | override the idle threshold (default 150) |
 | `--show` | toggle the panel immediately, ignoring the idle timer |
 | `--demo` | same as `--show` |
+| `--focus <pid>` | run just the tab-raising path for one session and report what happened |
 | `--render <path.png>` | draw the panel offscreen to a PNG (how the image above was made) |
 
 Other tunables — poll cadences, the staleness window, the CPU threshold — are all in

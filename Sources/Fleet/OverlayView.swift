@@ -144,9 +144,20 @@ struct SessionTile: View {
 
     var body: some View {
         Button(action: onSelect) {
-            ZStack(alignment: .topTrailing) {
-                nameBlock
-                statePill.padding(12)
+            ZStack {
+                name
+                // Name stays centred in the rectangle; the rest is pinned to the corners
+                // and edges around it, so it never shifts as sessions change state.
+                VStack(spacing: 0) {
+                    HStack(alignment: .top, spacing: 8) {
+                        path
+                        Spacer(minLength: 6)
+                        statePill
+                    }
+                    Spacer(minLength: 0)
+                    step
+                }
+                .padding(11)
             }
             .frame(height: 132)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
@@ -163,34 +174,37 @@ struct SessionTile: View {
         .onHover { hovering = $0 }
     }
 
-    private var nameBlock: some View {
-        VStack(spacing: 5) {
-            Text(session.dirName)
-                .font(.system(size: 27, weight: .semibold))
-                .foregroundStyle(.white)
+    private var name: some View {
+        Text(session.dirName)
+            .font(.system(size: 27, weight: .semibold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, 16)
+    }
+
+    /// Top left, and only when it says something the name doesn't already — a project sitting
+    /// at ~/self/<name> gets nothing here.
+    @ViewBuilder private var path: some View {
+        if let path = session.subPath {
+            Text(path)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.3))
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
-
-            // Only when it adds something the name doesn't already say.
-            if let path = session.subPath {
-                Text(path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.38))
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
-
-            if let step = session.currentStep {
-                Text(step)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(session.state.tint.opacity(0.9))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.top, 3)
-            }
+                .truncationMode(.head)
         }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Bottom edge: what this session is doing right now, only while it's still doing it.
+    @ViewBuilder private var step: some View {
+        if let step = session.currentStep {
+            Text(step)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(session.state.tint.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
     }
 
     private var statePill: some View {

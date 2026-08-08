@@ -28,6 +28,13 @@ final class OverlayWindowController {
         NSApp.hide(nil)
     }
 
+    /// Dismiss without `NSApp.hide`. Hiding makes macOS activate whatever was frontmost
+    /// before us, asynchronously — which lands *after* an activation we perform ourselves and
+    /// silently undoes it. When we are about to raise a terminal, we just drop the window.
+    func dismissForHandoff() {
+        window?.orderOut(nil)
+    }
+
     private func makeWindow() -> PanelWindow {
         let window = PanelWindow(
             contentRect: .zero,

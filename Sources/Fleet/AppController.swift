@@ -145,9 +145,14 @@ final class AppController: ObservableObject {
         schedule(Config.idlePollActive)
     }
 
-    /// Tile click: dismiss, then raise the terminal running that session.
+    /// Tile click: drop the panel, then raise the terminal running that session. Deliberately
+    /// not `hidePanel()` — see `dismissForHandoff`.
     func activate(_ session: Session) {
-        hidePanel()
+        if isPanelVisible {
+            isPanelVisible = false
+            overlay?.dismissForHandoff()
+            schedule(Config.idlePollActive)
+        }
         TerminalFocus.focus(session: session)
     }
 

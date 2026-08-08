@@ -136,6 +136,10 @@ final class SessionRegistry {
         guard let info else { return .ready }
 
         guard info.hasPendingTool else {
+            // Your prompt is in and Claude hasn't emitted anything yet — the thinking window
+            // before the first token. It looks identical to a finished turn in the transcript,
+            // but it is the opposite of ready.
+            if info.awaitingReply { return .running }
             // Turn finished cleanly: waiting for a new prompt.
             return .ready
         }
