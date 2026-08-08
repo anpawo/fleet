@@ -20,6 +20,9 @@ extension SessionState {
 
 struct OverlayView: View {
     @ObservedObject var controller: AppController
+    /// Offscreen `ImageRenderer` passes never materialise lazy content inside a ScrollView,
+    /// so `--render` drops the scroll container to draw every tile.
+    var eagerLayout = false
 
     private let columns = [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18)]
 
@@ -35,20 +38,26 @@ struct OverlayView: View {
             VStack(spacing: 22) {
                 header
 
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 18) {
-                        ForEach(controller.sessions) { session in
-                            SessionTile(session: session) {
-                                controller.activate(session)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 44)
-                    .padding(.bottom, 44)
+                if eagerLayout {
+                    grid
+                } else {
+                    ScrollView { grid }
                 }
             }
             .padding(.top, 46)
         }
+    }
+
+    private var grid: some View {
+        LazyVGrid(columns: columns, spacing: 18) {
+            ForEach(controller.sessions) { session in
+                SessionTile(session: session) {
+                    controller.activate(session)
+                }
+            }
+        }
+        .padding(.horizontal, 44)
+        .padding(.bottom, 44)
     }
 
     private var header: some View {
@@ -192,7 +201,8 @@ struct SessionTile: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Text("pid \(session.proc.pid)")
+            // verbatim: a pid is an identifier, not a number to be group-separated.
+            Text(verbatim: "pid \(session.proc.pid)")
             if let tty = session.proc.tty {
                 Text(tty.replacingOccurrences(of: "/dev/", with: ""))
             }

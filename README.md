@@ -4,6 +4,8 @@ A macOS background app that shows you every Claude Code session on your machine 
 stop working — so you come back from a coffee and immediately see which sessions finished, which
 are still grinding, and which are sitting there waiting for you to answer something.
 
+![The panel](docs/panel.png)
+
 Go idle for a couple of minutes and a panel appears. One tile per running session, each bordered
 by what it's doing:
 
@@ -134,11 +136,10 @@ Prints every session it can see, with the transcript it bound, the state it deri
       pending: Bash
 ```
 
-To try the panel without waiting two and a half minutes, run it with a short threshold and take
-your hands off the keyboard:
+To open the panel right now, without waiting two and a half minutes:
 
 ```bash
-~/Applications/ClaudeFleet.app/Contents/MacOS/ClaudeFleet --idle 8
+~/Applications/ClaudeFleet.app/Contents/MacOS/ClaudeFleet --demo
 ```
 
 ## Options
@@ -147,6 +148,8 @@ your hands off the keyboard:
 |------|--------|
 | `--scan` | print detected sessions and exit |
 | `--idle <seconds>` | override the idle threshold (default 150) |
+| `--demo` | open the panel immediately, ignoring the idle timer |
+| `--render <path.png>` | draw the panel offscreen to a PNG (how the image above was made) |
 
 Other tunables — poll cadences, the staleness window, preview length — are all in
 `Sources/ClaudeFleet/Models.swift`, deliberately in one place so the battery profile is

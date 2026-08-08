@@ -33,6 +33,23 @@ final class AppController: ObservableObject {
         tick()
     }
 
+    /// `--render`: populate the panel without any window, for offscreen image rendering.
+    func injectSessions(_ found: [Session]) {
+        sessions = found
+    }
+
+    /// `--demo`: open the panel straight away, ignoring the idle timer.
+    func forceShow() {
+        let found = registry.refresh()
+        guard !found.isEmpty else {
+            NSLog("ClaudeFleet: no sessions to show")
+            return
+        }
+        sessions = found
+        armed = false
+        showPanel()
+    }
+
     // MARK: - Timer
 
     private func schedule(_ interval: TimeInterval) {

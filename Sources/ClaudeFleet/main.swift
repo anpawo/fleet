@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Background agent. No dock icon, no menu bar item — it only ever surfaces as the panel.
 @MainActor
@@ -8,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         controller.start()
+        if CommandLine.arguments.contains("--demo") {
+            controller.forceShow()
+        }
     }
 }
 
@@ -40,6 +44,36 @@ if CommandLine.arguments.contains("--scan") {
         }
         print(String(format: "idle: %.0fs (threshold %.0fs)",
                      IdleWatcher.idleSeconds(), Config.idleThreshold))
+        exit(0)
+    }
+}
+
+// `--render <path.png>` draws the panel offscreen. Useful for checking layout without waiting
+// to go idle, and for generating the screenshot in the README.
+if let i = CommandLine.arguments.firstIndex(of: "--render"),
+   i + 1 < CommandLine.arguments.count {
+    let outPath = CommandLine.arguments[i + 1]
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        let controller = AppController()
+        controller.injectSessions(registry.refresh())
+
+        let view = OverlayView(controller: controller, eagerLayout: true)
+            .frame(width: 1512, height: 1100)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+
+        guard let image = renderer.nsImage,
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            print("render failed")
+            exit(1)
+        }
+        try? png.write(to: URL(fileURLWithPath: outPath))
+        print("wrote \(outPath)")
         exit(0)
     }
 }
