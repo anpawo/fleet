@@ -48,7 +48,7 @@ struct ClaudeProcess {
     var pid: pid_t
     var ppid: pid_t
     var cwd: String
-    var tty: String?          // e.g. "/dev/ttys003"; nil when not attached to a terminal
+    var tty: String           // e.g. "/dev/ttys003"; always present — see ProcessScanner
     var startedAt: Date
     var cpuNanos: UInt64      // cumulative user+system time, for delta-based CPU%
 }
@@ -99,5 +99,21 @@ struct Session: Identifiable {
         if let t = transcript?.title, !t.isEmpty { return t }
         if let p = transcript?.lastPrompt, !p.isEmpty { return p }
         return "New session"
+    }
+
+    /// Path to show beneath the name, or nil when it only repeats the name — the usual case
+    /// for a project checked out at ~/self/<name>. The name alone already identifies those.
+    var subPath: String? {
+        let path = displayPath
+        return (path as NSString).lastPathComponent == dirName ? nil : path
+    }
+
+    /// The one step in flight right now, for the single status line on the tile. Nil when
+    /// the session isn't working — the state pill already says so.
+    var currentStep: String? {
+        guard state == .running else { return nil }
+        let names = transcript?.pendingToolNames ?? []
+        guard !names.isEmpty else { return nil }
+        return names.count == 1 ? names[0] : "\(names[0]) +\(names.count - 1)"
     }
 }

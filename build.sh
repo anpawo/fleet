@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds ClaudeFleet.app into ./dist
+# Builds Fleet.app into ./dist
 set -euo pipefail
 
 cd "$(dirname "$0")"
-APP="dist/ClaudeFleet.app"
+APP="dist/Fleet.app"
 
 echo "==> Compiling (release)"
 swift build -c release
@@ -11,7 +11,7 @@ swift build -c release
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/ClaudeFleet "$APP/Contents/MacOS/ClaudeFleet"
+cp .build/release/Fleet "$APP/Contents/MacOS/Fleet"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # Ad-hoc signature. Without a stable signature macOS re-prompts for Automation

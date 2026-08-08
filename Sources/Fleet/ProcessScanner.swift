@@ -8,20 +8,64 @@ import Darwin
 /// syscalls and costs microseconds.
 enum ProcessScanner {
 
-    /// Claude Code ships as a self-extracting binary whose `proc_pidpath` lookup fails, so
-    /// `proc_name` (the comm field) is the reliable identifier. Older npm installs report
-    /// "claude"; the current native build reports "claude.exe".
-    private static func isClaudeProcess(_ name: String) -> Bool {
-        let n = name.lowercased()
-        guard n.hasPrefix("claude") else { return false }
-        return !n.hasPrefix("claudefleet")   // never match ourselves
+    /// `proc_name` (the comm field) is NOT a usable identifier.
+    ///
+    /// It is wrong in both directions. The native installer execs through a version symlink
+    /// (`~/.local/bin/claude` -> `~/.local/share/claude/versions/2.1.226`) and the kernel takes
+    /// comm from the resolved target, so a real session reports "2.1.226". Meanwhile the Claude
+    /// *desktop* app reports "Claude" and its Electron helpers "Claude Helper", so any prefix
+    /// match on "claude" sweeps in eight GUI processes that are not sessions at all.
+    ///
+    /// The executable path is stable across both install layouts, so identify on that.
+    private static func isClaudeCodePath(_ path: String) -> Bool {
+        // The desktop app is never a session, whatever its binaries are called.
+        if path.contains("/Claude.app/") { return false }
+
+        if path.contains("/.local/share/claude/versions/") { return true }  // native install
+        if path.contains("/@anthropic-ai/claude-code/") { return true }     // npm install
+
+        let base = (path as NSString).lastPathComponent
+        return base == "claude" || base == "claude.exe"
+    }
+
+    /// True when this pid is a Claude Code session.
+    ///
+    /// Ordered cheapest-first: the TTY check is a single syscall and eliminates every GUI and
+    /// daemon process, leaving only shells and CLI tools to pay for a path lookup.
+    private static func isClaudeSession(_ pid: pid_t) -> Bool {
+        guard controllingTTY(pid) != nil else { return false }
+        let path = executablePath(pid)
+        if isClaudeCodePath(path) { return true }
+        // Last resort: argv[0] keeps the name "claude" even when the exec path is a version
+        // file, covering install layouts we do not know about yet.
+        guard let a0 = arguments(pid).first else { return false }
+        let base = (a0 as NSString).lastPathComponent
+        return base == "claude" || base == "claude.exe"
+    }
+
+    /// A Claude Code session is always attached to a terminal. Electron helpers never are,
+    /// so this is the discriminator that survives whatever the binary is called next. It also
+    /// excludes headless background workers, which have no tab for a tile to raise.
+    private static func controllingTTY(_ pid: pid_t) -> String? {
+        var bsd = proc_bsdinfo()
+        let sz = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd,
+                             Int32(MemoryLayout<proc_bsdinfo>.size))
+        guard sz > 0, bsd.e_tdev != UInt32.max,
+              let d = devname(dev_t(bsd.e_tdev), S_IFCHR) else { return nil }
+        return "/dev/" + String(cString: d)
+    }
+
+    private static func executablePath(_ pid: pid_t) -> String {
+        var buf = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return "" }
+        return String(cString: buf)
     }
 
     /// Cheap existence check used by the dormant poll — bails at the first hit without
-    /// gathering cwd, tty or CPU for anything.
+    /// gathering cwd or CPU for anything.
     static func anyClaudeRunning() -> Bool {
         for pid in allPIDs() where pid > 0 {
-            if isClaudeProcess(procName(pid)) { return true }
+            if isClaudeSession(pid) { return true }
         }
         return false
     }
@@ -29,7 +73,7 @@ enum ProcessScanner {
     static func scan() -> [ClaudeProcess] {
         var out: [ClaudeProcess] = []
         for pid in allPIDs() where pid > 0 {
-            guard isClaudeProcess(procName(pid)) else { continue }
+            guard isClaudeSession(pid) else { continue }
 
             var bsd = proc_bsdinfo()
             let sz = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd,
@@ -38,10 +82,11 @@ enum ProcessScanner {
 
             guard let cwd = workingDirectory(pid) else { continue }
 
-            var tty: String?
-            if bsd.e_tdev != UInt32.max, let d = devname(dev_t(bsd.e_tdev), S_IFCHR) {
-                tty = "/dev/" + String(cString: d)
-            }
+            // Required, not decorative: no terminal means this is not a session we can show
+            // or raise. See `controllingTTY`.
+            guard bsd.e_tdev != UInt32.max,
+                  let d = devname(dev_t(bsd.e_tdev), S_IFCHR) else { continue }
+            let tty = "/dev/" + String(cString: d)
 
             out.append(ClaudeProcess(
                 pid: pid,
@@ -65,12 +110,6 @@ enum ProcessScanner {
         let written = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, byteCount)
         guard written > 0 else { return [] }
         return Array(pids.prefix(Int(written) / MemoryLayout<pid_t>.size))
-    }
-
-    private static func procName(_ pid: pid_t) -> String {
-        var buf = [CChar](repeating: 0, count: 256)
-        guard proc_name(pid, &buf, 256) > 0 else { return "" }
-        return String(cString: buf)
     }
 
     private static func workingDirectory(_ pid: pid_t) -> String? {

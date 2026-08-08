@@ -1,4 +1,4 @@
-# Claude Fleet
+# Fleet
 
 A macOS background app that shows you every Claude Code session on your machine the moment you
 stop working — so you come back from a coffee and immediately see which sessions finished, which
@@ -15,24 +15,41 @@ by what it's doing:
 | 🟥 **red** | a tool is running right now |
 | 🟦 **blue** | blocked on you — a question or a permission approval |
 
+A tile is deliberately close to empty: the project name, the border colour, the state, and —
+only while it's working — the one step in flight. The directory is shown only when it isn't
+just the project name again. This is a thing you read in half a second from across the desk,
+not a dashboard; `--scan` is there when you want the details.
+
 Click a tile and the panel disappears, and the terminal tab running that session comes to the
 front with your cursor ready to type. Press <kbd>Esc</kbd>, or click the background, to just
 dismiss it.
 
 Sessions that need you are sorted first.
 
+## Opening it yourself
+
+Waiting to go idle is the point, but not when you just want to check on things. Either of these
+brings the panel up immediately, and repeating it puts the panel away again:
+
+- **Spotlight** — <kbd>⌘</kbd><kbd>Space</kbd>, type `Fleet`, <kbd>↵</kbd>
+- **the `fleet` command** — installed to `~/.local/bin/fleet`
+
+Both reach the copy that's already running rather than starting a second one, so there's never
+more than one agent scanning.
+
 ## Install
 
 ```bash
-git clone https://github.com/anpawo/claude-fleet.git
-cd claude-fleet
+git clone https://github.com/anpawo/fleet.git
+cd fleet
 ./install.sh
 ```
 
-That builds the app, installs it to `~/Applications`, and registers a LaunchAgent so it starts
-at every login and restarts if it ever dies. Nothing else to configure.
+That builds the app, installs it to `~/Applications`, registers a LaunchAgent so it starts at
+every login and restarts if it ever dies, and drops a `fleet` command in `~/.local/bin`. Nothing
+else to configure.
 
-The first time you click a tile, macOS asks whether ClaudeFleet may control Terminal. Approve
+The first time you click a tile, macOS asks whether Fleet may control Terminal. Approve
 it — without that permission a click can only raise the terminal app, not the specific tab.
 
 Requires macOS 14+ and the Xcode Command Line Tools (`xcode-select --install`).
@@ -57,9 +74,9 @@ The specific things it refuses to do:
   `sysctl` directly. Forking a process on a timer is the most expensive thing a background agent
   can do, and it's completely avoidable.
 - **Never screenshots.** Capturing terminal windows would need ScreenCaptureKit, the Screen
-  Recording permission, and real GPU work every refresh. Instead the tile previews are rendered
-  from the session's own JSONL transcript — the actual conversation text, which is cheaper to
-  read, sharper at tile size, and needs no permission at all.
+  Recording permission, and real GPU work every refresh. Everything on a tile comes from the
+  session's own JSONL transcript instead, which is cheaper to read, sharper at tile size, and
+  needs no permission at all.
 - **Only re-parses what changed.** Transcripts are `stat`ed and skipped unless their size or
   mtime moved, and only the last 256 KB of a file is ever read.
 - **Timers carry 50% tolerance**, so macOS coalesces the wakeups with other timers instead of
@@ -116,7 +133,7 @@ app is found by walking the process's parent chain until something owns a GUI ap
 ## Checking it works
 
 ```bash
-~/Applications/ClaudeFleet.app/Contents/MacOS/ClaudeFleet --scan
+fleet --scan
 ```
 
 Prints every session it can see, with the transcript it bound, the state it derived and why:
@@ -136,23 +153,20 @@ Prints every session it can see, with the transcript it bound, the state it deri
       pending: Bash
 ```
 
-To open the panel right now, without waiting two and a half minutes:
-
-```bash
-~/Applications/ClaudeFleet.app/Contents/MacOS/ClaudeFleet --demo
-```
-
 ## Options
+
+`fleet` with no arguments toggles the panel. Anything else is passed to the binary:
 
 | Flag | Effect |
 |------|--------|
 | `--scan` | print detected sessions and exit |
 | `--idle <seconds>` | override the idle threshold (default 150) |
-| `--demo` | open the panel immediately, ignoring the idle timer |
+| `--show` | toggle the panel immediately, ignoring the idle timer |
+| `--demo` | same as `--show` |
 | `--render <path.png>` | draw the panel offscreen to a PNG (how the image above was made) |
 
-Other tunables — poll cadences, the staleness window, preview length — are all in
-`Sources/ClaudeFleet/Models.swift`, deliberately in one place so the battery profile is
+Other tunables — poll cadences, the staleness window, the CPU threshold — are all in
+`Sources/Fleet/Models.swift`, deliberately in one place so the battery profile is
 auditable at a glance.
 
 ## Also starting it when Claude Code launches
@@ -169,7 +183,7 @@ it also self-heal whenever you start a session, add a `SessionStart` hook to
         "hooks": [
           {
             "type": "command",
-            "command": "open -gja ClaudeFleet"
+            "command": "launchctl kickstart gui/$UID/com.mr.fleet"
           }
         ]
       }
@@ -178,7 +192,9 @@ it also self-heal whenever you start a session, add a `SessionStart` hook to
 }
 ```
 
-`open -gja` is a no-op if it's already running, and `-g` keeps it from stealing focus.
+`kickstart` starts the agent if it's stopped and does nothing if it's already up. Don't use
+`open` here — opening the bundle is the manual "show me the panel" gesture, so a hook that ran
+it would put the panel on screen every time you started a session.
 
 ## License
 

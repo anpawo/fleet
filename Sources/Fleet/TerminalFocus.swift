@@ -23,15 +23,14 @@ enum TerminalFocus {
         let host = ProcessScanner.hostApplication(of: session.proc.pid)?.app
         let bundleID = host?.bundleIdentifier ?? ""
 
-        if let tty = session.proc.tty {
-            switch bundleID {
-            case "com.apple.Terminal":
-                if runScript(appleTerminalScript(tty: tty)) { return }
-            case "com.googlecode.iterm2":
-                if runScript(iTermScript(tty: tty)) { return }
-            default:
-                break   // terminal without tab-level scripting; activate the app instead
-            }
+        let tty = session.proc.tty
+        switch bundleID {
+        case "com.apple.Terminal":
+            if runScript(appleTerminalScript(tty: tty)) { return }
+        case "com.googlecode.iterm2":
+            if runScript(iTermScript(tty: tty)) { return }
+        default:
+            break   // terminal without tab-level scripting; activate the app instead
         }
 
         host?.activate(options: [.activateAllWindows])
@@ -43,7 +42,7 @@ enum TerminalFocus {
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)
         if let error {
-            NSLog("ClaudeFleet: AppleScript failed: \(error)")
+            NSLog("Fleet: AppleScript failed: \(error)")
             return false
         }
         return result.stringValue == "ok"

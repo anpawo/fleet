@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// The "show the panel now" request, used by every manual trigger: opening Fleet.app from
+/// Spotlight, the `fleet` command, or a second `open` of the bundle. Distributed rather than
+/// local because the request is nearly always raised by a *different* process than the
+/// resident one that owns the panel.
+enum ShowRequest {
+    static let name = Notification.Name("com.mr.fleet.show")
+
+    static func post() {
+        DistributedNotificationCenter.default().postNotificationName(
+            name, object: nil, userInfo: nil, deliverImmediately: true)
+    }
+}
+
 /// Background agent. No dock icon, no menu bar item — it only ever surfaces as the panel.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,9 +22,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         controller.start()
-        if CommandLine.arguments.contains("--demo") {
-            controller.forceShow()
+
+        DistributedNotificationCenter.default().addObserver(
+            forName: ShowRequest.name, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.controller.toggleOnDemand() }
         }
+
+        if CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--show") {
+            controller.toggleOnDemand()
+        }
+    }
+
+    /// Launching an already-running bundle (Spotlight, Dock, `open`) arrives here instead of
+    /// starting a second process, so this is the usual path for a manual trigger.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        controller.toggleOnDemand()
+        return true
     }
 }
 
@@ -32,7 +59,7 @@ if CommandLine.arguments.contains("--scan") {
         for s in sessions {
             let file = s.transcript.map { ($0.path as NSString).lastPathComponent } ?? "—"
             print("  [\(s.state.label.padding(toLength: 9, withPad: " ", startingAt: 0))] "
-                  + "\(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty ?? "—")  "
+                  + "\(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
                   + String(format: "cpu=%.1f%%", s.cpuPercent))
             print("      path:  \(s.displayPath)")
             print("      topic: \(s.topic)")
@@ -85,11 +112,26 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
     MainActor.assumeIsolated { Config.idleThreshold = max(5, seconds) }
 }
 
+// If a resident copy is already running — normally the LaunchAgent one — this process exists
+// only because the user asked to see the panel. Hand the request over and get out of the way,
+// so we never end up with two agents scanning in parallel.
+if let bundleID = Bundle.main.bundleIdentifier {
+    let mine = ProcessInfo.processInfo.processIdentifier
+    let resident = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .contains { $0.processIdentifier != mine }
+    if resident {
+        ShowRequest.post()
+        // Distributed delivery needs a turn of the run loop before we can safely exit.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        exit(0)
+    }
+}
+
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
     // NSApplication does not retain its delegate.
-    objc_setAssociatedObject(app, "ClaudeFleetDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+    objc_setAssociatedObject(app, "FleetDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
     app.run()
 }

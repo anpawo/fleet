@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>ClaudeFleet</string>
+	<string>Fleet</string>
 	<key>CFBundleDisplayName</key>
-	<string>Claude Fleet</string>
+	<string>Fleet</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.mr.claudefleet</string>
+	<string>com.mr.fleet</string>
 	<key>CFBundleExecutable</key>
-	<string>ClaudeFleet</string>
+	<string>Fleet</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,7 +22,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Claude Fleet uses AppleScript to bring the terminal tab running a Claude Code session to the front when you click it.</string>
+	<string>Fleet uses AppleScript to bring the terminal tab running a Claude Code session to the front when you click it.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT licensed.</string>
 </dict>

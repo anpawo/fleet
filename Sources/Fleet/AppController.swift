@@ -38,16 +38,40 @@ final class AppController: ObservableObject {
         sessions = found
     }
 
-    /// `--demo`: open the panel straight away, ignoring the idle timer.
-    func forceShow() {
+    /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
+    /// entirely so the panel is available the moment you want to check on things, and toggles
+    /// so triggering it twice puts it away again.
+    func toggleOnDemand() {
+        if isPanelVisible {
+            hidePanel()
+            return
+        }
+        forceShow(announceEmpty: true)
+    }
+
+    /// Open the panel straight away, ignoring the idle timer.
+    func forceShow(announceEmpty: Bool = false) {
         let found = registry.refresh()
         guard !found.isEmpty else {
-            NSLog("ClaudeFleet: no sessions to show")
+            NSLog("Fleet: no sessions to show")
+            if announceEmpty { announceNoSessions() }
             return
         }
         sessions = found
         armed = false
         showPanel()
+    }
+
+    /// A manual trigger that silently does nothing reads as a broken app, so say why.
+    private func announceNoSessions() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "No Claude Code sessions running"
+        alert.informativeText = "Fleet shows a panel of your live sessions. "
+            + "Start one in a terminal and open Fleet again."
+        alert.alertStyle = .informational
+        alert.runModal()
+        NSApp.hide(nil)
     }
 
     // MARK: - Timer
