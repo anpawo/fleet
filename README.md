@@ -6,7 +6,7 @@ are still grinding, and which are sitting there waiting for you to answer someth
 
 ![The panel](docs/panel.png)
 
-Go idle for a couple of minutes and a panel appears. One tile per running session, each bordered
+Go idle for 45 seconds and a panel appears. One tile per running session, each bordered
 by what it's doing:
 
 | Border | Meaning |
@@ -28,14 +28,33 @@ Sessions that need you are sorted first.
 
 ## Opening it yourself
 
-Waiting to go idle is the point, but not when you just want to check on things. Either of these
-brings the panel up immediately, and repeating it puts the panel away again:
+Waiting to go idle is the point, but not when you just want to check on things. Any of these
+brings the panel up immediately:
 
+- **<kbd>⌘</kbd><kbd>⌥</kbd><kbd>L</kbd>** — a system-wide hotkey; raises the panel from wherever
+  you are. It needs no Accessibility permission, but it does need the chord to be free: if
+  another app already owns it, Fleet says so in `/tmp/fleet.log` and the other two still work.
 - **Spotlight** — <kbd>⌘</kbd><kbd>Space</kbd>, type `Fleet`, <kbd>↵</kbd>
 - **the `fleet` command** — installed to `~/.local/bin/fleet`
+- **the menu bar plane** — click it
 
-Both reach the copy that's already running rather than starting a second one, so there's never
-more than one agent scanning.
+## The menu bar
+
+Fleet's only permanent presence is a small paper plane at the right of the menu bar. The plane
+itself stays plain; a tiny dot at its tail carries the colour of the session that most wants
+your attention — blue when one is waiting on an answer, green when one has finished its turn,
+red when they are all still working. With nothing running there is no dot at all. A glance tells
+you whether anything needs you without opening the panel.
+
+Clicking it toggles the panel. Right-clicking gives the session count broken down by state, plus a quit item —
+which unloads the LaunchAgent, since `KeepAlive` would otherwise restart Fleet a second later.
+It comes back at the next login.
+
+Spotlight and `fleet` toggle: repeating either puts the panel away. The hotkey only ever brings
+it to the front, so hitting it twice is harmless — dismiss with <kbd>Esc</kbd>.
+
+All three reach the copy that's already running rather than starting a second one, so there's
+never more than one agent scanning.
 
 ## Install
 
@@ -64,9 +83,14 @@ This runs all day, so it's built to cost as close to nothing as possible.
 process list and checks whether anything named `claude` is alive. If not, it stops there — no
 file reads, no UI, no allocations. That check is a couple of syscalls.
 
-When sessions *are* alive it additionally reads the idle timer every 15 seconds, which is a
-single in-process call, not a poll of anything. Transcripts are only parsed once you've actually
-gone idle and the panel is about to appear.
+When sessions *are* alive it refreshes the whole picture every 5 seconds, so the panel is
+current the instant it opens rather than as of whenever it last appeared. That refresh is far
+cheaper than it sounds: transcripts are `stat`ed and only re-parsed if their tail actually
+moved, so a fleet that's sitting idle costs one `stat` per session. While the panel is on screen
+the same refresh runs every second, and tiles track their sessions live.
+
+Measured on six live sessions, several of them actively writing: about 1% of one core while
+hidden. Nearly all of the remaining cost is the process scan, not the transcripts.
 
 The specific things it refuses to do:
 
@@ -77,8 +101,10 @@ The specific things it refuses to do:
   Recording permission, and real GPU work every refresh. Everything on a tile comes from the
   session's own JSONL transcript instead, which is cheaper to read, sharper at tile size, and
   needs no permission at all.
-- **Only re-parses what changed.** Transcripts are `stat`ed and skipped unless their size or
-  mtime moved, and only the last 256 KB of a file is ever read.
+- **Only reads what changed.** Transcripts are `stat`ed and skipped unless their size or mtime
+  moved, and only the last 256 KB is ever read cold. After that the parse *resumes*: it's a fold
+  over lines whose state is kept between refreshes, so an append costs the appended bytes rather
+  than a re-read of the tail.
 - **Timers carry 50% tolerance**, so macOS coalesces the wakeups with other timers instead of
   waking the CPU on our behalf.
 - **Stops dead on sleep.** All timers are torn down on sleep or display-off and rebuilt on wake.
@@ -106,9 +132,16 @@ working directory, so the directory alone is ambiguous. Resolution runs in three
    the unclaimed transcript created soonest *after* its own start time.
 3. `claude --continue` reopens an older file, so anything left over falls back to the most
    recently modified unclaimed transcript.
+4. If a session is *still* unmatched, its transcript isn't filed under its working directory at
+   all — Claude Code picks the project folder once, at session start, so renaming that directory
+   or `cd`ing out of it leaves the file behind under the old name. Every transcript entry stamps
+   the session's current directory, so the last resort is to scan transcripts written in the
+   last few minutes across all projects and take the one whose recorded cwd is this process's.
+   It only runs while some session is unmatched, at most every 5 seconds.
 
 Bindings are sticky once resolved. A session you've launched but not yet prompted has no
-transcript at all, and shows up as a ready tile with just its directory.
+transcript at all, and shows up as a ready tile with just its directory — unless it's burning
+CPU, in which case that alone marks it as working.
 
 **Deciding the colour.** The transcript is walked to find tool calls with no matching result. No
 pending tool usually means the turn ended cleanly — green. The exception is the window between
@@ -173,7 +206,7 @@ Prints every session it can see, with the transcript it bound, the state it deri
 | Flag | Effect |
 |------|--------|
 | `--scan` | print detected sessions and exit |
-| `--idle <seconds>` | override the idle threshold (default 150) |
+| `--idle <seconds>` | override the idle threshold (default 45) |
 | `--show` | toggle the panel immediately, ignoring the idle timer |
 | `--demo` | same as `--show` |
 | `--focus <pid>` | run just the tab-raising path for one session and report what happened |

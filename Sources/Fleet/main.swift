@@ -14,7 +14,8 @@ enum ShowRequest {
     }
 }
 
-/// Background agent. No dock icon, no menu bar item — it only ever surfaces as the panel.
+/// Background agent. No dock icon; its only permanent presence is the menu bar plane, and
+/// everything else it has to say goes in the panel.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let controller = AppController()
@@ -22,6 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         controller.start()
+
+        // ⌘⌥L raises the panel, the same way ⌘⌥T is wired to Terminal. Deliberately *not* a
+        // toggle: "bring it to the front" should be idempotent, and Esc already dismisses.
+        HotKey.register { [weak controller] in
+            MainActor.assumeIsolated { controller?.forceShow(announceEmpty: true) }
+        }
 
         DistributedNotificationCenter.default().addObserver(
             forName: ShowRequest.name, object: nil, queue: .main

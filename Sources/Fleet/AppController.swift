@@ -6,18 +6,22 @@ import Combine
 ///
 /// Battery profile, cheapest state first:
 ///   • no sessions   — one `proc_listpids` every 60s, nothing else
-///   • sessions live — plus an idle check every 15s (a single in-process call)
-///   • panel visible — transcripts re-read every 3s, and only tails that changed
+///   • sessions live — a full refresh every 5s, but only transcripts whose tail moved are
+///                     re-parsed; the rest is one `stat` each
+///   • panel visible — the same refresh every 1s, so tiles track their sessions live
 /// The timer carries a 50% tolerance so macOS coalesces these wakeups with other timers
 /// rather than waking the CPU just for us, and everything stops entirely on sleep.
 @MainActor
 final class AppController: ObservableObject {
 
-    @Published private(set) var sessions: [Session] = []
+    @Published private(set) var sessions: [Session] = [] {
+        didSet { statusItem?.update(sessions: sessions) }
+    }
     @Published private(set) var isPanelVisible = false
 
     private let registry = SessionRegistry()
     private var overlay: OverlayWindowController?
+    private var statusItem: StatusItemController?
     private var timer: Timer?
     private var currentInterval: TimeInterval = 0
     private var suspended = false
@@ -28,6 +32,7 @@ final class AppController: ObservableObject {
 
     func start() {
         overlay = OverlayWindowController(controller: self)
+        statusItem = StatusItemController(controller: self)
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
@@ -64,6 +69,7 @@ final class AppController: ObservableObject {
 
     /// A manual trigger that silently does nothing reads as a broken app, so say why.
     private func announceNoSessions() {
+        let previous = NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "No Claude Code sessions running"
@@ -71,7 +77,9 @@ final class AppController: ObservableObject {
             + "Start one in a terminal and open Fleet again."
         alert.alertStyle = .informational
         alert.runModal()
-        NSApp.hide(nil)
+        // Same reason as `OverlayWindowController.hide`: hiding the app makes the next
+        // activation warp the user to the Space we were hidden on.
+        if let previous, !previous.isTerminated { previous.activate() } else { NSApp.deactivate() }
     }
 
     // MARK: - Timer
@@ -100,23 +108,28 @@ final class AppController: ObservableObject {
 
         // Cheapest possible gate: if no session is running, do nothing else at all.
         guard ProcessScanner.anyClaudeRunning() else {
+            // Drop the last known fleet rather than leaving it stale. Nothing rendered it
+            // before, but the menu bar shows the count continuously and would keep claiming
+            // sessions that have since exited.
+            if !sessions.isEmpty { sessions = [] }
             schedule(Config.idlePollDormant)
             return
         }
         schedule(Config.idlePollActive)
+
+        // Refresh even while hidden, so what the panel shows is current the instant it opens
+        // rather than as of whenever it last appeared. Transcripts are only re-read when their
+        // size or mtime moved, so an idle fleet costs one `stat` per session.
+        let found = registry.refresh()
+        sessions = found
 
         let idle = IdleWatcher.idleSeconds()
         if idle < Config.idleThreshold {
             armed = true            // user is active; allow the next idle period to show
             return
         }
-        guard armed else { return }
+        guard armed, !found.isEmpty else { return }
 
-        // Only now do we pay for transcript parsing.
-        let found = registry.refresh()
-        guard !found.isEmpty else { return }
-
-        sessions = found
         armed = false
         showPanel()
     }

@@ -1,4 +1,5 @@
 import AppKit
+import ScriptingBridge
 
 /// Thin wrapper so ProcessScanner can stay AppKit-agnostic.
 struct NSRunningApplicationBox {
@@ -14,8 +15,13 @@ struct NSRunningApplicationBox {
 /// Brings the terminal hosting a session to the front, selecting the exact tab where possible.
 ///
 /// Every session has a distinct TTY, and Terminal.app and iTerm2 both expose a tab's `tty` to
-/// AppleScript, so the right tab can be raised rather than just the app. Terminals without that
-/// scripting surface fall back to activating the application.
+/// their scripting interface, so the right tab can be raised rather than just the app.
+///
+/// Scripting Bridge rather than `NSAppleScript`, because a script says `tell application
+/// "Terminal"` and macOS resolves that to *one* process. Two instances of the same terminal can
+/// be running at once — and then every session hosted by the other instance silently misses,
+/// leaving us to activate the app and land on whatever tab happened to be frontmost. Scripting
+/// Bridge can be pointed at a pid, and we already know the exact pid hosting the session.
 @MainActor
 enum TerminalFocus {
 
@@ -25,16 +31,18 @@ enum TerminalFocus {
         let bundleID = host?.bundleIdentifier ?? ""
         let tty = session.proc.tty
 
-        // Selecting the tab and raising the app are separate problems. AppleScript is the only
-        // way to do the first, and it is the part that can be denied by permission; the second
-        // always works. So do both, rather than treating the script as all-or-nothing.
-        switch bundleID {
-        case "com.apple.Terminal":
-            runScript(appleTerminalScript(tty: tty), what: "Terminal tab \(tty)")
-        case "com.googlecode.iterm2":
-            runScript(iTermScript(tty: tty), what: "iTerm2 session \(tty)")
-        default:
-            break   // terminal without tab-level scripting; raising the app is all we can do
+        // Selecting the tab and raising the app are separate problems. Only the first can be
+        // denied by the Automation permission; the second always works. So do both, rather
+        // than treating the tab selection as all-or-nothing.
+        if let host {
+            switch bundleID {
+            case "com.apple.Terminal":
+                select(tty: tty, inTerminal: host.processIdentifier)
+            case "com.googlecode.iterm2":
+                select(tty: tty, iniTerm: host.processIdentifier)
+            default:
+                break   // terminal without tab-level scripting; raising the app is all we can do
+            }
         }
 
         guard let host else {
@@ -46,67 +54,64 @@ enum TerminalFocus {
         return ok
     }
 
-    /// Returns true when the script found and selected the tab.
+    /// The scripting connection to one specific process.
+    ///
+    /// Scripting Bridge blocks the calling thread waiting for a reply, and this runs on the
+    /// main actor, so the timeout matters: a wedged terminal must cost us a beat, not the UI.
+    private static func app(pid: pid_t) -> SBApplication? {
+        guard let app = SBApplication(processIdentifier: pid) else {
+            NSLog("Fleet: no scripting connection to pid \(pid)")
+            return nil
+        }
+        app.timeout = 120        // ticks, i.e. 2 seconds
+        return app
+    }
+
+    /// Terminal.app: window -> tab, where the tab carries `tty`.
     @discardableResult
-    private static func runScript(_ source: String, what: String) -> Bool {
-        guard let script = NSAppleScript(source: source) else { return false }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if let error {
-            // -1743 is "not authorised to send Apple events", i.e. the Automation permission
-            // was never granted or was reset — which it is by a rename, since approval is
-            // recorded against the bundle identifier.
-            NSLog("Fleet: could not raise \(what): \(error)")
-            return false
+    private static func select(tty: String, inTerminal pid: pid_t) -> Bool {
+        guard let app = app(pid: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return false }
+
+        for case let window as SBObject in windows {
+            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            for case let tab as SBObject in tabs {
+                guard tab.value(forKey: "tty") as? String == tty else { continue }
+                tab.setValue(true, forKey: "selected")
+                // Index 1 is the front of Terminal's window ordering; without this the right
+                // tab is selected inside a window that stays behind another one.
+                window.setValue(1, forKey: "index")
+                return true
+            }
         }
-        guard result.stringValue == "ok" else {
-            NSLog("Fleet: no match for \(what)")
-            return false
-        }
-        return true
+        NSLog("Fleet: no tab with \(tty) in Terminal \(pid)")
+        return false
     }
 
-    private static func appleTerminalScript(tty: String) -> String {
-        """
-        tell application "Terminal"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    try
-                        if tty of t is "\(tty)" then
-                            set selected of t to true
-                            set index of w to 1
-                            set frontmost of w to true
-                            activate
-                            return "ok"
-                        end if
-                    end try
-                end repeat
-            end repeat
-        end tell
-        return "miss"
-        """
-    }
+    /// iTerm2: window -> tab -> session, and it is the session that carries `tty`. Selection is
+    /// a command rather than a property, and has to be applied at each level.
+    @discardableResult
+    private static func select(tty: String, iniTerm pid: pid_t) -> Bool {
+        guard let app = app(pid: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return false }
 
-    private static func iTermScript(tty: String) -> String {
-        """
-        tell application "iTerm2"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        try
-                            if tty of s is "\(tty)" then
-                                select w
-                                select t
-                                select s
-                                activate
-                                return "ok"
-                            end if
-                        end try
-                    end repeat
-                end repeat
-            end repeat
-        end tell
-        return "miss"
-        """
+        let selectCmd = NSSelectorFromString("select")
+        for case let window as SBObject in windows {
+            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            for case let tab as SBObject in tabs {
+                guard let sessions = tab.value(forKey: "sessions") as? SBElementArray else {
+                    continue
+                }
+                for case let session as SBObject in sessions {
+                    guard session.value(forKey: "tty") as? String == tty else { continue }
+                    for target in [window, tab, session] where target.responds(to: selectCmd) {
+                        target.perform(selectCmd)
+                    }
+                    return true
+                }
+            }
+        }
+        NSLog("Fleet: no session with \(tty) in iTerm2 \(pid)")
+        return false
     }
 }

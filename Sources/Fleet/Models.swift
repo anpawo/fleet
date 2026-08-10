@@ -3,14 +3,16 @@ import Foundation
 /// Tunables. Kept in one place so the whole battery profile is auditable at a glance.
 enum Config {
     /// How long the user must be idle before the panel appears.
-    static var idleThreshold: TimeInterval = 150      // 2.5 min
+    static var idleThreshold: TimeInterval = 45
 
-    /// Poll cadence when at least one Claude Code session is alive.
-    static let idlePollActive: TimeInterval = 15
+    /// Full-refresh cadence when at least one session is alive but the panel is hidden. Fleet
+    /// keeps its picture current in the background so the panel is never a moment out of date
+    /// when it appears — a stale first frame is worse than the wakeups cost.
+    static let idlePollActive: TimeInterval = 5
     /// Poll cadence when no session is alive (pure "is anything running yet" check).
     static let idlePollDormant: TimeInterval = 60
     /// Refresh cadence while the panel is on screen.
-    static let visibleRefresh: TimeInterval = 3
+    static let visibleRefresh: TimeInterval = 1
 
     /// Timer slack, as a fraction of the interval. Large tolerance lets macOS coalesce
     /// our wakeups with other timers instead of waking the CPU on its own.
@@ -22,10 +24,18 @@ enum Config {
     /// Sustained CPU above this means the session is genuinely working.
     static let busyCPUPercent: Double = 3.0
 
+    /// How often the cross-project hunt for a session's transcript may run, and how recently a
+    /// transcript must have been written to be a candidate. Only ever runs while some session is
+    /// unbound; the window is what keeps it to a handful of files.
+    static let rescueScanInterval: TimeInterval = 5
+    static let rescueScanWindow: TimeInterval = 300
+
     /// Only the tail of a transcript is parsed; sessions are long and we only need recent state.
     static let transcriptTailBytes: Int = 256 * 1024
     /// Conversation lines kept for the tile preview.
     static let previewLineCount: Int = 14
+    /// Of those, how many a tile actually draws.
+    static let railLineCount: Int = 3
 }
 
 /// What a session is doing right now, which drives the tile border colour.
@@ -61,9 +71,16 @@ struct TranscriptInfo {
     var permissionMode: String?
     var hasPendingTool: Bool
     var pendingToolNames: [String]
-    /// The last thing on the main thread is your prompt, with nothing back from Claude yet.
-    /// No tool is pending, but the turn is very much not over.
-    var awaitingReply: Bool
+    /// Name of the most recent tool that actually finished — the last completed step. Nil
+    /// when nothing in the parsed tail ran to completion.
+    var lastCompletedTool: String?
+    /// The session's own working directory, which diverges from the process cwd as soon as
+    /// anything `cd`s. This is what the session's status line shows.
+    var cwd: String?
+    /// The last thing on the main thread came from your side — your prompt, or a result handed
+    /// back to a tool call — so Claude still owes a reply. No tool is pending, but the turn is
+    /// very much not over.
+    var turnOpen: Bool
     var lastActivity: Date
     var preview: [PreviewLine]
 }
@@ -84,18 +101,24 @@ struct Session: Identifiable {
     var state: SessionState
     var cpuPercent: Double
 
+    /// Where the session is working *now*. The process cwd is only where it was launched:
+    /// `cd` inside a session moves the session but never the process, so a tile keyed on the
+    /// process would keep naming a directory the session left long ago. Transcripts record the
+    /// live value, so prefer it and fall back to the process for a session too new to have one.
+    var cwd: String { transcript?.cwd ?? proc.cwd }
+
     /// Last path component of the working directory, e.g. "portfolio".
     var dirName: String {
-        let n = (proc.cwd as NSString).lastPathComponent
-        return n.isEmpty ? proc.cwd : n
+        let n = (cwd as NSString).lastPathComponent
+        return n.isEmpty ? cwd : n
     }
 
     /// Working directory with $HOME collapsed to "~".
     var displayPath: String {
         let home = NSHomeDirectory()
-        if proc.cwd == home { return "~" }
-        if proc.cwd.hasPrefix(home + "/") { return "~" + proc.cwd.dropFirst(home.count) }
-        return proc.cwd
+        if cwd == home { return "~" }
+        if cwd.hasPrefix(home + "/") { return "~" + cwd.dropFirst(home.count) }
+        return cwd
     }
 
     var topic: String {
@@ -111,8 +134,8 @@ struct Session: Identifiable {
         return (path as NSString).lastPathComponent == dirName ? nil : path
     }
 
-    /// The one step in flight right now, for the single status line on the tile. Nil when
-    /// the session isn't working — the state pill already says so.
+    /// The step in flight right now, pinned under the history. Nil unless the session is
+    /// working — the rail already shows everything that has finished.
     var currentStep: String? {
         guard state == .running else { return nil }
         let names = transcript?.pendingToolNames ?? []
@@ -120,4 +143,7 @@ struct Session: Identifiable {
         guard !names.isEmpty else { return "thinking…" }
         return names.count == 1 ? names[0] : "\(names[0]) +\(names.count - 1)"
     }
+
+    /// The recent conversation, oldest first: your prompts, the tools Claude ran, what it said.
+    var steps: [PreviewLine] { transcript?.preview ?? [] }
 }

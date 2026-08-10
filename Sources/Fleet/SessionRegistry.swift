@@ -9,6 +9,8 @@ final class SessionRegistry {
     private var cpuSamples: [pid_t: (nanos: UInt64, at: Date)] = [:]
     /// Sticky pid -> transcript bindings, so a session keeps its file once identified.
     private var bindings: [pid_t: String] = [:]
+    /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
+    private var lastWideScan = Date.distantPast
 
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
@@ -26,6 +28,12 @@ final class SessionRegistry {
         for proc in procs {
             let cpu = cpuPercent(for: proc, now: now)
             let info = bindings[proc.pid].flatMap { store.info(for: $0) }
+            // A bound transcript that yields nothing is worth saying out loud: downstream it is
+            // indistinguishable from a session that has never been prompted, so it degrades a
+            // tile silently rather than failing.
+            if info == nil, let bound = bindings[proc.pid] {
+                NSLog("Fleet: no transcript info for pid \(proc.pid) from \(bound)")
+            }
             sessions.append(Session(
                 proc: proc,
                 transcript: info,
@@ -101,6 +109,43 @@ final class SessionRegistry {
                 // transcript. It renders as a ready tile with just its directory.
             }
         }
+
+        rescueUnbound(procs)
+    }
+
+    /// Pass 4, for sessions whose transcript is not filed under their working directory at all.
+    ///
+    /// Claude Code picks the project folder once, from the directory the session started in, and
+    /// keeps writing there for the rest of the session. Rename that directory — or `cd` out of
+    /// it — and the process now reports a cwd that maps to a different folder, usually an empty
+    /// one, so every pass above finds nothing and the session shows up as a tile with no history
+    /// and a green border whatever it is doing.
+    ///
+    /// The transcript itself is not lost: every entry stamps the session's *current* directory,
+    /// so the file that keeps naming this process's cwd is the file that belongs to it.
+    private func rescueUnbound(_ procs: [ClaudeProcess]) {
+        let unbound = procs.filter { bindings[$0.pid] == nil }
+        guard !unbound.isEmpty else { return }
+
+        // A session that has simply never been prompted is also unbound, and stays that way, so
+        // this must not turn into a directory walk on every refresh.
+        let now = Date()
+        guard now.timeIntervalSince(lastWideScan) >= Config.rescueScanInterval else { return }
+        lastWideScan = now
+
+        let candidates = TranscriptStore.recentTranscripts(within: Config.rescueScanWindow)
+        guard !candidates.isEmpty else { return }
+        var claimed = Set(bindings.values)
+
+        for proc in unbound {
+            let match = candidates.first { file in
+                !claimed.contains(file.path) && store.info(for: file.path)?.cwd == proc.cwd
+            }
+            guard let match else { continue }
+            bindings[proc.pid] = match.path
+            claimed.insert(match.path)
+            NSLog("Fleet: rescued pid \(proc.pid) (\(proc.cwd)) -> \(match.path)")
+        }
     }
 
     private func live(_ pid: pid_t, in group: [ClaudeProcess]) -> Bool {
@@ -133,13 +178,18 @@ final class SessionRegistry {
     /// looks identical in both cases, so the tie is broken on whether the session is actually
     /// burning CPU or writing to its transcript.
     private func derivedState(info: TranscriptInfo?, cpu: Double, now: Date) -> SessionState {
-        guard let info else { return .ready }
+        guard let info else {
+            // No transcript to read: either a session that has never been prompted, or one whose
+            // file we could not find. Green is the right guess for the first and a lie for the
+            // second, so let sustained CPU speak for a session we otherwise know nothing about.
+            return cpu >= Config.busyCPUPercent ? .running : .ready
+        }
 
         guard info.hasPendingTool else {
-            // Your prompt is in and Claude hasn't emitted anything yet — the thinking window
-            // before the first token. It looks identical to a finished turn in the transcript,
-            // but it is the opposite of ready.
-            if info.awaitingReply { return .running }
+            // Nothing pending, but the last word was yours — a prompt Claude has not started
+            // answering, or a tool result it has not responded to yet. Identical to a finished
+            // turn in the transcript, and the opposite of ready.
+            if info.turnOpen { return .running }
             // Turn finished cleanly: waiting for a new prompt.
             return .ready
         }

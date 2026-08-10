@@ -25,10 +25,15 @@ struct OverlayView: View {
     var eagerLayout = false
 
     /// Fixed tiles per row and fixed width, rather than adaptive, so a partial last row
-    /// (and a one-session fleet) still centres instead of hugging the left edge.
-    private let tilesPerRow = 4
-    private let tileWidth: CGFloat = 250
-    private let tileSpacing: CGFloat = 18
+    /// (and a one-session fleet) still centres instead of hugging the left edge. Exactly four
+    /// sessions get a 2x2 square instead of a 3 + orphan, which reads as unfinished.
+    private var tilesPerRow: Int {
+        controller.sessions.count == 4 ? 2 : 3
+    }
+    private let tileWidth: CGFloat = 310
+    /// Wider than it looks like it needs to be: the hover glow is a 16pt shadow, and the
+    /// neighbouring tile is opaque and drawn after, so a tighter gap eats the glow.
+    private let tileSpacing: CGFloat = 26
 
     var body: some View {
         ZStack {
@@ -43,7 +48,11 @@ struct OverlayView: View {
                 if eagerLayout {
                     grid
                 } else {
-                    ScrollView { grid }
+                    // Rows past the bottom of the screen scroll into view rather than being
+                    // squeezed; with a fleet that fits, `basedOnSize` keeps it from bouncing.
+                    ScrollView(.vertical) { grid }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .frame(maxHeight: .infinity)
                         .background(dismissLayer)
                 }
             }
@@ -84,6 +93,9 @@ struct OverlayView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 44)
+        // Room for the glow on the top row — the ScrollView clips to its bounds, and the
+        // shadow reaches 16pt out on hover.
+        .padding(.top, 26)
         .padding(.bottom, 44)
         .background(dismissLayer)
     }
@@ -142,33 +154,57 @@ struct SessionTile: View {
 
     @State private var hovering = false
 
+    /// Fixed so the name's 30% line is the same on every tile, whatever the history under it.
+    private static let height: CGFloat = 186
+    /// Roughly the name's line height at its font size, to centre it on that 30% mark.
+    /// Tracks `name`'s point size — if one moves the other has to.
+    private static let nameLine: CGFloat = 37
+
     var body: some View {
         Button(action: onSelect) {
-            ZStack {
-                name
-                // Name stays centred in the rectangle; the rest is pinned to the corners
-                // and edges around it, so it never shifts as sessions change state.
-                VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 8) {
-                        path
-                        Spacer(minLength: 6)
-                        statePill
-                    }
-                    Spacer(minLength: 0)
+            ZStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // The name sits with its centre 30% down the tile, so every tile's name
+                    // lands on the same line however much history is under it.
+                    Spacer().frame(height: Self.height * 0.30 - Self.nameLine / 2)
+                    name
+                    // The space above flexes and the space below is fixed, so the history sits
+                    // low in the tile — anchored near the bottom edge rather than centred
+                    // between it and the name.
+                    Spacer(minLength: 8)
+                    rail
                     step
+                    Spacer().frame(height: 12)
+                }
+                .padding(12)
+                // Without this the stack is only as tall as its content, the flexible spacer
+                // above the history has nothing to expand into, and the slack ends up below
+                // the tile's content instead of above it — which is why the history sat high
+                // whatever the spacers said.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                HStack(alignment: .top, spacing: 8) {
+                    path
+                    Spacer(minLength: 6)
+                    statePill
                 }
                 .padding(11)
             }
-            .frame(height: 132)
+            .frame(height: Self.height, alignment: .top)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(session.state.tint, lineWidth: 2.5)
             )
+            // Order matters. `scaleEffect` renders the card into an offscreen buffer sized to
+            // its own bounds, so a shadow applied *before* it gets baked into that buffer and
+            // clipped off at the card's edges — which is exactly the sliced-off glow you see
+            // on hover. Grouping first, scaling, then casting the shadow keeps it outside.
+            .compositingGroup()
+            .scaleEffect(hovering ? 1.015 : 1.0)
             .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
                     radius: hovering ? 16 : 8)
-            .scaleEffect(hovering ? 1.015 : 1.0)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -176,11 +212,56 @@ struct SessionTile: View {
 
     private var name: some View {
         Text(session.dirName)
-            .font(.system(size: 27, weight: .semibold))
+            .font(.system(size: 31, weight: .semibold))
             .foregroundStyle(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// The session's recent history, oldest at the top: what you asked, what it ran, what it
+    /// said back. One line each — the sequence is the point, not any single line's detail.
+    private var rail: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            let lines = session.steps.suffix(Config.railLineCount)
+            if lines.isEmpty {
+                Text("No conversation yet")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.25))
+            } else {
+                ForEach(lines) { line in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(glyph(for: line.kind))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(tint(for: line.kind))
+                        Text(line.text)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(.white.opacity(line.kind == .tool ? 0.45 : 0.7))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+            }
+        }
+        // No trailing spacer: the rail must stay exactly as tall as its lines, or it absorbs
+        // the tile's slack itself and the spacers positioning it have nothing left to give.
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func glyph(for kind: PreviewLine.Kind) -> String {
+        switch kind {
+        case .user: return ">"
+        case .assistant: return "*"
+        case .tool: return "-"
+        }
+    }
+
+    private func tint(for kind: PreviewLine.Kind) -> Color {
+        switch kind {
+        case .user: return Color(red: 0.42, green: 0.70, blue: 1.00)
+        case .assistant: return .white.opacity(0.5)
+        case .tool: return .white.opacity(0.3)
+        }
     }
 
     /// Top left, and only when it says something the name doesn't already — a project sitting
@@ -195,15 +276,20 @@ struct SessionTile: View {
         }
     }
 
-    /// Bottom edge: what this session is doing right now, only while it's still doing it.
+    /// Pinned under the rail: the step still in flight, which by definition has no result yet
+    /// and so never appears in the history above it.
     @ViewBuilder private var step: some View {
         if let step = session.currentStep {
-            Text(step)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(session.state.tint.opacity(0.85))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .center)
+            HStack(alignment: .top, spacing: 6) {
+                Text("»")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                Text(step)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(session.state.tint.opacity(0.95))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
