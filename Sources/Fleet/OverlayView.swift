@@ -25,11 +25,32 @@ struct OverlayView: View {
     var eagerLayout = false
 
     /// Fixed tiles per row and fixed width, rather than adaptive, so a partial last row
-    /// (and a one-session fleet) still centres instead of hugging the left edge. Exactly four
-    /// sessions get a 2x2 square instead of a 3 + orphan, which reads as unfinished.
+    /// (and a one-session fleet) still centres instead of hugging the left edge.
+    ///
+    /// Two columns for as long as they fit in three rows, because two big tiles side by side
+    /// are easier to read across than three; the third column only appears when a fleet has
+    /// outgrown six.
     private var tilesPerRow: Int {
-        controller.sessions.count == 4 ? 2 : 3
+        controller.sessions.count <= Self.maxRows * 2 ? 2 : 3
     }
+
+    /// Never more than this many rows on screen. Past that the grid pages sideways rather than
+    /// growing downwards: a fourth row is off the bottom of most screens, and a panel you have
+    /// to scroll to read has stopped being a glance.
+    private static let maxRows = 3
+
+    /// Tiles per screenful — six or nine, depending on the column count.
+    private var pageSize: Int { tilesPerRow * Self.maxRows }
+
+    /// The fleet cut into screenfuls. More than one means the panel scrolls sideways.
+    private var pages: [[Session]] {
+        stride(from: 0, to: controller.sessions.count, by: pageSize).map {
+            Array(controller.sessions[$0 ..< min($0 + pageSize, controller.sessions.count)])
+        }
+    }
+    /// How dark the panel sits over your desktop. Lower shows more of what's behind it.
+    private static let tintOpacity: Double = 0.80
+
     private let tileWidth: CGFloat = 310
     /// Wider than it looks like it needs to be: the hover glow is a 16pt shadow, and the
     /// neighbouring tile is opaque and drawn after, so a tighter gap eats the glow.
@@ -37,20 +58,24 @@ struct OverlayView: View {
 
     var body: some View {
         ZStack {
-            // Flat scrim rather than a live blur: a full-screen material is continuous GPU
-            // work, and this panel exists to save power.
-            Color.black.opacity(0.68)
+            // Flat scrim rather than a live blur. Two reasons, and the second one is why the
+            // frosted version was tried and dropped: a full-screen material is continuous GPU
+            // work in an app that exists to save power, and macOS's behind-window blur has a
+            // fixed radius — there is no dialling it down. It obliterates what is behind it or
+            // it is not on. A plain black wash keeps your windows recognisable underneath,
+            // which is the point of a panel that floats over your work.
+            Color.black.opacity(Self.tintOpacity)
                 .ignoresSafeArea()
 
             VStack(spacing: 22) {
                 header
 
                 if eagerLayout {
-                    grid
+                    fleet(scrolling: false)
                 } else {
                     // Rows past the bottom of the screen scroll into view rather than being
                     // squeezed; with a fleet that fits, `basedOnSize` keeps it from bouncing.
-                    ScrollView(.vertical) { grid }
+                    ScrollView(.vertical) { fleet(scrolling: true) }
                         .scrollBounceBehavior(.basedOnSize)
                         .frame(maxHeight: .infinity)
                         .background(dismissLayer)
@@ -72,15 +97,28 @@ struct OverlayView: View {
             .onTapGesture { controller.hidePanel() }
     }
 
-    private var rows: [[Session]] {
-        stride(from: 0, to: controller.sessions.count, by: tilesPerRow).map {
-            Array(controller.sessions[$0 ..< min($0 + tilesPerRow, controller.sessions.count)])
+    private func rows(of page: [Session]) -> [[Session]] {
+        stride(from: 0, to: page.count, by: tilesPerRow).map {
+            Array(page[$0 ..< min($0 + tilesPerRow, page.count)])
         }
     }
 
-    private var grid: some View {
+    /// The tiles with the prompt bubble immediately under them, as one block. The bubble rides
+    /// with the grid rather than being pinned to the bottom of the screen: on a fleet of three
+    /// sessions the screen bottom is half a metre of empty black away from anything you are
+    /// looking at, and a control down there reads as unrelated to the panel above it.
+    private func fleet(scrolling: Bool) -> some View {
+        VStack(spacing: 18) {
+            grid
+            PromptBar(prompt: controller.prompt)
+        }
+        .padding(.bottom, scrolling ? 44 : 20)
+    }
+
+    /// One screenful of tiles: at most three rows, of two or three.
+    private func page(_ sessions: [Session]) -> some View {
         VStack(spacing: tileSpacing) {
-            ForEach(rows, id: \.first?.id) { row in
+            ForEach(rows(of: sessions), id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: tileSpacing) {
                     ForEach(row) { session in
                         SessionTile(session: session) {
@@ -92,11 +130,36 @@ struct OverlayView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The tiles. A fleet that fits on one screenful is just that screenful; a bigger one pages
+    /// sideways, nine at a time, rather than running off the bottom of the display.
+    @ViewBuilder private var grid: some View {
+        Group {
+            if pages.count <= 1 || eagerLayout {
+                // Offscreen rendering never materialises a ScrollView's content, and a
+                // screenshot should show what the panel shows anyway: the first screenful.
+                page(pages.first ?? [])
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 0) {
+                        ForEach(Array(pages.enumerated()), id: \.offset) { indexed in
+                            // A screenful is exactly that wide, so a swipe lands on the next
+                            // one squarely rather than halfway between two.
+                            page(indexed.element)
+                                .containerRelativeFrame(.horizontal)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.viewAligned)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+        }
         .padding(.horizontal, 44)
         // Room for the glow on the top row — the ScrollView clips to its bounds, and the
         // shadow reaches 16pt out on hover.
         .padding(.top, 26)
-        .padding(.bottom, 44)
         .background(dismissLayer)
     }
 
@@ -118,12 +181,18 @@ struct OverlayView: View {
             }
             .padding(.top, 4)
 
-            Text("Click a session to jump to its terminal  ·  Esc to dismiss")
+            // Sideways scrolling is not discoverable at all until you know there is something
+            // to scroll to, so it says so when there is.
+            Text("Click a session to jump to its terminal  ·  Esc to dismiss"
+                 + (pages.count > 1 ? "  ·  scroll sideways for \(offscreenCount) more" : ""))
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.38))
                 .padding(.top, 2)
         }
     }
+
+    /// Sessions past the first screenful.
+    private var offscreenCount: Int { max(0, controller.sessions.count - pageSize) }
 
     private var summary: String {
         let n = controller.sessions.count
@@ -145,12 +214,155 @@ struct OverlayView: View {
     }
 }
 
+/// The bubble under the grid: the prompt field, and what came back from what you sent.
+///
+/// The field is *always* there and always has the caret. No key opens it, because a key to
+/// open it is a key you have to press before your dictation shortcut — and the shortcut is
+/// meant to be the only thing you touch. Everything the panel has to say afterwards is said on
+/// the line underneath, so the field never moves or goes away while you are aiming at it.
+struct PromptBar: View {
+    @ObservedObject var prompt: PromptController
+    /// The field is only useful with the keyboard in it, and a dictation tool pasting from
+    /// outside lands wherever focus is — which has to be here.
+    @FocusState private var editing: Bool
+
+    /// Where the field and a long answer wrap.
+    private static let maxTextWidth: CGFloat = 460
+
+    var body: some View {
+        composer
+    }
+
+    // MARK: - Composing
+
+    /// The prompt on its way out: an empty field with the caret in it, waiting for you to
+    /// type — or for a dictation tool of your own to paste into it.
+    ///
+    /// Nothing is sent until Return. Project names are what a pasted transcript gets wrong
+    /// most, and that is exactly the word that decides which session the prompt lands in — so
+    /// it is worth the half second to read what is in the field before sending it.
+    private var composer: some View {
+        let tint = Self.restingTint
+        let bubble = Self.bubble(wrapping: true)
+
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 10) {
+                dot(line?.tint ?? tint)
+
+                // Vertical axis so a long paragraph wraps instead of scrolling off the side.
+                // Return is claimed by the window rather than `onSubmit`, so it submits even
+                // on the multi-line field — see `PanelWindow.onReturn`.
+                // Written by hand rather than `$prompt.field.draft`: the controller holds the
+                // field as a constant, and a projected binding cannot write through one.
+                // Changes still reach the view — the controller republishes them.
+                TextField(Self.placeholder, text: Binding(get: { prompt.field.draft },
+                                                          set: { prompt.field.draft = $0 }),
+                          axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.95))
+                    // Not the resting tint: a grey caret on a near-black field is hard to spot,
+                    // and the caret is the one thing that has to be obvious here.
+                    .tint(.white.opacity(0.8))
+                    .lineLimit(1 ... 8)
+                    .frame(width: Self.maxTextWidth, alignment: .leading)
+                    .focused($editing)
+            }
+
+            if let line {
+                Text(line.text)
+                    .font(.system(size: line.emphasis > 0.5 ? 12 : 11))
+                    .foregroundStyle(.white.opacity(line.emphasis))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: Self.maxTextWidth, alignment: .leading)
+                    .padding(.leading, 18)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        // Near-solid and darker than the scrim, rather than the white wash it used to be. That
+        // wash let the desktop through, and text you are about to *edit* has to sit on a
+        // background of its own — a caret and a half-written sentence over someone's browser
+        // are hard to read and read as decoration rather than as a field.
+        .background(Self.fieldBackground, in: bubble)
+        .overlay(bubble.strokeBorder(tint.opacity(0.45), lineWidth: 1))
+        // Focus is not decoration here: a field without it swallows what you type, and a paste
+        // from a dictation tool lands in whatever app holds the keyboard instead. Asked for on
+        // every open, not just the first: the panel's window and its view tree are built once
+        // and reused, so `onAppear` fires for the first showing only.
+        .onAppear { editing = true }
+        .onChange(of: prompt.field.focusRequests) { editing = true }
+    }
+
+    private static let placeholder = "Type your prompt"
+
+    /// Grey, deliberately: the three tints above the field each mean something about a session,
+    /// and a field sitting at rest means nothing at all. Borrowing the blue made an empty
+    /// composer read as a fourth thing needing an answer. Colour comes back only on the status
+    /// line, once you have actually sent something.
+    private static let restingTint = Color.white.opacity(0.35)
+
+    /// A shade under the tiles' own `0.07` grey, so the field reads as recessed into the panel
+    /// rather than floating on it, and opaque enough that nothing behind the panel shows through.
+    private static let fieldBackground = Color(red: 0.04, green: 0.04, blue: 0.055)
+        .opacity(0.97)
+
+    private func dot(_ tint: Color) -> some View {
+        Circle()
+            .fill(tint)
+            .frame(width: 8, height: 8)
+            .opacity(0.85)
+            .padding(.top, 5)
+    }
+
+    /// Capsule while it is a one-line status, rounded rectangle once it is a paragraph.
+    private static func bubble(wrapping: Bool) -> AnyInsettableShape {
+        wrapping
+            ? AnyInsettableShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            : AnyInsettableShape(Capsule(style: .continuous))
+    }
+
+    private struct Line {
+        var text: String
+        var tint: Color
+        var emphasis: Double
+    }
+
+    /// The line under the field, and nil when there is nothing to say. Return and Esc are not
+    /// worth a permanent line of their own: an empty field with a caret in it is already an
+    /// invitation, and the panel says how to dismiss itself above the tiles.
+    private var line: Line? {
+        switch prompt.status {
+        case .idle:
+            return nil
+        case .routing:
+            return Line(text: "Working out where that goes\u{2026}",
+                        tint: SessionState.awaitingAnswer.tint, emphasis: 0.6)
+        case .thinking:
+            return Line(text: "Thinking\u{2026}", tint: SessionState.awaitingAnswer.tint,
+                        emphasis: 0.6)
+        case .launched(let project):
+            return Line(text: "Started a Claude Code session in \(project).",
+                        tint: SessionState.ready.tint, emphasis: 0.85)
+        case .answer(let text):
+            return Line(text: text, tint: SessionState.ready.tint, emphasis: 0.92)
+        case .failed(let why):
+            return Line(text: why, tint: SessionState.running.tint, emphasis: 0.8)
+        }
+    }
+}
+
 /// One session, read at a glance: the name, the state border, and — only while it is
 /// working — the single step in flight. Everything else is a distraction at this size;
 /// `--scan` is there when you want the details.
 struct SessionTile: View {
     let session: Session
     let onSelect: () -> Void
+
+    /// Sub-agent work gets its own colour rather than the state tint. The border already says
+    /// what the session is; this says the work is happening somewhere else, on someone else's
+    /// clock — and orange reads as "in flight" next to a red that means "this one is busy".
+    static let subagentTint = Color(red: 1.00, green: 0.62, blue: 0.15)
 
     @State private var hovering = false
 
@@ -173,6 +385,7 @@ struct SessionTile: View {
                     // between it and the name.
                     Spacer(minLength: 8)
                     rail
+                    subagent
                     step
                     Spacer().frame(height: 12)
                 }
@@ -186,6 +399,7 @@ struct SessionTile: View {
                 HStack(alignment: .top, spacing: 8) {
                     path
                     Spacer(minLength: 6)
+                    subagentPill
                     statePill
                 }
                 .padding(11)
@@ -223,7 +437,12 @@ struct SessionTile: View {
     /// said back. One line each — the sequence is the point, not any single line's detail.
     private var rail: some View {
         VStack(alignment: .leading, spacing: 3) {
-            let lines = session.steps.suffix(Config.railLineCount)
+            // The tile is a fixed height, so the sub-agent line has to come out of somewhere:
+            // it takes the oldest rail line rather than pushing the whole stack past the
+            // bottom edge. What a sub-agent is doing now beats one more finished step.
+            let room = session.subagentLine == nil ? Config.railLineCount
+                                                   : Config.railLineCount - 1
+            let lines = session.steps.suffix(room)
             if lines.isEmpty {
                 Text("No conversation yet")
                     .font(.system(size: 10.5, design: .monospaced))
@@ -293,6 +512,39 @@ struct SessionTile: View {
         }
     }
 
+    /// Between the history and the step: the sub-agent this session handed the work to, and
+    /// what it is doing right now. Nothing above it says a word about it — the sub-agent's
+    /// steps go in its own transcript, so without this line the tile looks stalled.
+    @ViewBuilder private var subagent: some View {
+        if let line = session.subagentLine {
+            HStack(alignment: .top, spacing: 6) {
+                Text("↳")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                Text(line)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(Self.subagentTint.opacity(0.95))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Sits next to the state pill while sub-agents are out. The pill says the session is
+    /// working; this says who is actually doing the work.
+    @ViewBuilder private var subagentPill: some View {
+        let running = session.subagents.count
+        if running > 0 {
+            Text(running == 1 ? "SUB-AGENT" : "SUB-AGENTS ×\(running)")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(Self.subagentTint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Self.subagentTint.opacity(0.14), in: Capsule())
+        }
+    }
+
     private var statePill: some View {
         Text(session.state.label)
             .font(.system(size: 9, weight: .bold))
@@ -302,4 +554,20 @@ struct SessionTile: View {
             .padding(.vertical, 3)
             .background(session.state.tint.opacity(0.14), in: Capsule())
     }
+}
+
+/// `InsettableShape` has an associated type, so a shape cannot simply be returned from an
+/// `if`. This is the usual type-erasing wrapper, kept minimal: `strokeBorder` is the only
+/// reason the insettable half is needed at all.
+struct AnyInsettableShape: InsettableShape {
+    private let makePath: @Sendable (CGRect) -> Path
+    private let makeInset: @Sendable (CGFloat) -> AnyInsettableShape
+
+    init<S: InsettableShape>(_ shape: S) {
+        makePath = { shape.path(in: $0) }
+        makeInset = { AnyInsettableShape(shape.inset(by: $0)) }
+    }
+
+    func path(in rect: CGRect) -> Path { makePath(rect) }
+    func inset(by amount: CGFloat) -> AnyInsettableShape { makeInset(amount) }
 }

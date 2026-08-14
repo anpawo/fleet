@@ -36,6 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.controller.toggleOnDemand() }
         }
 
+        if let f = CommandLine.arguments.firstIndex(of: "--fake"),
+           f + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[f + 1]) {
+            controller.pretendFleet = DemoFleet.sessions(n)
+        }
+
         if CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--show") {
             controller.toggleOnDemand()
         }
@@ -47,6 +53,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.toggleOnDemand()
         return true
     }
+}
+
+// `--install-hooks` points Claude Code at the state hook, which is what makes a tile's colour
+// something Claude Code reported rather than something Fleet inferred. Separate from launching
+// the app because it edits ~/.claude/settings.json, and a file the user owns is not something
+// an app should quietly rewrite the first time it starts.
+if CommandLine.arguments.contains("--install-hooks") {
+    do {
+        let path = try Hooks.install()
+        print("Installed the session-state hooks into \(path)")
+        print("  script: \(Hooks.scriptPath)")
+        print("  state:  \(Hooks.stateDirectory)/<session-id>.json")
+        print("  backup: \(path).fleet-backup")
+        print("")
+        print("Sessions already running keep the inferred state until they are restarted.")
+    } catch {
+        let why = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        print("failed: \(why)")
+        exit(1)
+    }
+    exit(0)
+}
+
+// The way back out, so installing is not a one-way door.
+if CommandLine.arguments.contains("--uninstall-hooks") {
+    do {
+        let removed = try Hooks.uninstall()
+        print(removed ? "Removed Fleet's hooks from \(Hooks.settingsPath)"
+                      : "Fleet's hooks were not installed.")
+    } catch {
+        let why = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        print("failed: \(why)")
+        exit(1)
+    }
+    exit(0)
 }
 
 // `--scan` prints what the app currently sees and exits: a headless way to check session
@@ -74,11 +115,192 @@ if CommandLine.arguments.contains("--scan") {
             if let t = s.transcript, t.hasPendingTool {
                 print("      pending: \(t.pendingToolNames.joined(separator: ", "))")
             }
+            // Which of the two sources the colour above came from. A tile that looks wrong is
+            // either a hook that has not fired or an inference that is off, and they are fixed
+            // in completely different places.
+            let sessionID = ((s.transcript?.path ?? "") as NSString).lastPathComponent
+                .replacingOccurrences(of: ".jsonl", with: "")
+            if let hook = Hooks.record(sessionID: sessionID) {
+                let age = Int(Date().timeIntervalSince(hook.at))
+                print("      hook:  \(hook.state.label.lowercased()), \(age)s ago")
+            }
+            for agent in s.subagents {
+                print("      sub-agent: \(agent.kind) — \(agent.task)")
+                print("                 \(agent.step ?? "starting…")")
+            }
             print("")
         }
         print(String(format: "idle: %.0fs (threshold %.0fs)",
                      IdleWatcher.idleSeconds(), Config.idleThreshold))
+        if !Hooks.isInstalled {
+            print("state hooks not installed — colours are inferred from the transcripts. "
+                  + "Run `fleet --install-hooks`.")
+        }
+        if let awake = ScreenWatcher.holdingDisplayAwake() {
+            print("display held awake by \"\(awake)\" — the idle trigger is deferred")
+        }
         exit(0)
+    }
+}
+
+// `--parse <transcript.jsonl>` prints what one transcript parses to, without needing the
+// session that owns it to be running. The state a tile shows is mostly this parse, and a live
+// session is a poor thing to debug against: it will not hold still.
+if let i = CommandLine.arguments.firstIndex(of: "--parse"),
+   i + 1 < CommandLine.arguments.count {
+    let path = CommandLine.arguments[i + 1]
+    guard let info = TranscriptStore().info(for: path) else {
+        print("could not read \(path)")
+        exit(1)
+    }
+    print("title:    \(info.title ?? "—")")
+    print("cwd:      \(info.cwd ?? "—")")
+    print("turnOpen: \(info.turnOpen)")
+    print("pending:  \(info.pendingToolLabels.joined(separator: " | "))")
+    for agent in info.subagents {
+        let age = Int(Date().timeIntervalSince(agent.lastActivity))
+        print("sub-agent \(agent.kind) — \(agent.task)  (last wrote \(age)s ago)")
+        print("          \(agent.step ?? "starting…")")
+    }
+    print("preview:")
+    for line in info.preview.suffix(Config.railLineCount) { print("  \(line.text)") }
+    exit(0)
+}
+
+// `--windows [bundle-id]` lists a terminal's windows on the desktop you are on, and whether
+// each has that desktop to itself. The only way to check a placement from outside the app.
+if let i = CommandLine.arguments.firstIndex(of: "--windows") {
+    let bundle = i + 1 < CommandLine.arguments.count && !CommandLine.arguments[i + 1]
+        .hasPrefix("-") ? CommandLine.arguments[i + 1] : "com.apple.Terminal"
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        Desktop.accessibilityTrusted()
+        let lines = Desktop.describeWindows(ofBundle: bundle)
+        print(lines.isEmpty ? "no \(bundle) windows on this desktop"
+                            : lines.joined(separator: "\n"))
+        exit(0)
+    }
+}
+
+// `--start <directory> ["<prompt>"]` opens a session the way the panel does — new window, its
+// own desktop — without going through the classifier. The placement is the part that breaks,
+// and typing a sentence into the panel every time is a poor way to test a window server.
+if let i = CommandLine.arguments.firstIndex(of: "--start"),
+   i + 1 < CommandLine.arguments.count {
+    let directory = CommandLine.arguments[i + 1]
+    let prompt = i + 2 < CommandLine.arguments.count ? CommandLine.arguments[i + 2] : ""
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let ok = TerminalLaunch.startSession(in: directory, prompt: prompt)
+        print("start in \(directory): \(ok ? "ok" : "failed")")
+        // The desktop is given asynchronously — it polls for the new window. Exiting here
+        // would kill that before it ran, and the wait has to outlast the poll's own timeout or
+        // the interesting case is the one that never gets reported.
+        RunLoop.main.run(until: Date().addingTimeInterval(6))
+        for line in Desktop.describeWindows(ofBundle: "com.apple.Terminal") { print("  \(line)") }
+        exit(ok ? 0 : 1)
+    }
+}
+
+// `--route "<sentence>"` runs one sentence through the classifier and prints where it would
+// go, without starting a session or opening a window. The routing path is otherwise only
+// reachable through the panel, which is a poor way to debug a prompt.
+if let i = CommandLine.arguments.firstIndex(of: "--route"),
+   i + 1 < CommandLine.arguments.count {
+    let said = CommandLine.arguments[i + 1]
+    let done = DispatchSemaphore(value: 0)
+    Task {
+        defer { done.signal() }
+        let projects = (try? FileManager.default.contentsOfDirectory(atPath: Config.projectRoot))
+            ?? []
+        do {
+            let started = Date()
+            let route = try await Claude.classify(said, projects: projects.filter {
+                !$0.hasPrefix(".")
+            })
+            print("kind:    \(route.kind.rawValue)")
+            print("project: \(route.project.isEmpty ? "—" : route.project)")
+            print("prompt:  \(route.prompt)")
+            print(String(format: "took:    %.1fs", Date().timeIntervalSince(started)))
+        } catch {
+            let why = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            print("failed: \(why)")
+        }
+    }
+    done.wait()
+    exit(0)
+}
+
+if CommandLine.arguments.contains("--ax-probe") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        print("trusted: \(AXIsProcessTrusted())")
+        guard let term = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == "com.apple.Terminal"
+        }) else { print("Terminal not running"); exit(1) }
+
+        let app = AXUIElementCreateApplication(term.processIdentifier)
+
+        var names: CFArray?
+        let nameErr = AXUIElementCopyAttributeNames(app, &names)
+        print("app attributes: err=\(nameErr.rawValue) "
+              + "\((names as? [String] ?? []).prefix(12).joined(separator: ", "))")
+
+        var systemWide: CFTypeRef?
+        let swErr = AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
+                                                  kAXFocusedApplicationAttribute as CFString,
+                                                  &systemWide)
+        print("system-wide focused app: err=\(swErr.rawValue)")
+
+        print("all app attributes: \((names as? [String] ?? []).joined(separator: ", "))")
+
+        var value: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+        var windows = (value as? [AXUIElement]) ?? []
+        print("AXWindows: err=\(err.rawValue) count=\(windows.count)")
+
+        var focused: CFTypeRef?
+        let fErr = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString,
+                                                 &focused)
+        print("AXFocusedWindow: err=\(fErr.rawValue) present=\(focused != nil)")
+        if windows.isEmpty, let focused {
+            windows = [focused as! AXUIElement]
+        }
+
+        for (n, window) in windows.enumerated() {
+            var title: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+            var full: CFTypeRef?
+            let fullErr = AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &full)
+            var settable: DarwinBoolean = false
+            AXUIElementIsAttributeSettable(window, "AXFullScreen" as CFString, &settable)
+            print("  [\(n)] \(title as? String ?? "?") — AXFullScreen err=\(fullErr.rawValue) "
+                  + "value=\(full as? Bool ?? false) settable=\(settable.boolValue)")
+        }
+        exit(0)
+    }
+}
+
+// `--launch <directory> [prompt]` runs the session-starting path on its own: a terminal window
+// opens, `claude` starts in it, and — with `Config.openInOwnDesktop` on — it is thrown onto a
+// desktop of its own. Speaking at the panel is otherwise the only way to reach this, and the
+// Accessibility grant it needs cannot be tested from a shell: the permission belongs to the
+// app that asks, so it has to be Fleet asking.
+if let i = CommandLine.arguments.firstIndex(of: "--launch"),
+   i + 1 < CommandLine.arguments.count {
+    let directory = (CommandLine.arguments[i + 1] as NSString).expandingTildeInPath
+    let prompt = i + 2 < CommandLine.arguments.count ? CommandLine.arguments[i + 2] : ""
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let trusted = AXIsProcessTrusted()
+        print("accessibility: \(trusted ? "granted" : "NOT granted — the window will stay on this desktop")")
+        let ok = TerminalLaunch.startSession(in: directory, prompt: prompt)
+        print("launch \(directory): \(ok ? "ok" : "failed")")
+        // Run the loop rather than sleeping on it: the fullscreen step waits for the window
+        // to be placed, and it is a main-actor task — a blocked main thread never runs it.
+        RunLoop.main.run(until: Date().addingTimeInterval(4))
+        exit(ok ? 0 : 1)
     }
 }
 
@@ -92,7 +314,15 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         let registry = SessionRegistry()
         _ = registry.refresh()
         let controller = AppController()
-        controller.injectSessions(registry.refresh())
+        // `--fake <n>` draws a fleet of n synthetic sessions instead of the live one, which is
+        // how the grid's shape is checked at counts you do not have running.
+        if let f = CommandLine.arguments.firstIndex(of: "--fake"),
+           f + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[f + 1]) {
+            controller.injectSessions(DemoFleet.sessions(n))
+        } else {
+            controller.injectSessions(registry.refresh())
+        }
 
         let view = OverlayView(controller: controller, eagerLayout: true)
             .frame(width: 1512, height: 1100)
@@ -127,6 +357,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--focus"),
         }
         let ok = TerminalFocus.focus(session: session)
         print("focus \(session.dirName) (tty \(session.proc.tty)): \(ok ? "ok" : "failed")")
+        // Raising the window across a desktop is asynchronous — it polls for the focused window
+        // once the app is frontmost. Exiting here would kill it before it ran, and this flag
+        // exists precisely to exercise the whole path.
+        RunLoop.main.run(until: Date().addingTimeInterval(3))
         exit(ok ? 0 : 1)
     }
 }

@@ -21,6 +21,8 @@
 	<!-- Background agent: no Dock icon, no app switcher entry. -->
 	<key>LSUIElement</key>
 	<true/>
+	<!-- No microphone or speech-recognition entry, deliberately: Fleet records nothing and
+	     never opens an audio input. The prompt field takes text and only text. -->
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Fleet uses AppleScript to bring the terminal tab running a Claude Code session to the front when you click it.</string>
 	<key>NSHumanReadableCopyright</key>

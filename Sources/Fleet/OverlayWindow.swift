@@ -148,7 +148,8 @@ final class OverlayWindowController {
         // of which desktop the app belonged to. Moving one window to the desktop that asked for
         // it is the behaviour actually wanted, and it is observable.
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        window.onCancel = { [weak self] in self?.controller.hidePanel() }
+        window.onCancel = { [weak self] in self?.controller.escape() }
+        window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
 
         let root = OverlayView(controller: controller)
         let hosting = NSHostingView(rootView: root)
@@ -160,8 +161,13 @@ final class OverlayWindowController {
 /// Borderless windows refuse key focus by default, and Esc has to reach us.
 final class PanelWindow: NSWindow {
     private static let escKeyCode: UInt16 = 53
+    /// Return and the numeric keypad's Enter — both send the prompt.
+    private static let returnKeyCodes: Set<UInt16> = [36, 76]
 
     var onCancel: (() -> Void)?
+    /// Return, with no Shift. Returns whether it was used — when it isn't, the key goes on to
+    /// the field as an ordinary newline.
+    var onReturn: () -> Bool = { false }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -170,19 +176,47 @@ final class PanelWindow: NSWindow {
         onCancel?()
     }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == Self.escKeyCode {
+    /// Kept as a breadcrumb rather than a fix. The panel's whole keyboard story depends on it
+    /// holding key focus — losing it mid-sentence sends the rest of what you type into whatever
+    /// app took it. If that ever happens, this names the culprit instead of leaving it to
+    /// guesswork.
+    override func resignKey() {
+        super.resignKey()
+        NSLog("Fleet: panel lost key focus to "
+              + (NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"))
+    }
+
+    /// Esc and Return are claimed here rather than in `keyDown`, because `keyDown` is the *end*
+    /// of the responder chain and both SwiftUI and the field editor are ahead of us in it.
+    /// `sendEvent` runs before the event is dispatched to any responder, which is the only
+    /// place to win that race. Every other key, Space included, is left alone — it belongs to
+    /// the prompt field, which has the caret.
+    override func sendEvent(_ event: NSEvent) {
+        // Type first, always. `keyCode` is only meaningful on a key event — read it off a
+        // mouse event and you get a junk value, and then this method silently eats clicks
+        // instead of passing them to the panel.
+        switch event.type {
+        case .keyDown where event.keyCode == Self.escKeyCode:
+            // Esc is taken here rather than in `cancelOperation` for the same reason as Space:
+            // once the prompt field has focus, the field editor answers Esc first and would
+            // swallow the dismissal.
+            //
             // Auto-repeats from a held Esc are dropped on the floor: dismissing once is the
             // whole intent, and every repeat we consume is one that cannot reach the session
             // underneath and cancel it. Same for the key-up below.
             if !event.isARepeat { onCancel?() }
             return
+        case .keyUp where event.keyCode == Self.escKeyCode:
+            return
+        case .keyDown where Self.returnKeyCodes.contains(event.keyCode)
+            && !event.modifierFlags.contains(.shift):
+            // Sending the prompt is claimed from the field editor, which would otherwise
+            // insert a newline: the field wraps vertically, so Return is not its own submit.
+            // Shift-Return is left alone, which is how you get a second paragraph.
+            if onReturn() { return }
+            super.sendEvent(event)
+        default:
+            super.sendEvent(event)
         }
-        super.keyDown(with: event)
-    }
-
-    override func keyUp(with event: NSEvent) {
-        guard event.keyCode != Self.escKeyCode else { return }
-        super.keyUp(with: event)
     }
 }

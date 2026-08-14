@@ -19,6 +19,10 @@ final class TranscriptStore {
     }
 
     private var cache: [String: CacheEntry] = [:]
+    /// Sub-agent files read on behalf of a session, so `retain` keeps them cached too. Without
+    /// this they are evicted on every refresh and re-read from cold, which is the expensive
+    /// path — the whole point of the cache is that a live file is parsed incrementally.
+    private var subagentPaths: [String: Set<String>] = [:]
 
     /// Root of Claude Code's per-project transcript storage.
     static let projectsRoot = (NSHomeDirectory() as NSString)
@@ -98,9 +102,73 @@ final class TranscriptStore {
         return files.sorted { $0.mtime > $1.mtime }
     }
 
-    /// Parsed transcript for `path`. Unchanged files return the cached parse; changed ones are
-    /// resumed from where the last read stopped.
+    /// Parsed transcript for `path`, plus whatever sub-agents it is currently waiting on.
     func info(for path: String) -> TranscriptInfo? {
+        guard var info = parse(path: path, acceptSidechain: false) else { return nil }
+        info.subagents = liveSubagents(of: path, pendingTaskIDs: info.pendingTaskIDs)
+        return info
+    }
+
+    /// Every sub-agent this session spawned that has not reported back.
+    ///
+    /// The pending `Task` calls are the authority on which are still running: a sub-agent's own
+    /// files stay on disk long after it finishes, so the directory alone cannot tell a live one
+    /// from last week's. Each `agent-*.meta.json` names the `tool_use` that spawned it, and a
+    /// call still pending on the main thread is a sub-agent still working.
+    private func liveSubagents(of sessionPath: String, pendingTaskIDs: [String]) -> [SubagentRun] {
+        guard !pendingTaskIDs.isEmpty else {
+            // Nothing delegated: no directory listing, no reads, nothing to keep cached.
+            subagentPaths[sessionPath] = nil
+            return []
+        }
+        let dir = ((sessionPath as NSString).deletingPathExtension as NSString)
+            .appendingPathComponent("subagents")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
+            return []
+        }
+
+        let suffix = ".meta.json"
+        let wanted = Set(pendingTaskIDs)
+        var runs: [SubagentRun] = []
+        var read: Set<String> = []
+
+        for name in names.sorted() where name.hasSuffix(suffix) {
+            guard runs.count < Config.maxLiveSubagents else { break }
+            let metaPath = (dir as NSString).appendingPathComponent(name)
+            guard let data = FileManager.default.contents(atPath: metaPath),
+                  let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let toolUseID = meta["toolUseId"] as? String,
+                  wanted.contains(toolUseID) else { continue }
+
+            let id = String(name.dropLast(suffix.count))
+            let agentPath = (dir as NSString).appendingPathComponent(id + ".jsonl")
+            // A sub-agent's transcript is entirely sidechain traffic — that flag is what marks
+            // it as not belonging to the main thread — so it is read with the filter off.
+            let info = parse(path: agentPath, acceptSidechain: true)
+            read.insert(agentPath)
+
+            runs.append(SubagentRun(
+                id: id,
+                kind: (meta["agentType"] as? String) ?? "agent",
+                task: (meta["description"] as? String) ?? "",
+                // What it is doing beats what it last said, and a sub-agent that is thinking
+                // rather than running something has only the latter. Flattened and clipped:
+                // what it last said is prose, and this lands on a single tile line.
+                step: (info?.pendingToolLabels.first ?? info?.preview.last?.text)
+                    .map { String($0.collapsedWhitespace.prefix(90)) },
+                lastActivity: info?.lastActivity ?? .distantPast
+            ))
+        }
+
+        subagentPaths[sessionPath] = read
+        // Stable order, so the tile keeps naming the same one instead of cycling through them
+        // as the directory listing comes back in whatever order it likes.
+        return runs.sorted { $0.id < $1.id }
+    }
+
+    /// Parsed JSONL at `path`. Unchanged files return the cached parse; changed ones are
+    /// resumed from where the last read stopped.
+    private func parse(path: String, acceptSidechain: Bool) -> TranscriptInfo? {
         // Never downgrade to nil once a file has been read. A nil transcript is not a neutral
         // "unknown" downstream — the tile falls back to the process cwd for its name, loses its
         // step line, and reports READY whatever the session is doing. A transient read failure
@@ -126,7 +194,7 @@ final class TranscriptStore {
         guard let handle = FileHandle(forReadingAtPath: path) else { return previous }
         defer { try? handle.close() }
 
-        var state = resumable?.state ?? ParseState()
+        var state = resumable?.state ?? ParseState(acceptSidechain: acceptSidechain)
         let start = resumable?.offset ?? Self.tailStart(size: UInt64(size))
         try? handle.seek(toOffset: start)
         // `readToEnd` reports EOF as nil, not as empty data, and seeking to a resume offset that
@@ -170,9 +238,12 @@ final class TranscriptStore {
             ? size - UInt64(Config.transcriptTailBytes) : 0
     }
 
-    /// Drops cache entries for transcripts no longer in use.
+    /// Drops cache entries for transcripts no longer in use, keeping the sub-agent files read
+    /// on behalf of the sessions that survive.
     func retain(paths: Set<String>) {
-        cache = cache.filter { paths.contains($0.key) }
+        subagentPaths = subagentPaths.filter { paths.contains($0.key) }
+        let keep = paths.union(subagentPaths.values.joined())
+        cache = cache.filter { keep.contains($0.key) }
     }
 }
 
@@ -181,14 +252,36 @@ final class TranscriptStore {
 /// Everything the parse carries from one line to the next. Kept as a value so a refresh can
 /// resume mid-file instead of re-reading what it already folded in.
 private struct ParseState {
+    /// One tool call still waiting on its result.
+    struct PendingTool {
+        var name: String        // "Bash"
+        var label: String       // "Bash npm test"
+        /// Order it was issued in, so "the step in flight" can mean the most recent one rather
+        /// than whichever the dictionary hands back first.
+        var seq: Int
+        /// The assistant message this call was part of. Several calls issued together share
+        /// one; a *later* message means every earlier call has been answered — see `ingest`.
+        var messageID: String?
+    }
+
+    /// Sub-agent transcripts are made *entirely* of sidechain entries, so reading one means
+    /// keeping what a main transcript drops. See the filter in `ingest`.
+    var acceptSidechain = false
+
     var title: String?
     var lastPrompt: String?
     var permissionMode: String?
-    var pending: [String: String] = [:]     // tool_use id -> tool name
+    var pending: [String: PendingTool] = [:]    // tool_use id -> the call
+    var issued = 0
     var preview: [PreviewLine] = []
     var turnOpen = false
     var lastCompleted: String?
     var cwd: String?
+    /// When the last conversation entry was written, from its own stamp. Not the file's mtime:
+    /// Claude Code appends `ai-title`, `last-prompt` and `mode` lines seconds *after* a turn
+    /// ends, so the mtime of a session that has finished keeps moving while nothing is being
+    /// said. Every "has it gone quiet" question here means this, not the file.
+    var lastMessageAt: Date?
 
     mutating func ingest(_ obj: [String: Any]) {
         guard let type = obj["type"] as? String else { return }
@@ -214,19 +307,48 @@ private struct ParseState {
             return
         }
 
-        // Sub-agent traffic is interleaved into the same file. Excluding it keeps the
-        // pending-tool set describing the main thread only; a running sub-agent still
-        // shows up as a pending `Task` call on the main thread.
-        if obj["isSidechain"] as? Bool == true { return }
+        // Sidechain entries are a sub-agent's own traffic. In a main transcript they are
+        // dropped, so the pending-tool set describes the main thread only — a running
+        // sub-agent shows up there as a pending `Task` call, which is what we want. When the
+        // file being read *is* the sub-agent's, they are all there is.
+        if !acceptSidechain, obj["isSidechain"] as? Bool == true { return }
 
         guard let message = obj["message"] as? [String: Any] else { return }
         let blocks = Self.contentBlocks(message["content"])
+        let messageID = message["id"] as? String
+        if let stamp = obj["timestamp"] as? String, let at = Self.date(stamp) { lastMessageAt = at }
+
+        // A turn cancelled with Esc names the message it cut short, and the tool calls in that
+        // message are never answered — nothing is coming back for them. Left in `pending` they
+        // are a step permanently in flight, which reads as a session that is working and, in
+        // bypass mode, never even ages into "waiting for you". So the cancelled call goes.
+        if let cut = obj["interruptedMessageId"] as? String {
+            pending = pending.filter { $0.value.messageID != cut }
+        }
+
+        // The same thing, for the cancellations that do not name a message: the marker entry
+        // is written in place of the reply, so anything still out belonged to the turn it cut.
+        if type == "user", Self.isInterruption(blocks) { pending.removeAll() }
+
+        // A new assistant message means every call from an *earlier* one has been answered:
+        // the API will not take a further turn while a `tool_use` is outstanding, so a call
+        // still pending here was resolved by a result the parsed tail never covered — the tail
+        // window cut it off, or the line was dropped. Calls issued together share a message id
+        // and are left alone; only the older ones are cleared.
+        if type == "assistant", let messageID {
+            pending = pending.filter { $0.value.messageID == messageID }
+        }
 
         // Who spoke last, which is what says whether Claude still owes a reply. Only an
         // assistant message can close a turn; everything from the user side leaves it open,
         // and an open turn with nothing pending still looks exactly like a finished one.
         if type == "assistant" {
             turnOpen = false
+        } else if obj["isMeta"] as? Bool == true {
+            // Not you talking. Claude Code files hook output, cross-session messages and its
+            // own notes as user entries, and they land whenever they land — including after a
+            // turn has finished. Treated as a prompt, one of those reopens a closed turn and
+            // paints a session that is doing nothing as a session that is working.
         } else if blocks.contains(where: { $0["type"] as? String == "text" }) {
             // A user entry carrying real text is a prompt: the window between sending it and
             // Claude's first token.
@@ -249,20 +371,22 @@ private struct ParseState {
                                                text: String(t.prefix(200))))
                 }
             case "tool_use":
+                let name = (block["name"] as? String) ?? "tool"
+                let label = Self.toolLabel(name: name, input: block["input"] as? [String: Any])
                 if let id = block["id"] as? String {
-                    pending[id] = (block["name"] as? String) ?? "tool"
+                    issued += 1
+                    pending[id] = PendingTool(name: name, label: label, seq: issued,
+                                              messageID: messageID)
                 }
-                if let name = block["name"] as? String {
-                    preview.append(PreviewLine(
-                        kind: .tool,
-                        text: Self.toolLabel(name: name, input: block["input"] as? [String: Any])))
+                if block["name"] is String {
+                    preview.append(PreviewLine(kind: .tool, text: label))
                 }
             case "tool_result":
                 // A result is what makes a step *done*, so the completed step is named by the
                 // tool_use it closes — not by the last tool_use we happened to see.
                 if let id = block["tool_use_id"] as? String,
-                   let name = pending.removeValue(forKey: id) {
-                    lastCompleted = name
+                   let done = pending.removeValue(forKey: id) {
+                    lastCompleted = done.name
                 }
             default:
                 continue
@@ -277,17 +401,22 @@ private struct ParseState {
     }
 
     func info(path: String, mtime: Date) -> TranscriptInfo {
-        TranscriptInfo(
+        // Newest call first: with several tools out, the one just issued is the step in flight.
+        let inFlight = pending.values.sorted { $0.seq > $1.seq }
+        return TranscriptInfo(
             path: path,
             title: title,
             lastPrompt: lastPrompt,
             permissionMode: permissionMode,
             hasPendingTool: !pending.isEmpty,
-            pendingToolNames: Array(pending.values),
+            pendingToolNames: inFlight.map(\.name),
+            pendingToolLabels: inFlight.map(\.label),
+            pendingTaskIDs: pending.filter { $0.value.name == "Task" }.map(\.key),
             lastCompletedTool: lastCompleted,
             cwd: cwd,
             turnOpen: turnOpen,
             lastActivity: mtime,
+            lastMessageAt: lastMessageAt,
             preview: preview
         )
     }
@@ -322,6 +451,23 @@ private struct ParseState {
             guard let text = block["text"] as? String else { return false }
             return text.hasPrefix("[Request interrupted")
         }
+    }
+
+    /// Entry stamps are ISO 8601 with fractional seconds, and the formatter is held rather
+    /// than made per line: a busy refresh parses hundreds of them.
+    private static let stamps: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let plainStamps: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func date(_ stamp: String) -> Date? {
+        stamps.date(from: stamp) ?? plainStamps.date(from: stamp)
     }
 
     /// Message content is either a bare string or an array of typed blocks.

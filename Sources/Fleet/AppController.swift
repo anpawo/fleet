@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IOKit.pwr_mgt
 
 /// Drives the whole app: watches for idle, decides when the panel appears, and keeps the
 /// wakeup cadence as low as the current situation allows.
@@ -15,11 +16,19 @@ import Combine
 final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
-        didSet { statusItem?.update(sessions: sessions) }
+        didSet {
+            statusItem?.update(sessions: sessions)
+            notifier.update(sessions: sessions, panelVisible: isPanelVisible)
+        }
     }
     @Published private(set) var isPanelVisible = false
 
+    /// The prompt field and where what you write goes. Owned here rather than by the view so
+    /// a half-written prompt survives the panel's SwiftUI tree being rebuilt on every refresh.
+    let prompt = PromptController()
+
     private let registry = SessionRegistry()
+    private let notifier = Notifier()
     private var overlay: OverlayWindowController?
     private var statusItem: StatusItemController?
     private var timer: Timer?
@@ -33,6 +42,20 @@ final class AppController: ObservableObject {
     func start() {
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
+        // The classifier is told what projects exist so it can match what you write against
+        // them; both lists are read live, since the fleet changes under it.
+        prompt.knownProjects = { [weak self] in self?.projectNames() ?? [] }
+        prompt.liveDirectories = { [weak self] in self?.sessions.map(\.cwd) ?? [] }
+        notifier.start()
+        // A banner names a session; clicking it should land you in that session, which is the
+        // same handoff a tile click does.
+        notifier.onSelect = { [weak self] pid in
+            guard let self, let session = sessions.first(where: { $0.id == pid }) else { return }
+            activate(session)
+        }
+        // State left behind by sessions that ended without saying so — a killed terminal, a
+        // crash. Once at launch is enough; nothing else creates them.
+        Hooks.prune()
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
@@ -41,6 +64,13 @@ final class AppController: ObservableObject {
     /// `--render`: populate the panel without any window, for offscreen image rendering.
     func injectSessions(_ found: [Session]) {
         sessions = found
+    }
+
+    /// `--fake <n>`: a fleet that isn't there, so the panel can be looked at — and scrolled —
+    /// at sizes you do not happen to have running. Held rather than refreshed into, or the
+    /// next tick would replace it with the real fleet a second later.
+    var pretendFleet: [Session]? {
+        didSet { if let pretendFleet { sessions = pretendFleet } }
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
@@ -56,7 +86,7 @@ final class AppController: ObservableObject {
 
     /// Open the panel straight away, ignoring the idle timer.
     func forceShow(announceEmpty: Bool = false) {
-        let found = registry.refresh()
+        let found = pretendFleet ?? registry.refresh()
         guard !found.isEmpty else {
             NSLog("Fleet: no sessions to show")
             if announceEmpty { announceNoSessions() }
@@ -99,7 +129,7 @@ final class AppController: ObservableObject {
     }
 
     private func tick() {
-        guard !suspended else { return }
+        guard !suspended, pretendFleet == nil else { return }
 
         if isPanelVisible {
             refreshVisible()
@@ -130,6 +160,15 @@ final class AppController: ObservableObject {
         }
         guard armed, !found.isEmpty else { return }
 
+        // Idle because you are watching something, not because you are done. Left armed on
+        // purpose: when the video ends and the machine goes quiet for real, the next tick
+        // shows the panel as usual. Only the *idle* trigger defers — the hotkey, the menu bar
+        // and `fleet` all still open it mid-film, because those are you asking.
+        if let reason = ScreenWatcher.holdingDisplayAwake() {
+            NSLog("Fleet: not showing — something is holding the display awake (\(reason))")
+            return
+        }
+
         armed = false
         showPanel()
     }
@@ -147,6 +186,9 @@ final class AppController: ObservableObject {
 
     private func showPanel() {
         isPanelVisible = true
+        // The field is the panel's resting state, not something to open: it comes up focused
+        // and empty so a dictation shortcut is the only key you have to touch.
+        prompt.panelOpened()
         schedule(Config.visibleRefresh)
         overlay?.show()
     }
@@ -154,8 +196,41 @@ final class AppController: ObservableObject {
     func hidePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
+        prompt.panelClosed()
         overlay?.hide()
         schedule(Config.idlePollActive)
+    }
+
+    /// Return in the prompt field: send it. Returns whether there was anything to send, so a
+    /// Return on an empty field falls through to whatever else wants it.
+    func submitPrompt() -> Bool {
+        guard isPanelVisible else { return false }
+        return prompt.submit()
+    }
+
+    /// Esc, while the panel is up. A half-written prompt is thrown away first — the panel only
+    /// closes on an Esc that has nothing else to undo, so backing out of a sentence does not
+    /// also take the fleet off screen.
+    func escape() {
+        guard isPanelVisible else { return }
+        if prompt.escape() { return }
+        hidePanel()
+    }
+
+    /// Every project name the classifier may match against: the directories under the project
+    /// root, plus wherever sessions are actually running — a session outside the root is still
+    /// a project you can name out loud.
+    private func projectNames() -> [String] {
+        let listed = (try? FileManager.default.contentsOfDirectory(atPath: Config.projectRoot))
+            ?? []
+        var isDir: ObjCBool = false
+        let dirs = listed.filter { name in
+            guard !name.hasPrefix(".") else { return false }
+            let path = (Config.projectRoot as NSString).appendingPathComponent(name)
+            return FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+                && isDir.boolValue
+        }
+        return Array(Set(dirs + sessions.map(\.dirName))).sorted()
     }
 
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately
@@ -163,6 +238,7 @@ final class AppController: ObservableObject {
     func activate(_ session: Session) {
         if isPanelVisible {
             isPanelVisible = false
+            prompt.panelClosed()
             overlay?.dismissForHandoff()
             schedule(Config.idlePollActive)
         }
@@ -195,6 +271,43 @@ final class AppController: ObservableObject {
                 }
             }
         }
+    }
+}
+
+/// Whether something on screen is being watched rather than worked on.
+///
+/// Idle time alone cannot tell a finished day from a film: both are minutes without a
+/// keystroke. The difference is that anything playing video asks macOS to keep the display
+/// awake, so the assertion is the signal — and it is the app's own claim about what it is
+/// doing, not a guess from process names or window titles.
+///
+/// Deliberately typed on *display* sleep and not system sleep: `caffeinate`, a long download
+/// and a background build all keep the machine awake without anyone looking at it, and those
+/// are exactly the moments the panel is welcome. Audio-only playback lands the same way — the
+/// panel is silent, so a podcast is no reason to suppress it.
+enum ScreenWatcher {
+
+    private static let displayTypes: Set<String> = [
+        kIOPMAssertionTypeNoDisplaySleep as String,             // "NoDisplaySleepAssertion"
+        kIOPMAssertionTypePreventUserIdleDisplaySleep as String,
+    ]
+
+    /// The assertion's own name when something is holding the display awake — Firefox calls
+    /// its one "video-playing" — or nil when nothing is.
+    static func holdingDisplayAwake() -> String? {
+        var byProcess: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsByProcess(&byProcess) == kIOReturnSuccess,
+              let dict = byProcess?.takeRetainedValue() as? [NSNumber: [[String: Any]]] else {
+            return nil
+        }
+        for (_, assertions) in dict {
+            for assertion in assertions {
+                guard let type = assertion[kIOPMAssertionTypeKey as String] as? String,
+                      displayTypes.contains(type) else { continue }
+                return assertion[kIOPMAssertionNameKey as String] as? String ?? type
+            }
+        }
+        return nil
     }
 }
 

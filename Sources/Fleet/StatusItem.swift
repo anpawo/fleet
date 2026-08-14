@@ -119,6 +119,15 @@ final class StatusItemController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Show Panel", action: #selector(showPanel), keyEquivalent: "")
             .target = self
+
+        // Only offered while it is missing. Installed, it has nothing to say and no reason to
+        // sit in the menu — and without it the dot beside the plane is a guess, which is worth
+        // one line of menu to fix.
+        if !Hooks.isInstalled {
+            menu.addItem(withTitle: "Install Session-State Hooks…",
+                         action: #selector(installHooks), keyEquivalent: "").target = self
+        }
+
         menu.addItem(.separator())
         // "until login" is not hedging: the LaunchAgent has KeepAlive set, so a plain
         // terminate would have launchd start us again a second later.
@@ -139,6 +148,38 @@ final class StatusItemController {
 
     @objc private func showPanel() {
         controller.forceShow(announceEmpty: true)
+    }
+
+    /// Asks first, because this writes to a file the user owns and Fleet did not create.
+    @objc private func installHooks() {
+        NSApp.activate(ignoringOtherApps: true)
+        let ask = NSAlert()
+        ask.messageText = "Let Claude Code report what each session is doing?"
+        ask.informativeText = """
+            Fleet currently works out a session's state by reading its transcript, which it \
+            sometimes gets wrong — a session that has finished can show as busy.
+
+            This adds hooks to ~/.claude/settings.json so Claude Code tells Fleet directly when \
+            a turn ends, when it needs you, and when it is working. Your existing settings are \
+            kept, and a copy is saved beside them.
+            """
+        ask.addButton(withTitle: "Install")
+        ask.addButton(withTitle: "Cancel")
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+
+        let done = NSAlert()
+        do {
+            let path = try Hooks.install()
+            done.messageText = "Installed"
+            done.informativeText = "Hooks added to \(path). Sessions already running keep the "
+                + "old inferred state until they are restarted."
+        } catch {
+            done.alertStyle = .warning
+            done.messageText = "Could not install the hooks"
+            done.informativeText = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+        }
+        done.runModal()
     }
 
     /// `NSApp.terminate` alone is not enough when we were started by the LaunchAgent: KeepAlive

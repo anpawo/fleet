@@ -37,12 +37,12 @@ final class SessionRegistry {
             sessions.append(Session(
                 proc: proc,
                 transcript: info,
-                state: derivedState(info: info, cpu: cpu, now: now),
+                state: state(for: bindings[proc.pid], info: info, cpu: cpu, now: now),
                 cpuPercent: cpu
             ))
         }
 
-        // Sessions needing attention first; then stable by pid so tiles don't shuffle.
+        // Ready first — see `SessionState.sortRank` — then stable by pid so tiles don't shuffle.
         return sessions.sorted {
             $0.state.sortRank != $1.state.sortRank
                 ? $0.state.sortRank < $1.state.sortRank
@@ -85,21 +85,41 @@ final class SessionRegistry {
             }
 
             // Pass 2: a fresh session writes its transcript shortly after launch, so bind each
-            // process to the unclaimed transcript created soonest *after* it started.
-            for proc in unresolved.sorted(by: { $0.startedAt < $1.startedAt }) {
-                let candidate = files
-                    .filter { !claimed.contains($0.path) }
-                    .filter { $0.birth >= proc.proc_startMinusGrace }
-                    .min { $0.birth < $1.birth }
-
-                if let match = candidate {
-                    bindings[proc.pid] = match.path
-                    claimed.insert(match.path)
-                    continue
+            // process to a transcript created just after it started.
+            //
+            // Matched globally on the smallest gap, not greedily in launch order. The file is
+            // created on the *first prompt*, not at launch, and that ordering does not have to
+            // follow the launch ordering: start A, start B, prompt B, prompt A, and walking the
+            // processes oldest-first hands A the file B just created — the two tiles in that
+            // directory then swap conversations, and clicking one raises the other's terminal.
+            // Scoring every pair and taking the closest first is immune to that ordering.
+            var scored: [(pid: pid_t, path: String, gap: TimeInterval)] = []
+            for proc in unresolved {
+                for file in files where !claimed.contains(file.path)
+                    && file.birth >= proc.proc_startMinusGrace {
+                    scored.append((proc.pid, file.path,
+                                   file.birth.timeIntervalSince(proc.startedAt)))
                 }
+            }
+            // Tie-broken on pid then path, so the assignment never depends on scan order.
+            scored.sort {
+                if $0.gap != $1.gap { return $0.gap < $1.gap }
+                if $0.pid != $1.pid { return $0.pid < $1.pid }
+                return $0.path < $1.path
+            }
 
-                // Pass 3: `--continue` reopens an older transcript, so fall back to the most
-                // recently active unclaimed file.
+            var matched = Set<pid_t>()
+            for pair in scored
+            where !matched.contains(pair.pid) && !claimed.contains(pair.path) {
+                bindings[pair.pid] = pair.path
+                claimed.insert(pair.path)
+                matched.insert(pair.pid)
+            }
+
+            // Pass 3: `--continue` reopens an older transcript — created before the process, so
+            // pass 2 never considers it. Fall back to the most recently active unclaimed file.
+            for proc in unresolved.sorted(by: { $0.startedAt < $1.startedAt })
+            where !matched.contains(proc.pid) {
                 if let fallback = files.first(where: { !claimed.contains($0.path) }),
                    fallback.mtime > proc.startedAt {
                     bindings[proc.pid] = fallback.path
@@ -171,6 +191,30 @@ final class SessionRegistry {
         return burned / elapsed * 100
     }
 
+    /// What a session is doing, from the hooks when they have spoken and from the transcript
+    /// when they have not.
+    ///
+    /// The two sources are ranked by recency, and the hook wins a tie. A hook fires *on* the
+    /// transition, so it is the better evidence for as long as nothing has happened since —
+    /// which is exactly the case the transcript reads wrong. Once the transcript moves again
+    /// after the last hook event, the file is the newer news and the inference takes over: the
+    /// hooks may not be installed at all, may have been installed after this session started,
+    /// or may have missed an event, and none of those should freeze a tile on a stale colour.
+    ///
+    /// The two-second grace is for the writes that trail a hook by a moment — Claude Code
+    /// stamps `ai-title` and `last-prompt` into the file just after a turn ends, and those must
+    /// not count as the session getting back to work.
+    private func state(for transcriptPath: String?, info: TranscriptInfo?,
+                       cpu: Double, now: Date) -> SessionState {
+        let heuristic = derivedState(info: info, cpu: cpu, now: now)
+        guard let transcriptPath else { return heuristic }
+        let sessionID = ((transcriptPath as NSString).lastPathComponent as NSString)
+            .deletingPathExtension
+        guard let hook = Hooks.record(sessionID: sessionID) else { return heuristic }
+        if let said = info?.lastWord, said > hook.at.addingTimeInterval(2) { return heuristic }
+        return hook.state
+    }
+
     /// Red / green / blue, from the transcript tail plus CPU.
     ///
     /// A pending tool call means Claude asked to do something and no result came back. That is
@@ -189,20 +233,54 @@ final class SessionRegistry {
             // Nothing pending, but the last word was yours — a prompt Claude has not started
             // answering, or a tool result it has not responded to yet. Identical to a finished
             // turn in the transcript, and the opposite of ready.
-            if info.turnOpen { return .running }
+            if info.turnOpen {
+                // …with one exception, and it is the case this whole branch gets wrong most
+                // often: a multiple-choice question waiting on the screen.
+                //
+                // `AskUserQuestion` is not in the transcript while it is pending. Claude Code
+                // holds that assistant message back and flushes it only once the question has
+                // been answered — the entry then lands carrying the timestamp it was generated
+                // at, which is why it *looks* like it was there all along when you read the
+                // file afterwards. Live, there is nothing to match on: the last thing written
+                // is the tool result from the step before, and the session sits there owing a
+                // turn it has already delivered to the terminal.
+                //
+                // What that leaves is the silence. A model that is genuinely still working
+                // writes a block every few seconds and burns CPU rendering it; a question on
+                // the screen does neither. So an owed turn that has gone quiet on both counts
+                // is read as waiting for you.
+                if cpu < Config.busyCPUPercent,
+                   now.timeIntervalSince(info.lastWord) >= Config.silentTurnStaleAfter {
+                    return .awaitingAnswer
+                }
+                return .running
+            }
             // Turn finished cleanly: waiting for a new prompt.
             return .ready
         }
 
-        // Tools that exist purely to ask the user something are unambiguous.
+        // Tools that exist purely to ask the user something are unambiguous. Only reachable
+        // once the answer has been given — kept because `ExitPlanMode` does show up pending,
+        // and because a flushed `AskUserQuestion` costs nothing to keep matching.
         let asking: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
         if info.pendingToolNames.contains(where: { asking.contains($0) }) {
             return .awaitingAnswer
         }
 
+        // A sub-agent writes to its own transcript, not this one, and burns its tokens on
+        // Anthropic's machines rather than this CPU. So a session waiting on one goes quiet on
+        // every signal below, trips the stale-pending test, and claims to need you — while the
+        // truth is that it is busy and there is nothing for you to do. The sub-agent's own file
+        // is the missing signal.
+        if info.subagents.contains(where: {
+            now.timeIntervalSince($0.lastActivity) < Config.pendingStaleAfter
+        }) {
+            return .running
+        }
+
         if cpu >= Config.busyCPUPercent { return .running }
 
-        let quietFor = now.timeIntervalSince(info.lastActivity)
+        let quietFor = now.timeIntervalSince(info.lastWord)
         if quietFor < Config.pendingStaleAfter { return .running }
 
         // Stale, silent, and a tool is outstanding. In bypass mode nothing can block on

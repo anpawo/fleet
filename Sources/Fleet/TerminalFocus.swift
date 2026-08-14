@@ -51,6 +51,16 @@ enum TerminalFocus {
         }
         let ok = host.activate(options: [.activateAllWindows])
         NSLog("Fleet: activated \(bundleID) for pid \(session.proc.pid) -> \(ok)")
+
+        // Activation only promises the app is frontmost. If its window is on another desktop —
+        // or on another display running its own Spaces, which is where this was found — you are
+        // not taken there, and the click looks like it did nothing at all. Raising the window
+        // is what crosses that gap. It runs after activation on purpose: the focused window is
+        // how the right one is identified, and until the app is frontmost that is somebody
+        // else's window.
+        if Desktop.accessibilityTrusted() {
+            Desktop.raise(pid: host.processIdentifier)
+        }
         return ok
     }
 
