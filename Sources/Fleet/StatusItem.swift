@@ -124,7 +124,8 @@ final class StatusItemController {
         // sit in the menu — and without it the dot beside the plane is a guess, which is worth
         // one line of menu to fix.
         if !Hooks.isInstalled {
-            menu.addItem(withTitle: "Install Session-State Hooks…",
+            menu.addItem(withTitle: Hooks.isOutdated ? "Update Session-State Hooks…"
+                                                     : "Install Session-State Hooks…",
                          action: #selector(installHooks), keyEquivalent: "").target = self
         }
 

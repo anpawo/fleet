@@ -55,6 +55,10 @@ final class SessionRegistry {
     /// Several sessions frequently share one working directory, so the directory alone can't
     /// identify a transcript. Resolution runs in three passes, most reliable first.
     private func bind(_ procs: [ClaudeProcess]) {
+        // Told, not guessed — and not second-guessed either: these are left alone below, since
+        // a hook-named file need not even live in the directory the process reports.
+        let told = bindFromHooks(procs)
+
         // Group by working directory — transcripts are stored per directory.
         var byDir: [String: [ClaudeProcess]] = [:]
         for p in procs { byDir[p.cwd, default: []].append(p) }
@@ -66,7 +70,7 @@ final class SessionRegistry {
             var claimed = Set(bindings.filter { live($0.key, in: group) }.map(\.value))
             var unresolved: [ClaudeProcess] = []
 
-            for proc in group {
+            for proc in group where !told.contains(proc.pid) {
                 // Already bound and still valid.
                 if let existing = bindings[proc.pid],
                    files.contains(where: { $0.path == existing }) {
@@ -131,6 +135,51 @@ final class SessionRegistry {
         }
 
         rescueUnbound(procs)
+    }
+
+    /// Pass 0: the pairing the hooks name outright, which outranks every guess below.
+    ///
+    /// Every other pass infers the pairing from where a process is and when its file appeared,
+    /// and then keeps it, because a session's transcript does not normally move. It does move:
+    /// `/clear` and a compaction both start a new file in the same process. The binding then
+    /// points at a conversation that ended, and a finished conversation reads as a finished
+    /// session — the tile goes green and stays green while the session works, which is the one
+    /// failure the colour is supposed to prevent.
+    ///
+    /// A hook fires inside the session, is handed the file it is writing, and runs as a child
+    /// of the session itself — so between the payload and its own ancestry it knows both halves
+    /// of the pairing. The hook process is long gone by the time Fleet reads the record, but the
+    /// pid it names is the session's, and that one is still there.
+    @discardableResult
+    private func bindFromHooks(_ procs: [ClaudeProcess]) -> Set<pid_t> {
+        let live = Set(procs.map(\.pid))
+        var newest: [pid_t: (path: String, at: Date)] = [:]
+        for (_, record) in Hooks.records() {
+            guard let path = record.transcriptPath,
+                  let pid = record.pids.first(where: { live.contains($0) }),
+                  FileManager.default.fileExists(atPath: path) else { continue }
+            if let current = newest[pid], current.at >= record.at { continue }
+            newest[pid] = (path, record.at)
+        }
+        guard !newest.isEmpty else { return [] }
+
+        var bound: Set<pid_t> = []
+        for proc in procs {
+            guard let match = newest[proc.pid],
+                  // A record older than the process itself came from whatever held this pid
+                  // before — the session it names is not this one.
+                  match.at >= proc.proc_startMinusGrace else { continue }
+            // The file can only belong to one session, and it now belongs to this one.
+            for (pid, path) in bindings where path == match.path && pid != proc.pid {
+                bindings[pid] = nil
+            }
+            if bindings[proc.pid] != match.path {
+                NSLog("Fleet: hooks bind pid \(proc.pid) -> \(match.path)")
+            }
+            bindings[proc.pid] = match.path
+            bound.insert(proc.pid)
+        }
+        return bound
     }
 
     /// Pass 4, for sessions whose transcript is not filed under their working directory at all.

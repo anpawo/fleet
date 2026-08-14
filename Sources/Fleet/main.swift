@@ -132,7 +132,10 @@ if CommandLine.arguments.contains("--scan") {
         }
         print(String(format: "idle: %.0fs (threshold %.0fs)",
                      IdleWatcher.idleSeconds(), Config.idleThreshold))
-        if !Hooks.isInstalled {
+        if Hooks.isOutdated {
+            print("state hooks are from an older Fleet — sessions are still paired to their "
+                  + "transcripts by guesswork. Run `fleet --install-hooks`.")
+        } else if !Hooks.isInstalled {
             print("state hooks not installed — colours are inferred from the transcripts. "
                   + "Run `fleet --install-hooks`.")
         }

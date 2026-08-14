@@ -37,12 +37,35 @@ enum Hooks {
         /// When the hook fired, which is what decides whether it or the transcript is the more
         /// recent evidence.
         var at: Date
+        /// The hook's own ancestry, nearest first, which is what ties this record to a live
+        /// process — see `SessionRegistry.bindFromHooks`. Empty for records written by a hook
+        /// script from before Fleet recorded it.
+        var pids: [pid_t]
+        /// The transcript Claude Code was writing when the hook fired. The session id names a
+        /// conversation, but only this says which *file* it is in, and `/clear` moves it.
+        var transcriptPath: String?
     }
 
     /// What the hooks last said about `sessionID` — the transcript's file name without its
     /// extension, which is the same id Claude Code passes to a hook.
     static func record(sessionID: String) -> Record? {
-        let path = (stateDirectory as NSString).appendingPathComponent(sessionID + ".json")
+        record(atPath: (stateDirectory as NSString).appendingPathComponent(sessionID + ".json"))
+    }
+
+    /// Every session the hooks currently have something to say about, keyed by session id.
+    static func records() -> [String: Record] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: stateDirectory)
+        else { return [:] }
+        var out: [String: Record] = [:]
+        for name in names where name.hasSuffix(".json") {
+            let path = (stateDirectory as NSString).appendingPathComponent(name)
+            guard let record = record(atPath: path) else { continue }
+            out[(name as NSString).deletingPathExtension] = record
+        }
+        return out
+    }
+
+    private static func record(atPath path: String) -> Record? {
         guard let data = FileManager.default.contents(atPath: path),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let name = obj["state"] as? String,
@@ -55,13 +78,37 @@ enum Hooks {
         case "running": state = .running
         default: return nil
         }
-        return Record(state: state, at: Date(timeIntervalSince1970: at))
+        let pids = ((obj["pids"] as? String) ?? "").split(separator: ",").compactMap { pid_t($0) }
+        let transcript = (obj["transcript"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return Record(state: state, at: Date(timeIntervalSince1970: at),
+                      pids: pids, transcriptPath: transcript)
     }
+
+    /// Bumped whenever the script starts recording something Fleet relies on. An older script
+    /// still works — every field is optional on the reading side — but it costs the session
+    /// pairing the hooks are there to make exact, so it counts as not installed and the menu
+    /// offers to bring it up to date.
+    static let version = 2
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
-    static var isInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: scriptPath) && settingsMention()
+    static var isInstalled: Bool { installedVersion == version && settingsMention() }
+
+    /// Installed, but written by an older Fleet: worth a different word in the menu.
+    static var isOutdated: Bool {
+        guard let installed = installedVersion else { return false }
+        return installed != version
+    }
+
+    private static var installedVersion: Int? {
+        guard FileManager.default.isExecutableFile(atPath: scriptPath),
+              let text = try? String(contentsOfFile: scriptPath, encoding: .utf8)
+        else { return nil }
+        // Absent from the scripts written before versioning existed, which are version 1.
+        guard let line = text.split(separator: "\n").first(where: {
+            $0.hasPrefix("# fleet-hook-version:")
+        }) else { return 1 }
+        return Int(line.dropFirst("# fleet-hook-version:".count).trimmingCharacters(in: .whitespaces))
     }
 
     private static func settingsMention() -> Bool {
@@ -204,6 +251,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
+    # fleet-hook-version: 2
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -223,6 +271,28 @@ enum Hooks {
         exit 0
     fi
 
+    # Which transcript this session is writing, and which process is writing it.
+    #
+    # Fleet has to pair a live process with a file, and neither side says so outright: it
+    # matches on the working directory and on which transcript appeared just after the process
+    # started. That pairing survives until the session changes files underneath it — `/clear`
+    # and a compaction both start a new transcript in the same process — and from then on the
+    # panel reads a conversation that ended, which always looks finished.
+    #
+    # The hook is the one place both facts are known at once: the payload names the file, and
+    # the session is this script's own parent. It is usually the immediate parent, but a hook
+    # invoked through a wrapper shell would sit one further down, so a short ancestry is
+    # recorded and Fleet takes the first entry that is a session it can see. Two levels up is
+    # as far as this is worth one extra `ps`.
+    path=$(printf '%s' "$input" | sed -n \\
+        's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+    pids="$PPID"
+    up=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
+    case "${up:-}" in
+        '' | 0 | 1 | *[!0-9]* ) ;;
+        * ) pids="$pids,$up" ;;
+    esac
+
     # A Notification is usually a permission prompt — the session is blocked on you. The other
     # one it fires for is "you have been idle a while", which means the opposite: the turn is
     # long over and it is waiting for a new prompt.
@@ -234,7 +304,8 @@ enum Hooks {
 
     mkdir -p "$dir"
     tmp="$dir/$sid.json.$$"
-    printf '{"state":"%s","at":%s}\\n' "$state" "$(date +%s)" > "$tmp" && mv "$tmp" "$dir/$sid.json"
+    printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
+        "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
     exit 0
 
     """

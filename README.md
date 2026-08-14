@@ -234,7 +234,17 @@ from `PROC_PIDTBSDINFO`, and CPU from `proc_pid_rusage` sampled across refreshes
 
 **Matching a session to its transcript.** Claude Code stores transcripts under
 `~/.claude/projects/<mangled-cwd>/<session-id>.jsonl`, but several sessions often share one
-working directory, so the directory alone is ambiguous. Resolution runs in three passes:
+working directory, so the directory alone is ambiguous. Resolution starts with the one source
+that doesn't have to guess:
+
+0. The state hooks below run *inside* the session — the payload names the transcript, and the
+   hook process is a child of the session, so its parent pid names the process. Fleet reads the
+   pair out of the state file and skips every pass below for that session. This is what survives
+   `/clear` and a compaction, both of which start a **new** transcript in the same process:
+   without it the binding stays on the file that was abandoned, and a conversation that ended
+   reads as a session that has finished — a green tile on a session that is working.
+
+The rest are inferences, for sessions the hooks haven't spoken for yet:
 
 1. `claude --resume <id>` names its transcript outright — read from the process's argv via
    `KERN_PROCARGS2`.
@@ -249,7 +259,7 @@ working directory, so the directory alone is ambiguous. Resolution runs in three
    last few minutes across all projects and take the one whose recorded cwd is this process's.
    It only runs while some session is unmatched, at most every 5 seconds.
 
-Bindings are sticky once resolved. A session you've launched but not yet prompted has no
+Inferred bindings are sticky once resolved; a hook can always overrule them. A session you've launched but not yet prompted has no
 transcript at all, and shows up as a ready tile with just its directory — unless it's burning
 CPU, in which case that alone marks it as working.
 
@@ -258,10 +268,12 @@ transitions Fleet cares about, so it can be asked instead of read. `fleet --inst
 a small `sh` script in `~/.claude/fleet/` and points `~/.claude/settings.json` at it: `Stop` means the turn is over (green),
 `Notification` means the session is blocked on you (blue — unless the notification is the
 "you've been idle a while" one, which means the opposite), and `UserPromptSubmit` and the tool
-hooks mean it's working (red). Each fires once, writes `{"state":…,"at":…}` to
-`~/.claude/fleet/state/<session-id>.json` and exits; Fleet reads that file. Your existing hooks
+hooks mean it's working (red). Each fires once, writes
+`{"state":…,"at":…,"pids":…,"transcript":…}` to `~/.claude/fleet/state/<session-id>.json` and
+exits; Fleet reads that file — for the colour, and for the pairing above. Your existing hooks
 and settings are kept, a copy of the file is saved beside it, and `--uninstall-hooks` takes only
-Fleet's entries back out.
+Fleet's entries back out. The script is versioned: one written by an older Fleet counts as not
+installed, so `fleet --scan` says so and the menu offers to update it.
 
 That is the answer, not an estimate, and it is what fixed the failure that mattered most: a
 session that had *finished* showing red. You don't go back to a red tile, so a wrong colour there
