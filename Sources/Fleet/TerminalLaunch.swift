@@ -19,8 +19,19 @@ enum TerminalLaunch {
         // An empty prompt means "just open a session here" — `claude ''` would be handed an
         // empty first turn instead, which is not the same request.
         let start = prompt.isEmpty ? "claude" : "claude \(shellQuote(prompt))"
-        let command = "cd \(shellQuote(directory)) && \(start)"
+        return open(command: "cd \(shellQuote(directory)) && \(start)")
+    }
 
+    /// Opens a terminal in `directory` with nothing running in it — the panel's `+`.
+    ///
+    /// A bare shell rather than a session: the button is there for the work you have not
+    /// decided on yet, and `claude` is one word away once you are in the window.
+    @discardableResult
+    static func openTerminal(in directory: String) -> Bool {
+        open(command: "cd \(shellQuote(directory))")
+    }
+
+    private static func open(command: String) -> Bool {
         let iTerm = preferITerm()
         let bundleID = iTerm ? "com.googlecode.iterm2" : "com.apple.Terminal"
         let script = iTerm ? itermScript(command) : terminalScript(command)

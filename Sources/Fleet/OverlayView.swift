@@ -110,7 +110,10 @@ struct OverlayView: View {
     private func fleet(scrolling: Bool) -> some View {
         VStack(spacing: 18) {
             grid
-            PromptBar(prompt: controller.prompt)
+            HStack(spacing: 12) {
+                PromptBar(prompt: controller.prompt)
+                NewDesktopButton { controller.newDesktop() }
+            }
         }
         .padding(.bottom, scrolling ? 44 : 20)
     }
@@ -211,6 +214,32 @@ struct OverlayView: View {
                 .tracking(0.6)
                 .foregroundStyle(.white.opacity(0.55))
         }
+    }
+}
+
+/// The `+` beside the prompt field: an empty terminal in the project root, on a desktop of its
+/// own. The counterpart to typing — one is for work you can name, this one is for work you
+/// cannot yet.
+struct NewDesktopButton: View {
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private static let diameter: CGFloat = 36
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
+                .frame(width: Self.diameter, height: Self.diameter)
+                .background(Circle().fill(.white.opacity(hovering ? 0.13 : 0.05)))
+                .overlay(Circle().strokeBorder(.white.opacity(hovering ? 0.45 : 0.2),
+                                               lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("New desktop with a terminal in \((Config.projectRoot as NSString).lastPathComponent)")
     }
 }
 

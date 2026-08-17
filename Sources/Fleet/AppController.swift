@@ -236,13 +236,23 @@ final class AppController: ObservableObject {
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately
     /// not `hidePanel()` — see `dismissForHandoff`.
     func activate(_ session: Session) {
-        if isPanelVisible {
-            isPanelVisible = false
-            prompt.panelClosed()
-            overlay?.dismissForHandoff()
-            schedule(Config.idlePollActive)
-        }
+        dismissForHandoff()
         TerminalFocus.focus(session: session)
+    }
+
+    /// The panel's `+`: a terminal in the project root, on a desktop of its own. Same handoff
+    /// as a tile click — you end up on another desktop either way, so the panel goes first.
+    func newDesktop() {
+        dismissForHandoff()
+        TerminalLaunch.openTerminal(in: Config.projectRoot)
+    }
+
+    private func dismissForHandoff() {
+        guard isPanelVisible else { return }
+        isPanelVisible = false
+        prompt.panelClosed()
+        overlay?.dismissForHandoff()
+        schedule(Config.idlePollActive)
     }
 
     // MARK: - Sleep
