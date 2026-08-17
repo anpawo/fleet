@@ -217,9 +217,8 @@ struct OverlayView: View {
     }
 }
 
-/// The `+` beside the prompt field: an empty terminal in the project root, on a desktop of its
-/// own. The counterpart to typing — one is for work you can name, this one is for work you
-/// cannot yet.
+/// The `+` beside the prompt field: one more desktop, empty and waiting. The counterpart to
+/// typing — one is for work you can name, this one is for making room for work you cannot yet.
 struct NewDesktopButton: View {
     let action: () -> Void
 
@@ -239,7 +238,7 @@ struct NewDesktopButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("New desktop with a terminal in \((Config.projectRoot as NSString).lastPathComponent)")
+        .help("Add a desktop")
     }
 }
 

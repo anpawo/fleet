@@ -185,6 +185,17 @@ if let i = CommandLine.arguments.firstIndex(of: "--windows") {
     }
 }
 
+// `--new-desktop` does what the panel's `+` does: one more Space, not switched to. Worth a flag
+// of its own — it drives Mission Control through the Dock's accessibility tree, which is the
+// part that a macOS update can move under us.
+if CommandLine.arguments.contains("--new-desktop") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        print("new desktop: \(Spaces.addDesktop() ? "ok" : "failed")")
+        exit(0)
+    }
+}
+
 // `--start <directory> ["<prompt>"]` opens a session the way the panel does — new window, its
 // own desktop — without going through the classifier. The placement is the part that breaks,
 // and typing a sentence into the panel every time is a poor way to test a window server.

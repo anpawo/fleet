@@ -240,11 +240,11 @@ final class AppController: ObservableObject {
         TerminalFocus.focus(session: session)
     }
 
-    /// The panel's `+`: a terminal in the project root, on a desktop of its own. Same handoff
-    /// as a tile click — you end up on another desktop either way, so the panel goes first.
+    /// The panel's `+`: one more desktop, left empty and not switched to. The panel goes first
+    /// — Mission Control has to come up for the click, and it would open over the panel.
     func newDesktop() {
         dismissForHandoff()
-        TerminalLaunch.openTerminal(in: Config.projectRoot)
+        Spaces.addDesktop()
     }
 
     private func dismissForHandoff() {
