@@ -30,12 +30,6 @@ enum Desktop {
         }
     }
 
-    /// The windows an app has open on the desktop you are on, as a "before" to compare against.
-    ///
-    /// Only ever the active desktop: `AXWindows` does not list windows on other Spaces. That is
-    /// a limitation everywhere else in this file and the whole point here — a window created
-    /// while you watch appears on the desktop you are on, so anything already in this list is,
-    /// by definition, not the one about to be made.
     /// Every running instance of `bundleID`, not the first one found.
     ///
     /// Two copies of the same terminal run at once more often than you would think — a second
@@ -49,6 +43,13 @@ enum Desktop {
             .map { AXUIElementCreateApplication($0.processIdentifier) }
     }
 
+    /// Every window every instance of `bundleID` has, wherever macOS has put it — also the
+    /// "before" the new-window search compares against.
+    ///
+    /// Across desktops, not just this one. `AXWindows` was long believed here to list only the
+    /// active desktop's windows; it does not, which is what makes raising across a Space work
+    /// at all. What a window created while you watch cannot be is a member of a list taken
+    /// beforehand, and that, rather than the desktop it sits on, is what tells it apart.
     static func windows(ofBundle bundleID: String) -> [AXUIElement] {
         instances(of: bundleID).flatMap { windows(of: $0) }
     }
@@ -131,17 +132,29 @@ enum Desktop {
         Task { @MainActor in
             let deadline = Date().addingTimeInterval(timeout)
             while Date() < deadline {
-                if let window = focusedWindow(of: element), act(window) { return }
+                if let window = target(of: element), act(window) { return }
                 try? await Task.sleep(for: .milliseconds(60))
             }
             NSLog("Fleet: could not \(what) the window of pid \(pid)")
         }
     }
 
-    /// The window to act on is the focused one: a terminal opens its new window frontmost, and
-    /// activating an app focuses the window holding the tab we just selected. `AXWindows` is no
-    /// help in choosing it — it only ever lists windows on the *active* desktop, so it is empty
-    /// in exactly the case where picking the right window would matter.
+    /// The window to act on: the focused one, and failing that the app's first.
+    ///
+    /// The focused window is the better answer when there is one — a terminal opens its new
+    /// window frontmost, and activating an app focuses the window holding the tab we just
+    /// selected. But an instance whose only window sits on another desktop has *no* focused
+    /// window: `AXFocusedWindow` answers `kAXErrorNoValue`, and asking for it alone is what
+    /// made clicking a tile do nothing at all — the one case the whole raise exists for.
+    ///
+    /// `AXWindows` does list that window, contrary to the belief this was written on. What it
+    /// leaves out is windows of *other* instances, which is not a problem here: the pid is the
+    /// one hosting the session, and its first window is the one `TerminalFocus` has just moved
+    /// to the front of that instance's ordering.
+    private static func target(of app: AXUIElement) -> AXUIElement? {
+        focusedWindow(of: app) ?? windows(of: app).first
+    }
+
     private static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString,

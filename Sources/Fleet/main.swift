@@ -258,11 +258,16 @@ if CommandLine.arguments.contains("--ax-probe") {
     MainActor.assumeIsolated {
         _ = NSApplication.shared
         print("trusted: \(AXIsProcessTrusted())")
-        guard let term = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == "com.apple.Terminal"
+        let index = CommandLine.arguments.firstIndex(of: "--ax-probe")!
+        let wanted = index + 1 < CommandLine.arguments.count
+            ? pid_t(CommandLine.arguments[index + 1]) : nil
+        guard let term = NSWorkspace.shared.runningApplications.first(where: { app in
+            if let wanted { return app.processIdentifier == wanted }
+            return app.bundleIdentifier == "com.apple.Terminal"
         }) else { print("Terminal not running"); exit(1) }
 
         let app = AXUIElementCreateApplication(term.processIdentifier)
+        print("probing pid \(term.processIdentifier) (\(term.bundleIdentifier ?? "?"))")
 
         var names: CFArray?
         let nameErr = AXUIElementCopyAttributeNames(app, &names)
@@ -289,6 +294,10 @@ if CommandLine.arguments.contains("--ax-probe") {
         if windows.isEmpty, let focused {
             windows = [focused as! AXUIElement]
         }
+
+        var main: CFTypeRef?
+        let mErr = AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &main)
+        print("AXMainWindow: err=\(mErr.rawValue) present=\(main != nil)")
 
         for (n, window) in windows.enumerated() {
             var title: CFTypeRef?
