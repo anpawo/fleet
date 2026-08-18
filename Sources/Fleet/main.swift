@@ -185,13 +185,19 @@ if let i = CommandLine.arguments.firstIndex(of: "--windows") {
     }
 }
 
-// `--new-desktop` does what the panel's `+` does: one more Space, not switched to. Worth a flag
-// of its own — it drives Mission Control through the Dock's accessibility tree, which is the
-// part that a macOS update can move under us.
+// `--new-desktop` does what the panel's `+` does: one more Space, switched to, with a terminal
+// in it. Worth a flag of its own — it drives Mission Control through the Dock's accessibility
+// tree, which is the part that a macOS update can move under us. `--bare` makes the Space and
+// leaves it at that, for when only the creation is in question.
 if CommandLine.arguments.contains("--new-desktop") {
     MainActor.assumeIsolated {
         _ = NSApplication.shared
-        print("new desktop: \(Spaces.addDesktop() ? "ok" : "failed")")
+        let bare = CommandLine.arguments.contains("--bare")
+        print("new desktop: \(Spaces.addDesktop(switchingTo: !bare) ? "ok" : "failed")")
+        if !bare {
+            let ok = TerminalLaunch.openTerminal(in: Config.projectRoot)
+            print("terminal: \(ok ? "ok" : "failed")")
+        }
         exit(0)
     }
 }

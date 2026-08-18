@@ -240,11 +240,18 @@ final class AppController: ObservableObject {
         TerminalFocus.focus(session: session)
     }
 
-    /// The panel's `+`: one more desktop, left empty and not switched to. The panel goes first
-    /// — Mission Control has to come up for the click, and it would open over the panel.
+    /// The panel's `+`: one more desktop, gone to, with a terminal waiting in it. The panel
+    /// goes first — Mission Control has to come up for the click, and it would open over the
+    /// panel.
+    ///
+    /// The terminal is opened whether or not the desktop was made. A window on the desktop you
+    /// are already on is a lesser answer than a desktop of its own, but it is the thing that
+    /// was asked for; a `+` that does nothing at all because the Dock's tree moved under us is
+    /// not.
     func newDesktop() {
         dismissForHandoff()
-        Spaces.addDesktop()
+        Spaces.addDesktop(switchingTo: true)
+        TerminalLaunch.openTerminal(in: Config.projectRoot)
     }
 
     private func dismissForHandoff() {

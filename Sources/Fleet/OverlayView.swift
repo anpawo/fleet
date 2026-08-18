@@ -217,8 +217,9 @@ struct OverlayView: View {
     }
 }
 
-/// The `+` beside the prompt field: one more desktop, empty and waiting. The counterpart to
-/// typing — one is for work you can name, this one is for making room for work you cannot yet.
+/// The `+` beside the prompt field: one more desktop, with a terminal open in it. The
+/// counterpart to typing — one is for work you can name, this one is for making room for work
+/// you cannot yet.
 struct NewDesktopButton: View {
     let action: () -> Void
 
@@ -238,7 +239,7 @@ struct NewDesktopButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Add a desktop")
+        .help("New desktop, with a terminal")
     }
 }
 

@@ -19,15 +19,30 @@ enum TerminalLaunch {
         // An empty prompt means "just open a session here" — `claude ''` would be handed an
         // empty first turn instead, which is not the same request.
         let start = prompt.isEmpty ? "claude" : "claude \(shellQuote(prompt))"
-        let command = "cd \(shellQuote(directory)) && \(start)"
+        return open(command: "cd \(shellQuote(directory)) && \(start)",
+                    ownDesktop: Config.openInOwnDesktop)
+    }
 
+    /// Opens a terminal in `directory` with nothing running in it — the panel's `+`.
+    ///
+    /// A bare shell rather than a session: the button is there for the work you have not
+    /// decided on yet, and `claude` is one word away once you are in the window. Never
+    /// fullscreen, whatever `Config.openInOwnDesktop` says — it opens on the desktop `Spaces`
+    /// has just made and gone to, and a window sent fullscreen from there would take a
+    /// *second*, and leave the new one standing empty.
+    @discardableResult
+    static func openTerminal(in directory: String) -> Bool {
+        open(command: "cd \(shellQuote(directory))", ownDesktop: false)
+    }
+
+    private static func open(command: String, ownDesktop: Bool) -> Bool {
         let iTerm = preferITerm()
         let bundleID = iTerm ? "com.googlecode.iterm2" : "com.apple.Terminal"
         let script = iTerm ? itermScript(command) : terminalScript(command)
 
         // Taken before the window exists, so the one that turns up afterwards can be told apart
         // from the ones that were already there.
-        let before = Config.openInOwnDesktop ? Desktop.windows(ofBundle: bundleID) : []
+        let before = ownDesktop ? Desktop.windows(ofBundle: bundleID) : []
 
         var error: NSDictionary?
         guard let apple = NSAppleScript(source: script) else { return false }
@@ -37,7 +52,7 @@ enum TerminalLaunch {
             return false
         }
 
-        if Config.openInOwnDesktop, Desktop.accessibilityTrusted() {
+        if ownDesktop, Desktop.accessibilityTrusted() {
             Desktop.sendNewWindowToOwnDesktop(bundleID: bundleID, notIn: before)
         }
         return true
@@ -53,11 +68,19 @@ enum TerminalLaunch {
 
     // MARK: - Opening the window
 
+    /// The window is made *before* the app is activated, and the order is the whole trick.
+    ///
+    /// Activating a terminal that has no window on the desktop you are on hands macOS a choice,
+    /// and it takes the one nobody wants: it swooshes you off to whichever desktop already has
+    /// one — dragging you back off the brand new desktop the `+` has just put you on, while the
+    /// window it then makes stays behind on the empty one. Making the window first leaves no
+    /// choice to make: there is a window right here, so activating brings that one forward and
+    /// you stay where you are.
     private static func terminalScript(_ command: String) -> String {
         """
         tell application "Terminal"
-            activate
             do script \(appleQuote(command))
+            activate
         end tell
         """
     }
@@ -65,11 +88,11 @@ enum TerminalLaunch {
     private static func itermScript(_ command: String) -> String {
         """
         tell application "iTerm2"
-            activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
                 write text \(appleQuote(command))
             end tell
+            activate
         end tell
         """
     }
