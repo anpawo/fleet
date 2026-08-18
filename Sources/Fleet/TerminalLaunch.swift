@@ -23,16 +23,18 @@ enum TerminalLaunch {
                     ownDesktop: Config.openInOwnDesktop)
     }
 
-    /// Opens a terminal in `directory` with nothing running in it — the panel's `+`.
+    /// Opens a terminal in `directory` with nothing running in it, on a desktop of its own —
+    /// the panel's `+`.
     ///
     /// A bare shell rather than a session: the button is there for the work you have not
-    /// decided on yet, and `claude` is one word away once you are in the window. Never
-    /// fullscreen, whatever `Config.openInOwnDesktop` says — it opens on the desktop `Spaces`
-    /// has just made and gone to, and a window sent fullscreen from there would take a
-    /// *second*, and leave the new one standing empty.
+    /// decided on yet, and `claude` is one word away once you are in the window.
+    ///
+    /// The desktop is always its own, unlike a session's — `Config.openInOwnDesktop` is about
+    /// where a *session* lands, and this button has no meaning at all without a new desktop
+    /// under it.
     @discardableResult
     static func openTerminal(in directory: String) -> Bool {
-        open(command: "cd \(shellQuote(directory))", ownDesktop: false)
+        open(command: "cd \(shellQuote(directory))", ownDesktop: true)
     }
 
     private static func open(command: String, ownDesktop: Bool) -> Bool {

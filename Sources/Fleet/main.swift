@@ -185,19 +185,21 @@ if let i = CommandLine.arguments.firstIndex(of: "--windows") {
     }
 }
 
-// `--new-desktop` does what the panel's `+` does: one more Space, switched to, with a terminal
-// in it. Worth a flag of its own — it drives Mission Control through the Dock's accessibility
-// tree, which is the part that a macOS update can move under us. `--bare` makes the Space and
-// leaves it at that, for when only the creation is in question.
+// `--new-desktop` does what the panel's `+` does: a terminal, on a desktop macOS makes for it.
+// `--spaces-bar` takes the other route instead — Mission Control's own `+`, pressed through the
+// Dock's accessibility tree — which is the only way to a real, empty Space and the part a macOS
+// update can move under us. Worth a flag each: they fail differently.
 if CommandLine.arguments.contains("--new-desktop") {
     MainActor.assumeIsolated {
         _ = NSApplication.shared
-        let bare = CommandLine.arguments.contains("--bare")
-        print("new desktop: \(Spaces.addDesktop(switchingTo: !bare) ? "ok" : "failed")")
-        if !bare {
-            let ok = TerminalLaunch.openTerminal(in: Config.projectRoot)
-            print("terminal: \(ok ? "ok" : "failed")")
+        if CommandLine.arguments.contains("--spaces-bar") {
+            print("new desktop: \(Spaces.addDesktop(switchingTo: true) ? "ok" : "failed")")
+            exit(0)
         }
+        print("terminal: \(TerminalLaunch.openTerminal(in: Config.projectRoot) ? "ok" : "failed")")
+        // The desktop is given asynchronously, by a poll that outlives this line.
+        RunLoop.main.run(until: Date().addingTimeInterval(6))
+        for line in Desktop.describeWindows(ofBundle: "com.apple.Terminal") { print("  \(line)") }
         exit(0)
     }
 }

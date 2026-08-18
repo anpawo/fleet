@@ -240,17 +240,15 @@ final class AppController: ObservableObject {
         TerminalFocus.focus(session: session)
     }
 
-    /// The panel's `+`: one more desktop, gone to, with a terminal waiting in it. The panel
-    /// goes first — Mission Control has to come up for the click, and it would open over the
-    /// panel.
+    /// The panel's `+`: a terminal, on a desktop of its own, gone to. Same handoff as a tile
+    /// click — you end up on another desktop either way, so the panel goes first.
     ///
-    /// The terminal is opened whether or not the desktop was made. A window on the desktop you
-    /// are already on is a lesser answer than a desktop of its own, but it is the thing that
-    /// was asked for; a `+` that does nothing at all because the Dock's tree moved under us is
-    /// not.
+    /// The desktop is macOS's own doing: the window is sent fullscreen, and a fullscreen window
+    /// is given a desktop and taken to it. No Space is created behind the Dock's back and
+    /// nothing is clicked on its behalf — see `Spaces` for why that is the only route the
+    /// window server actually honours.
     func newDesktop() {
         dismissForHandoff()
-        Spaces.addDesktop(switchingTo: true)
         TerminalLaunch.openTerminal(in: Config.projectRoot)
     }
 

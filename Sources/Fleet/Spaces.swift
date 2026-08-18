@@ -3,20 +3,35 @@ import ApplicationServices
 
 /// Making a desktop — a real Space, the one Mission Control's `+` creates.
 ///
-/// There is no API for this, and the private ones are a dead end rather than a shortcut.
-/// `CGSSpaceCreate` still links on macOS 26 (CoreGraphics re-exports the `_CGS*` aliases over
-/// SkyLight's `_SLS*`), but every call returns a space id of 0: mutating the space list is
-/// gated on `com.apple.private.skylight.universal-owner`, which the Dock has and no
-/// third-party signature can be given. Dock's own `createSpaces` XPC message is behind
-/// `com.apple.private.dock.spaces`, and nothing shipping on the machine holds that either.
-/// `CoreDockSetWorkspacesCount` is an eight-byte stub that returns -50 without so much as
-/// contacting the Dock. That is why yabai injects a scripting addition into Dock and calls an
-/// unexported function found by byte-pattern scan — and why it costs a partly disabled SIP.
+/// There is no API for this, and the private ones answer without doing anything, which is
+/// worse than refusing. Measured here on macOS 26, linking SkyLight directly:
+///
+/// - `SLSSpaceCreate` returns a genuine space id (105, on the run this was written from), and
+///   the space it makes is a ghost. It never appears in `SLSCopyManagedDisplaySpaces` — the
+///   Dock's list of what the displays actually hold — so Mission Control has no thumbnail for
+///   it, no window can be sent to it, and nothing can go there. `SLSSpaceSetType` on it fails
+///   outright. Space *membership* is the Dock's, behind
+///   `com.apple.private.skylight.universal-owner`; making the object is not.
+/// - `SLSManagedDisplaySetCurrentSpace` is the one that lies. It returns success, and
+///   `SLSManagedDisplayGetCurrentSpace` then agrees you have moved — while the screen has not
+///   changed and `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` still lists the windows of
+///   the desktop you are standing on. All it moves is bookkeeping the Dock is not party to.
+/// - `CoreDockSetWorkspacesCount` is an eight-byte stub returning -50 without so much as
+///   contacting the Dock, and Dock's own `createSpaces` XPC message is gated on
+///   `com.apple.private.dock.spaces`, which nothing shipping on the machine holds.
+///
+/// That is why yabai injects a scripting addition into the Dock and calls an unexported
+/// function found by byte-pattern scan — and why it costs a partly disabled SIP.
 ///
 /// What is left is to press the button ourselves. Mission Control's Spaces bar lives in the
 /// Dock's accessibility tree, and its `+` is an ordinary `AXButton`. Nothing is faked and no
 /// coordinates are guessed: it is the same press, dispatched by us, under the Accessibility
 /// grant Fleet already needs to raise a terminal across a desktop.
+///
+/// The panel's `+` does not come through here: a fullscreen window gets a desktop from macOS
+/// itself, with no Dock driving at all, which is what `TerminalLaunch.openTerminal` asks for.
+/// This is the route to an *empty* Space, which nothing but `--new-desktop --spaces-bar` wants
+/// today — kept because it is the only one there is, and it is not rediscoverable cheaply.
 @MainActor
 enum Spaces {
 
