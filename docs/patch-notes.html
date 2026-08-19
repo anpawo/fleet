@@ -1,0 +1,655 @@
+<title>Journal de bord Fleet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+  :root {
+    --bg: #eef0f5;
+    --surface: #ffffff;
+    --surface-sunk: #f5f6fa;
+    --ink: #13161f;
+    --ink-soft: #545b6e;
+    --ink-faint: #7d8496;
+    --line: #d7dae3;
+    --line-strong: #bcc2d0;
+    --accent: #38489c;
+    --ok: #1c6b48;
+    --ok-wash: #e2f0e8;
+    --open: #8f5510;
+    --open-wash: #f7ecdb;
+
+    --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1220;
+      --surface: #161a2a;
+      --surface-sunk: #10131f;
+      --ink: #e8eaf3;
+      --ink-soft: #9aa1b7;
+      --ink-faint: #757d95;
+      --line: #262b3e;
+      --line-strong: #363d55;
+      --accent: #93a0f2;
+      --ok: #5ec294;
+      --ok-wash: #14291f;
+      --open: #e0a94a;
+      --open-wash: #2c2213;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1220;
+    --surface: #161a2a;
+    --surface-sunk: #10131f;
+    --ink: #e8eaf3;
+    --ink-soft: #9aa1b7;
+    --ink-faint: #757d95;
+    --line: #262b3e;
+    --line-strong: #363d55;
+    --accent: #93a0f2;
+    --ok: #5ec294;
+    --ok-wash: #14291f;
+    --open: #e0a94a;
+    --open-wash: #2c2213;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 940px; margin: 0 auto; }
+
+  /* ---- masthead ---- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 64px 0 28px;
+    border-bottom: 2px solid var(--line-strong);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(34px, 5vw, 50px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    max-width: 64ch;
+    color: var(--ink-soft);
+    margin: 0;
+    font-size: 17px;
+  }
+
+  /* ---- tally ---- */
+
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 28px 0 0;
+  }
+
+  .tally div {
+    background: var(--surface);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tally dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .tally dd {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tally .is-ok dd { color: var(--ok); }
+  .tally .is-open dd { color: var(--open); }
+
+  /* ---- sections ---- */
+
+  section { margin-top: 56px; }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 10px;
+    margin-bottom: 26px;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  .section-note {
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---- entries ---- */
+
+  .entry {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 22px 24px 24px;
+    margin-bottom: 18px;
+  }
+
+  .entry-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .chip-ok { background: var(--ok-wash); color: var(--ok); border-color: var(--ok); }
+  .chip-open { background: var(--open-wash); color: var(--open); border-color: var(--open); }
+  .chip-where {
+    color: var(--ink-soft);
+    border-color: var(--line-strong);
+    background: var(--surface-sunk);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .chip-sha {
+    color: var(--accent);
+    border-color: var(--line-strong);
+    background: var(--surface-sunk);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+
+  dl.facts {
+    display: grid;
+    grid-template-columns: 108px 1fr;
+    gap: 10px 18px;
+    margin: 0;
+    align-items: baseline;
+  }
+
+  dl.facts dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-top: 2px;
+  }
+
+  dl.facts dd {
+    margin: 0;
+    max-width: 68ch;
+  }
+
+  @media (max-width: 620px) {
+    dl.facts { grid-template-columns: 1fr; gap: 4px 0; }
+    dl.facts dd { margin-bottom: 10px; }
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    padding: 1px 4px;
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.65;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    margin: 14px 0 0;
+    overflow-x: auto;
+    color: var(--ink-soft);
+  }
+
+  pre b { color: var(--ink); font-weight: 500; }
+
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- footer ---- */
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 2px solid var(--line-strong);
+    color: var(--ink-soft);
+    font-size: 14px;
+    max-width: 70ch;
+  }
+
+  footer p { margin: 0 0 10px; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Fleet · tenue à jour au 19 août 2026</p>
+    <h1>Journal de bord</h1>
+    <p class="standfirst">
+      Ce qui a cassé, ce qui est réparé, ce qui reste ouvert. Chaque entrée porte le symptôme
+      observé, la cause établie — pas supposée — et la mesure qui l'a établie. Les entrées
+      ouvertes le restent tant que rien ne les a fermées&nbsp;; aucune n'est retirée parce
+      qu'elle a cessé de se manifester.
+    </p>
+  </header>
+
+  <dl class="tally">
+    <div class="is-ok"><dt>Corrigés</dt><dd>3</dd></div>
+    <div class="is-open"><dt>Ouverts</dt><dd>6</dd></div>
+    <div><dt>Impasses mesurées</dt><dd>3</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">3e2b41b</dd></div>
+  </dl>
+
+  <section>
+    <div class="section-head">
+      <h2>Corrigés</h2>
+      <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
+    </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Desktop.raise</span>
+        <span class="chip chip-sha">3e2b41b</span>
+      </div>
+      <h3>Cliquer une tuile ne faisait rien</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le clic sur une session dont la fenêtre vit sur un autre bureau ne menait nulle part.
+          L'app passait au premier plan, et on restait sur place — donc devant une fenêtre de
+          terminal quelconque, sans l'onglet Claude Code attendu.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          <code>Desktop.raise</code> ne demandait que la fenêtre <em>focalisée</em> de l'instance
+          hôte. Une instance dont l'unique fenêtre est sur un autre bureau n'en a aucune&nbsp;:
+          <code>AXFocusedWindow</code> répond <code>kAXErrorNoValue</code>. Le poll tournait deux
+          secondes à vide, puis abandonnait — exactement le cas pour lequel la levée existe.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          À défaut de fenêtre focalisée, prendre la première d'<code>AXWindows</code>. C'est celle
+          que <code>TerminalFocus</code> vient de placer en tête de l'ordre de cette instance via
+          Scripting Bridge&nbsp;: la bonne, pas seulement la disponible.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <code>--ax-probe 1646</code>, sur le Terminal hôte de la session <em>my-hub</em>&nbsp;:
+          <pre>AXWindows        err=0        count=1   → ✳ Photo — suppression…
+<b>AXFocusedWindow  err=-25212    kAXErrorNoValue</b>
+AXMainWindow     err=-25212
+AXRaise(AXWindows[0])  → <b>err=0</b>   la fenêtre traverse le bureau</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TerminalLaunch</span>
+        <span class="chip chip-sha">2f787fa</span>
+      </div>
+      <h3>Le nouveau bureau s'ouvrait sans toi dedans</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le <code>+</code> créait bien le bureau et y ouvrait bien le terminal, mais on se
+          retrouvait ramené sur le bureau précédent, la fenêtre neuve restée seule derrière.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          L'AppleScript activait le terminal <em>avant</em> de créer la fenêtre. Activer une app
+          qui n'a aucune fenêtre sur le bureau courant laisse un choix à macOS, et il prend celui
+          que personne ne veut&nbsp;: il vous emmène vers un bureau qui en a déjà une.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>do script</code> d'abord, <code>activate</code> ensuite — même ordre pour iTerm2.
+          Il y a alors une fenêtre ici, donc plus de choix à faire.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Desktop.swift · commentaires</span>
+        <span class="chip chip-sha">3e2b41b</span>
+      </div>
+      <h3>Un commentaire faux qui fabriquait le bug</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le fichier affirmait à deux endroits qu'<code>AXWindows</code> ne liste que les fenêtres
+          du bureau actif. C'est cette croyance qui avait fait écrire le code de la levée sur la
+          seule fenêtre focalisée.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          C'est faux, et mesurable&nbsp;: <code>AXWindows</code> a listé la fenêtre d'un Terminal
+          posé sur un autre bureau, titre lisible et <code>AXRaise</code> opérant.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Les deux commentaires réécrits avec ce qui a été observé. Ce qu'<code>AXWindows</code>
+          omet, ce sont les fenêtres des <em>autres</em> instances — pas les autres bureaux.
+        </dd>
+      </dl>
+    </article>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Ouverts</h2>
+      <p class="section-note">Constatés, non résolus. Certains ne sont pas dans Fleet.</p>
+    </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">macOS · window server</span>
+      </div>
+      <h3>L'énumération des fenêtres s'est vidée pour toutes les apps</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Pendant environ une heure le 18 août au soir, l'Accessibility API a renvoyé zéro fenêtre
+          pour <em>toutes</em> les applications, Fleet compris. Plus aucune levée, plus aucun
+          passage en plein écran. <code>CGWindowList</code>, lui, voyait tout.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>System Events → firefox : 0 fenêtres   (attributs lisibles, menu bar = 1)
+System Events → Code    : 0 fenêtres
+TextEdit tout neuf      : <b>1 fenêtre selon TextEdit, 0 selon AX</b></pre>
+        </dd>
+        <dt>Suspect</dt>
+        <dd>
+          Mon appel à <code>SLSManagedDisplaySetCurrentSpace</code> pendant la mesure des API
+          privées, qui désynchronise la notion de bureau courant du window server. Non établi.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Revenu de lui-même, sans déconnexion. <code>killall Dock</code> et Ctrl-flèche n'avaient
+          rien changé. Pas de reproduction, donc pas de correctif — et pas d'appel privé de ce
+          genre dans le code livré.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">macOS · capture</span>
+      </div>
+      <h3>Les captures d'écran réduites au fond d'écran</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Pendant le même épisode, <code>screencapture</code> ne rendait plus que le papier peint,
+          fenêtres absentes, et <code>screencapture -R</code> échouait sur
+          <code>could not create image from rect</code>.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non résolu, non reproduit. Probablement le même dérangement que l'entrée précédente, ou
+          une autorisation d'enregistrement d'écran expirée — les deux produisent cette image.
+          Conséquence pratique&nbsp;: pendant ces épisodes, je suis aveugle et ne peux plus rien
+          vérifier visuellement.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">TCC · Fleet</span>
+      </div>
+      <h3>Les titres de fenêtres remplacés par le nom de l'app</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>fleet --windows</code> affiche <code>Terminal</code>, <code>Firefox</code>,
+          <code>Code</code> au lieu des vrais titres.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          macOS masque les titres de fenêtres aux processus sans autorisation d'enregistrement
+          d'écran. La base TCC de l'utilisateur ne contient aucune entrée
+          <code>kTCCServiceScreenCapture</code> pour <code>com.mr.fleet</code>.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non corrigé, et sans effet sur les tuiles — leurs titres viennent des transcripts, pas
+          des fenêtres. Seul le débogage en souffre. Correctif connu&nbsp;: accorder
+          «&nbsp;Enregistrement de l'écran&nbsp;» à Fleet.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">Spaces · route « vrai Space »</span>
+      </div>
+      <h3>Des bureaux vides laissés derrière</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Un Space créé par le <code>+</code> de Mission Control survit à tout&nbsp;: si le
+          terminal n'arrive pas, le bureau vide reste. Mes essais en ont laissé plusieurs.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Inhérent à cette route, qui n'est plus celle du bouton — elle ne subsiste que sous
+          <code>--new-desktop --spaces-bar</code>. Le <code>+</code> actuel passe par le plein
+          écran, dont le bureau meurt avec la fenêtre&nbsp;: rien à ramasser.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">Terminal.app</span>
+      </div>
+      <h3>Six instances de Terminal tournent en parallèle</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Six processus <code>Terminal.app</code> distincts, dont plusieurs sans aucune fenêtre.
+        </dd>
+        <dt>Conséquence</dt>
+        <dd>
+          Fleet s'en sort — il parcourt toutes les instances plutôt que la première. Mais
+          <code>tell process "Terminal"</code> de System Events tombe sur une instance sans
+          fenêtre, ce qui donne un faux négatif convaincant et m'a fait diagnostiquer une panne
+          générale d'Accessibility qui n'en était pas une.
+        </dd>
+        <dt>État</dt>
+        <dd>Origine non établie. Rien à corriger dans Fleet tant que la cause est dehors.</dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">TerminalLaunch · plein écran</span>
+      </div>
+      <h3>La fenêtre naît ici avant de partir sur son bureau</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le <code>+</code> ouvre la fenêtre sur le bureau courant, puis la passe en plein écran —
+          on voit donc le terminal apparaître ici une fraction de seconde avant l'animation.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Inhérent à la seule route API disponible&nbsp;: c'est le plein écran qui fabrique le
+          bureau, et il faut une fenêtre pour le demander. Ni contournable ni grave, mais visible.
+        </dd>
+      </dl>
+    </article>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Impasses mesurées</h2>
+      <p class="section-note">
+        Pas des bugs&nbsp;: des API qui répondent sans rien faire. Notées pour ne pas les
+        reprendre.
+      </p>
+    </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-where">SkyLight · SLSSpaceCreate</span>
+      </div>
+      <h3>Un Space créé que le Dock ne connaît pas</h3>
+      <dl class="facts">
+        <dt>Mesure</dt>
+        <dd>
+          <pre>SLSSpaceCreate                 → <b>105</b>   un identifiant bien réel
+SLSCopyManagedDisplaySpaces    → [5, 7, 8, 6, 50]   <b>105 absent</b>
+SLSSpaceSetType(105, 0)        → err 749035</pre>
+        </dd>
+        <dt>Lecture</dt>
+        <dd>
+          Créer l'objet est libre&nbsp;; l'appartenance à un écran appartient au Dock, derrière
+          <code>com.apple.private.skylight.universal-owner</code>. Le Space existe et n'est nulle
+          part&nbsp;: pas de vignette, aucune fenêtre ne peut y aller.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-where">SkyLight · SetCurrentSpace</span>
+      </div>
+      <h3>Un changement de bureau qui n'a pas lieu</h3>
+      <dl class="facts">
+        <dt>Mesure</dt>
+        <dd>
+          <pre>SLSManagedDisplaySetCurrentSpace(…, 7)  → <b>0</b>  succès
+SLSManagedDisplayGetCurrentSpace(…)     → <b>7</b>  « vous y êtes »
+CGWindowList(.optionOnScreenOnly)       → les fenêtres du bureau <b>5</b></pre>
+        </dd>
+        <dt>Lecture</dt>
+        <dd>
+          L'appel ment&nbsp;: il ne déplace qu'une comptabilité à laquelle le Dock n'est pas
+          partie. C'est le suspect n°1 de l'épisode d'Accessibility ci-dessus, et la raison pour
+          laquelle rien de tout cela n'est dans le code livré.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-where">Mission Control · barre des Spaces</span>
+      </div>
+      <h3>Les vignettes de bureaux n'ont pas d'identifiant</h3>
+      <dl class="facts">
+        <dt>Mesure</dt>
+        <dd>
+          Sous <code>mc.spaces.list</code>, chaque bureau est un <code>AXButton</code> sans
+          <code>AXIdentifier</code>, au titre localisé (<code>Bureau 7</code>), avec les actions
+          <code>AXPress</code> et <code>AXRemoveDesktop</code>. Les groupes au-dessus
+          (<code>mc</code>, <code>mc.display</code>, <code>mc.spaces</code>) en ont un.
+        </dd>
+        <dt>Lecture</dt>
+        <dd>
+          Un nouveau bureau ne peut donc être désigné que par sa position — le dernier, une fois
+          le compte augmenté. C'est tenable, mais c'est la pièce qu'une mise à jour de macOS
+          déplacera en premier.
+        </dd>
+      </dl>
+    </article>
+  </section>
+
+  <footer>
+    <p>
+      Cette page est le fichier <code>docs/patch-notes.html</code> du dépôt. Elle se met à jour en
+      la modifiant et en la republiant à la même adresse&nbsp;: une entrée par bug, ajoutée quand
+      il est trouvé, déplacée quand il est fermé.
+    </p>
+    <p>
+      Une entrée sans mesure n'a pas sa place ici. Tant qu'une cause n'est qu'un soupçon, elle est
+      écrite comme tel.
+    </p>
+  </footer>
+
+</div>
