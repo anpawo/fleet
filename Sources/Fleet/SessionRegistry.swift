@@ -261,6 +261,20 @@ final class SessionRegistry {
             .deletingPathExtension
         guard let hook = Hooks.record(sessionID: sessionID) else { return heuristic }
         if let said = info?.lastWord, said > hook.at.addingTimeInterval(2) { return heuristic }
+
+        // A `running` hook is the better evidence right up until the turn it announced dies
+        // without ever reaching `Stop`. A request that errors out — a usage limit, a dropped
+        // connection — writes nothing to the transcript and fires no closing hook, so the red
+        // it left behind stays for as long as the session lives, on a session sitting idle at
+        // its prompt. Nothing pending, nothing written, no CPU, for minutes: that is not work,
+        // it is a hook whose other half never came, and the transcript is the better reader of
+        // what the session is actually owed.
+        if hook.state == .running,
+           !(info?.hasPendingTool ?? false),
+           cpu < Config.busyCPUPercent,
+           now.timeIntervalSince(hook.at) >= Config.runningHookStaleAfter {
+            return heuristic
+        }
         return hook.state
     }
 

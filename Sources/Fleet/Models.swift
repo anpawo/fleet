@@ -30,6 +30,15 @@ enum Config {
     /// thinking block streams for a while before it lands in the file.
     static let silentTurnStaleAfter: TimeInterval = 25
 
+    /// How long a `running` hook goes on being believed once nothing else moves.
+    ///
+    /// Far longer than `silentTurnStaleAfter`, and deliberately so: that one arbitrates a guess,
+    /// this one overrules Claude Code's own word. A turn can be slow to say anything — the first
+    /// token of a long think costs seconds, and none of it touches the transcript — so the
+    /// threshold has to sit past every silence a live turn produces, and catch only the turn
+    /// that died without ever reaching `Stop`.
+    static let runningHookStaleAfter: TimeInterval = 180
+
     /// How often the cross-project hunt for a session's transcript may run, and how recently a
     /// transcript must have been written to be a candidate. Only ever runs while some session is
     /// unbound; the window is what keeps it to a handful of files.

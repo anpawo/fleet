@@ -296,7 +296,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Fleet · tenue à jour au 19 août 2026</p>
+    <p class="eyebrow">Fleet · tenue à jour le 19 août 2026</p>
     <h1>Journal de bord</h1>
     <p class="standfirst">
       Ce qui a cassé, ce qui est réparé, ce qui reste ouvert. Chaque entrée porte le symptôme
@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>3</dd></div>
-    <div class="is-open"><dt>Ouverts</dt><dd>6</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>4</dd></div>
+    <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">3e2b41b</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">b39469e</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,45 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">SessionRegistry.state</span>
+        <span class="chip chip-sha">b39469e</span>
+      </div>
+      <h3>Une tuile restée rouge sur un tour mort</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <em>my-hub</em> affichée <span style="color: var(--open)">WORKING</span> pendant
+          trente-cinq minutes, alors que la session était revenue à son prompt, écran vide,
+          processus endormi.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le hook <code>UserPromptSubmit</code> écrit «&nbsp;running&nbsp;» au départ du tour. Si
+          la requête meurt là — limite d'usage, connexion coupée — Claude Code n'écrit pas une
+          ligne dans le transcript et ne tire aucun hook de fermeture. Or Fleet donnait raison au
+          hook tant que le transcript n'avait pas parlé <em>après</em> lui&nbsp;: ni l'un ni
+          l'autre n'ayant bougé, le rouge était gelé pour toute la vie de la session.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un hook «&nbsp;running&nbsp;» cesse d'être cru au bout de trois minutes sans rien&nbsp;:
+          aucun outil en vol, aucune écriture, aucun CPU. L'heuristique du transcript reprend
+          alors la main — elle sait lire un tour dû resté muet et le dit en bleu, «&nbsp;va
+          voir&nbsp;». Le seuil est très au-dessus de celui de l'heuristique (25&nbsp;s)&nbsp;:
+          il ne s'agit pas d'arbitrer une supposition mais de contredire Claude Code lui-même.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>transcript figé à 03:28:09, dernière ligne = <b>le prompt lui-même</b>
+hook           working, <b>2116 s</b>   cpu 0.0 %   aucun outil en attente
+tuile          WORKING  →  <b>NEEDS YOU</b></pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
@@ -417,6 +456,35 @@ AXRaise(AXWindows[0])  → <b>err=0</b>   la fenêtre traverse le bureau</pre>
       <h2>Ouverts</h2>
       <p class="section-note">Constatés, non résolus. Certains ne sont pas dans Fleet.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">SessionRegistry · états</span>
+      </div>
+      <h3>Un tour mort et un tour en attente de quota se ressemblent</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Les deux produisent exactement la même trace&nbsp;: un prompt écrit, puis plus rien —
+          pas d'écriture, pas de CPU, pas de hook. Fleet les lit désormais tous les deux en bleu
+          au bout de trois minutes.
+        </dd>
+        <dt>Conséquence</dt>
+        <dd>
+          Bleu est juste pour un tour mort, qu'il faut relancer à la main. Il est trompeur pour
+          un tour qui repartira seul quand le quota se libère&nbsp;: rien ne vous attend, il n'y
+          a qu'à patienter.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non résolu&nbsp;: il faudrait que Claude Code distingue les deux — un hook, une ligne
+          de transcript, quoi que ce soit. Rien de tel n'a été trouvé côté hooks
+          (<code>UserPromptSubmit</code>, <code>PreToolUse</code>, <code>PostToolUse</code>,
+          <code>Notification</code>, <code>Stop</code>).
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
