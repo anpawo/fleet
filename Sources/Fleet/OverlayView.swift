@@ -27,20 +27,18 @@ struct OverlayView: View {
     /// Fixed tiles per row and fixed width, rather than adaptive, so a partial last row
     /// (and a one-session fleet) still centres instead of hugging the left edge.
     ///
-    /// Two columns for as long as they fit in three rows, because two big tiles side by side
-    /// are easier to read across than three; the third column only appears when a fleet has
-    /// outgrown six.
-    private var tilesPerRow: Int {
-        controller.sessions.count <= Self.maxRows * 2 ? 2 : 3
-    }
+    /// Two, and never three. A third column used to appear once a fleet outgrew six, and the
+    /// width it took is now the mail and todo columns either side of it — the middle of the
+    /// panel is no longer the whole panel. Past six sessions the grid pages sideways instead.
+    private static let tilesPerRow = 2
 
     /// Never more than this many rows on screen. Past that the grid pages sideways rather than
     /// growing downwards: a fourth row is off the bottom of most screens, and a panel you have
     /// to scroll to read has stopped being a glance.
     private static let maxRows = 3
 
-    /// Tiles per screenful — six or nine, depending on the column count.
-    private var pageSize: Int { tilesPerRow * Self.maxRows }
+    /// Tiles per screenful.
+    private var pageSize: Int { Self.tilesPerRow * Self.maxRows }
 
     /// The fleet cut into screenfuls. More than one means the panel scrolls sideways.
     private var pages: [[Session]] {
@@ -55,6 +53,16 @@ struct OverlayView: View {
     /// Wider than it looks like it needs to be: the hover glow is a 16pt shadow, and the
     /// neighbouring tile is opaque and drawn after, so a tighter gap eats the glow.
     private let tileSpacing: CGFloat = 26
+
+    /// The grid's own width, pinned rather than flexible: it is the middle of three columns
+    /// now, and a middle that resizes with the fleet would slide the mail and todo columns
+    /// around every time a session started.
+    private var centerWidth: CGFloat { tileWidth * CGFloat(Self.tilesPerRow)
+        + tileSpacing * CGFloat(Self.tilesPerRow - 1) }
+    /// Narrow on purpose. These two are what is on your plate, not what you are working on —
+    /// they earn a glance each, and anything wider starts competing with the fleet.
+    private let sideWidth: CGFloat = 292
+    private let columnGap: CGFloat = 30
 
     var body: some View {
         ZStack {
@@ -71,11 +79,11 @@ struct OverlayView: View {
                 header
 
                 if eagerLayout {
-                    fleet(scrolling: false)
+                    board(scrolling: false)
                 } else {
                     // Rows past the bottom of the screen scroll into view rather than being
                     // squeezed; with a fleet that fits, `basedOnSize` keeps it from bouncing.
-                    ScrollView(.vertical) { fleet(scrolling: true) }
+                    ScrollView(.vertical) { board(scrolling: true) }
                         .scrollBounceBehavior(.basedOnSize)
                         .frame(maxHeight: .infinity)
                         .background(dismissLayer)
@@ -98,9 +106,38 @@ struct OverlayView: View {
     }
 
     private func rows(of page: [Session]) -> [[Session]] {
-        stride(from: 0, to: page.count, by: tilesPerRow).map {
-            Array(page[$0 ..< min($0 + tilesPerRow, page.count)])
+        stride(from: 0, to: page.count, by: Self.tilesPerRow).map {
+            Array(page[$0 ..< min($0 + Self.tilesPerRow, page.count)])
         }
+    }
+
+    /// The whole panel below the header, across: the mail worth reading, the fleet, the list of
+    /// things to do.
+    ///
+    /// The sides are not sessions and never will be — they are the other two things this
+    /// machine knows are waiting for you, read from the same Firestore the phone uses. They sit
+    /// out here rather than above or below the grid because a glance across is free and a
+    /// glance down the page is not: the fleet stays exactly where it has always been, in the
+    /// middle, and the sides are only in your eye if you look for them.
+    ///
+    /// Both vanish together on a machine with no key in the Keychain, so the grid re-centres
+    /// instead of sitting between two empty apologies.
+    private func board(scrolling: Bool) -> some View {
+        HStack(alignment: .top, spacing: columnGap) {
+            if controller.hub.isConfigured {
+                MailColumn(hub: controller.hub).frame(width: sideWidth)
+            }
+            fleet(scrolling: scrolling).frame(width: centerWidth)
+            if controller.hub.isConfigured {
+                TodoColumn(hub: controller.hub).frame(width: sideWidth)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        // Room for the glow on the top row — the ScrollView clips to its bounds, and the
+        // shadow reaches 16pt out on hover.
+        .padding(.top, 26)
+        .padding(.horizontal, 34)
+        .background(dismissLayer)
     }
 
     /// The tiles with the prompt bubble immediately under them, as one block. The bubble rides
@@ -136,7 +173,7 @@ struct OverlayView: View {
     }
 
     /// The tiles. A fleet that fits on one screenful is just that screenful; a bigger one pages
-    /// sideways, nine at a time, rather than running off the bottom of the display.
+    /// sideways, six at a time, rather than running off the bottom of the display.
     @ViewBuilder private var grid: some View {
         Group {
             if pages.count <= 1 || eagerLayout {
@@ -159,10 +196,6 @@ struct OverlayView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
-        .padding(.horizontal, 44)
-        // Room for the glow on the top row — the ScrollView clips to its bounds, and the
-        // shadow reaches 16pt out on hover.
-        .padding(.top, 26)
         .background(dismissLayer)
     }
 

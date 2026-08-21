@@ -355,6 +355,16 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             controller.injectSessions(registry.refresh())
         }
 
+        // The side columns come off the network, and an offscreen render has nobody to wait for
+        // them. Waiting by spinning the run loop rather than blocking on it: the fetch lands on
+        // the main actor, and a blocked main thread would never let it finish.
+        controller.hub.refresh()
+        let deadline = Date().addingTimeInterval(8)
+        while controller.hub.isConfigured, !controller.hub.loaded,
+              controller.hub.failure == nil, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+
         let view = OverlayView(controller: controller, eagerLayout: true)
             .frame(width: 1512, height: 1100)
         let renderer = ImageRenderer(content: view)

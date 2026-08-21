@@ -27,6 +27,10 @@ final class AppController: ObservableObject {
     /// a half-written prompt survives the panel's SwiftUI tree being rebuilt on every refresh.
     let prompt = PromptController()
 
+    /// The two side columns: the mail worth reading and the todo list, both from the phone's
+    /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
+    let hub = HubStore()
+
     private let registry = SessionRegistry()
     private let notifier = Notifier()
     private var overlay: OverlayWindowController?
@@ -189,6 +193,9 @@ final class AppController: ObservableObject {
         // The field is the panel's resting state, not something to open: it comes up focused
         // and empty so a dictation shortcut is the only key you have to touch.
         prompt.panelOpened()
+        // Two GETs, and only if the last pair is over a minute old. The columns draw whatever
+        // they already have in the meantime rather than waiting on the network.
+        hub.refreshIfStale()
         schedule(Config.visibleRefresh)
         overlay?.show()
     }
