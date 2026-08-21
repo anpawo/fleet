@@ -11,7 +11,7 @@ final class SessionRegistry {
     private var bindings: [pid_t: String] = [:]
     /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
     private var lastWideScan = Date.distantPast
-    private let apiErrors = ApiErrorWatch()
+    private let screens = TerminalWatch()
 
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
@@ -21,7 +21,7 @@ final class SessionRegistry {
         let live = Set(procs.map(\.pid))
         cpuSamples = cpuSamples.filter { live.contains($0.key) }
         bindings = bindings.filter { live.contains($0.key) }
-        apiErrors.forget(everythingBut: live)
+        screens.forget(everythingBut: live)
 
         bind(procs)
         store.retain(paths: Set(bindings.values))
@@ -36,12 +36,17 @@ final class SessionRegistry {
             if info == nil, let bound = bindings[proc.pid] {
                 NSLog("Fleet: no transcript info for pid \(proc.pid) from \(bound)")
             }
-            // "Waiting for you" is the one verdict worth a second opinion: it is reached by
-            // inference, and a failed request wearing a retry loop produces exactly the same
-            // evidence. Nothing else is re-examined — the terminal costs a round trip to read.
+            // "Waiting for you" is the one verdict worth a second opinion, because it is the
+            // only one reached purely by inference — from silence, which is also what a failed
+            // request and a long thinking turn look like. Nothing else is re-examined; the
+            // terminal costs a round trip to read.
             var state = state(for: bindings[proc.pid], info: info, cpu: cpu, now: now)
-            if state == .awaitingAnswer, apiErrors.isRetrying(proc, now: now) {
-                state = .apiError
+            if state == .awaitingAnswer {
+                switch screens.verdict(proc, now: now) {
+                case .retrying: state = .apiError
+                case .working: state = .running
+                case .unknown: break
+                }
             }
             sessions.append(Session(
                 proc: proc,
@@ -367,32 +372,46 @@ private extension ClaudeProcess {
     var proc_startMinusGrace: Date { startedAt.addingTimeInterval(-5) }
 }
 
-/// Whether a session that looks like it is waiting for you is in fact stuck retrying a request
-/// that failed.
+/// A second opinion on a session that looks like it is waiting for you, taken from the one
+/// place the truth is actually written down: its terminal.
 ///
-/// Claude Code prints "API error · Retrying in 4s · attempt 3/10" and writes nothing anywhere
-/// else — not the transcript, not a hook — so the screen is the only witness. Reading it costs
-/// a Scripting Bridge round trip on the main thread, so the answer is cached, and cached for
-/// much longer once it comes back clean: a session sitting on a genuine question sits there for
-/// an hour, and asking its terminal every four seconds throughout is a lot of round trips to
-/// re-learn the same thing.
+/// Two things are invisible everywhere else. A failed request prints "API error · Retrying in
+/// 4s · attempt 3/10" and writes no transcript entry, no hook and burns no CPU. A long turn —
+/// a big thinking block, a slow stream — prints "Slithering… (9m 59s · ↓ 4.8k tokens)" and,
+/// until the message lands, writes nothing either. Both leave a transcript that is silent with
+/// a turn still owed, which is exactly the signature of a question sitting on the screen.
+///
+/// Reading costs a Scripting Bridge round trip on the main thread, so the answer is cached, and
+/// cached for much longer once it comes back inconclusive: a session on a genuine question sits
+/// there for an hour, and asking its terminal every four seconds throughout is a lot of round
+/// trips to re-learn the same thing.
 @MainActor
-final class ApiErrorWatch {
-    private var seen: [pid_t: (at: Date, retrying: Bool)] = [:]
+final class TerminalWatch {
+    enum Verdict {
+        /// Stuck retrying a request that failed.
+        case retrying
+        /// Claude Code's spinner is up: the model is working, it is just not writing yet.
+        case working
+        /// Nothing on the screen contradicts the guess — including a terminal we cannot read
+        /// at all, which is not evidence of anything.
+        case unknown
+    }
 
-    func isRetrying(_ proc: ClaudeProcess, now: Date) -> Bool {
+    private var seen: [pid_t: (at: Date, verdict: Verdict)] = [:]
+
+    func verdict(_ proc: ClaudeProcess, now: Date) -> Verdict {
         if let last = seen[proc.pid] {
-            let interval = last.retrying ? Config.terminalReadInterval
-                                         : Config.terminalRecheckInterval
-            if now.timeIntervalSince(last.at) < interval { return last.retrying }
+            let interval = last.verdict == .unknown ? Config.terminalRecheckInterval
+                                                    : Config.terminalReadInterval
+            if now.timeIntervalSince(last.at) < interval { return last.verdict }
         }
-        // Unreadable terminal — no Automation permission, or a terminal without tab scripting —
-        // is not evidence of anything, so it reads as "no error" and the tile keeps its guess.
-        let retrying = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty)
-            .map(Self.showsFailure) ?? false
-        seen[proc.pid] = (now, retrying)
-        if retrying { NSLog("Fleet: pid \(proc.pid) is retrying a failed request") }
-        return retrying
+        let verdict = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty)
+            .map(Self.read) ?? .unknown
+        seen[proc.pid] = (now, verdict)
+        if verdict != .unknown {
+            NSLog("Fleet: pid \(proc.pid) screen says \(verdict), not waiting on you")
+        }
+        return verdict
     }
 
     func forget(everythingBut live: Set<pid_t>) {
@@ -400,11 +419,11 @@ final class ApiErrorWatch {
     }
 
     /// The last few lines only, and that limit is the whole trick. Claude Code pins its status
-    /// to the bottom of the screen, so the error is always within a handful of lines of the
+    /// to the bottom of the screen, so both signals are always within a handful of lines of the
     /// prompt — while the scrollback above is a conversation that may well be *about* API
     /// errors, in which case a whole-screen search finds the words and reports a session in
     /// perfect health as broken.
-    static func showsFailure(_ screen: String) -> Bool {
+    static func read(_ screen: String) -> Verdict {
         let tail = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -413,9 +432,22 @@ final class ApiErrorWatch {
             .joined(separator: "\n")
             .lowercased()
 
-        if tail.contains("retrying in") { return true }
-        if tail.contains("hit your session limit") { return true }
-        if tail.contains("usage limit reached") { return true }
-        return tail.contains("api error") && tail.contains("attempt")
+        // Checked first: a retry is also a turn in flight, and the spinner keeps running
+        // through it — so the more specific reading has to win.
+        if tail.contains("retrying in")
+            || tail.contains("hit your session limit")
+            || tail.contains("usage limit reached")
+            || (tail.contains("api error") && tail.contains("attempt")) {
+            return .retrying
+        }
+
+        // The spinner line, which is the elapsed time and the token counter: "(9m 59s · ↓ 4.8k
+        // tokens)". Matched on the counter rather than the word in front of it — that word is
+        // a different one every time, by design.
+        if tail.contains("esc to interrupt")
+            || (tail.contains("tokens)") && (tail.contains("\u{2193}") || tail.contains("\u{2191}"))) {
+            return .working
+        }
+        return .unknown
     }
 }

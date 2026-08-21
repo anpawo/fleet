@@ -383,10 +383,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
     }
 }
 
-// `--screen <pid>` prints what Fleet can read off that session's terminal tab, and whether it
-// reads as a failed request. The API-error colour depends entirely on this working, and it can
-// fail for reasons that are invisible from the panel — a denied Automation permission, a
-// terminal without tab-level scripting, a `contents` property that came back empty.
+// `--screen <pid>` prints what Fleet can read off that session's terminal tab, and what it
+// makes of it. Two tile colours now depend on this working, and it can fail for reasons that
+// are invisible from the panel — a denied Automation permission, a terminal without tab-level
+// scripting, a `contents` property that came back empty.
 if let i = CommandLine.arguments.firstIndex(of: "--screen"),
    i + 1 < CommandLine.arguments.count,
    let pid = pid_t(CommandLine.arguments[i + 1]) {
@@ -406,7 +406,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--screen"),
             .filter { !$0.isEmpty }
         print("--- last 8 lines on \(session.dirName) (tty \(session.proc.tty))")
         for line in lines.suffix(8) { print("| \(line)") }
-        print("--- reads as a failed request: \(ApiErrorWatch.showsFailure(text))")
+        print("--- verdict: \(TerminalWatch.read(text))")
         exit(0)
     }
 }
