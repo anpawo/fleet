@@ -40,10 +40,17 @@ struct TodoColumn: View {
     /// list whose whole job is to be the thing you have not done.
     private static let maxItems = 12
 
-    /// Which rows are showing their whole text. Held here rather than on the row, because a row
-    /// is rebuilt from scratch every time the fleet refreshes — once a second while the panel is
-    /// up — and state on a view that gets replaced does not survive.
+    /// Which rows are showing their whole text: the one under the pointer, plus any that have
+    /// been clicked open. Held here rather than on the row, because a row is rebuilt from
+    /// scratch every time the fleet refreshes — once a second while the panel is up — and state
+    /// on a view that gets replaced does not survive.
     @State private var expanded: Set<String> = []
+    @State private var hovered: String?
+
+    /// Quick, but not instant. The point of the unroll is that you see which row grew and where
+    /// the ones below it went; at zero duration the column simply teleports into a new shape and
+    /// you have to find your place in it again.
+    static let unroll: Animation = .easeOut(duration: 0.18)
 
     var body: some View {
         HubColumn(title: "TODO", count: hub.todos.count, note: hub.failure) {
@@ -53,19 +60,36 @@ struct TodoColumn: View {
                 ForEach(hub.todos.prefix(Self.maxItems)) { todo in
                     TodoCard(todo: todo,
                              commandHeld: commandHeld,
-                             expanded: expanded.contains(todo.id),
+                             // Hovering opens a row only while ⌘ is down. Without that guard the
+                             // column would rearrange itself under a pointer merely crossing it
+                             // on the way somewhere else.
+                             expanded: expanded.contains(todo.id)
+                                 || (commandHeld && hovered == todo.id),
                              onFinish: { hub.markDone(todo) },
+                             onHover: { inside in
+                                 withAnimation(Self.unroll) {
+                                     if inside { hovered = todo.id }
+                                     else if hovered == todo.id { hovered = nil }
+                                 }
+                             },
+                             // A click pins the row open, so a long todo can be read with the
+                             // pointer somewhere else — or off it again.
                              onToggle: {
-                                 if expanded.contains(todo.id) {
-                                     expanded.remove(todo.id)
-                                 } else {
-                                     expanded.insert(todo.id)
+                                 withAnimation(Self.unroll) {
+                                     if expanded.contains(todo.id) {
+                                         expanded.remove(todo.id)
+                                     } else {
+                                         expanded.insert(todo.id)
+                                     }
                                  }
                              },
                              onDismiss: onDismiss)
                 }
             }
         }
+        // ⌘ going down or coming up is a state change from outside any of the handlers below,
+        // so it needs its own animation or the whole column snaps.
+        .animation(Self.unroll, value: commandHeld)
     }
 }
 
@@ -195,6 +219,7 @@ struct TodoCard: View {
     /// The ✕: finished, not deleted. The row leaves the column either way, and only one of the
     /// two can be taken back from the phone.
     let onFinish: () -> Void
+    let onHover: (Bool) -> Void
     let onToggle: () -> Void
     let onDismiss: () -> Void
 
@@ -211,6 +236,10 @@ struct TodoCard: View {
                 .frame(width: 3.5, height: 3.5)
                 .padding(.top, 6)
 
+            // Height is what animates, and it animates because the state change is made inside
+            // `withAnimation` — see `TodoColumn.unroll`. The extra lines exist the moment the
+            // limit lifts; the card grows into them over the next fifth of a second, and clips
+            // whatever has not been uncovered yet to its own rounded rectangle.
             Text(expanded ? todo.name : todo.title)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.white.opacity(0.85))
@@ -253,6 +282,7 @@ struct TodoCard: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { commandHeld ? onToggle() : onDismiss() }
+        .onHover { onHover($0) }
     }
 
     private var finish: some View {
