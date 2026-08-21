@@ -10,9 +10,8 @@ import SwiftUI
 struct MailColumn: View {
     @ObservedObject var hub: HubStore
 
-    /// Six cards is what fits beside three rows of tiles. A seventh would make the column
-    /// taller than the fleet, and the column is not the point of the panel.
-    private static let maxItems = 6
+    /// What fits beside three rows of tiles now that a card is two lines rather than four.
+    private static let maxItems = 10
 
     var body: some View {
         HubColumn(title: "INBOX", count: hub.mail.count, note: hub.failure) {
@@ -103,8 +102,12 @@ struct HubEmptyLine: View {
     }
 }
 
-/// One scored mail. The engine's headline first, because it is the only line written to be read
-/// at this size; the sender is what tells you whether to believe it.
+/// One mail: who sent it, and what it is about. Nothing else.
+///
+/// The engine writes a summary too, and it used to be on the card. Two lines of grey prose per
+/// mail is a paragraph down the side of the panel — you end up reading it, and the point of
+/// this column is to be *counted*, not read. The name and the subject answer the only question
+/// a glance is asking, which is whether any of this needs you before the sessions do.
 struct MailCard: View {
     let mail: Mail
 
@@ -113,6 +116,7 @@ struct MailCard: View {
     /// a fourth thing needing an answer. Amber is the "in flight" colour the sub-agent line
     /// already uses, and a 3 is exactly that: something of yours in flight elsewhere.
     private var accent: Color {
+        if mail.starred { return SessionTile.subagentTint }
         switch mail.importance {
         case 3...: return SessionTile.subagentTint
         case 2: return .white.opacity(0.30)
@@ -121,44 +125,45 @@ struct MailCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if mail.starred {
+                    Text("\u{2605}")
+                        .font(.system(size: 9))
+                        .foregroundStyle(SessionTile.subagentTint)
+                }
+                // The engine's headline, not the Gmail subject — there is no subject stored on
+                // the document. See the note in `Mail`.
                 Text(mail.gist)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Text(shortAge(since: mail.receivedAt))
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
             }
 
             Text(mail.sender)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 9.5, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.42))
                 .lineLimit(1)
-
-            Text(mail.summary)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.45))
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 9)
-        .padding(.leading, 12)
-        .padding(.trailing, 10)
+        .padding(.vertical, 8)
+        .padding(.leading, 11)
+        .padding(.trailing, 9)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         // Inside the clip, so the bar follows the rounded corners instead of squaring them off.
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(accent)
                 .frame(width: 3)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(.white.opacity(0.07), lineWidth: 1)
         )
     }
@@ -176,7 +181,7 @@ struct TodoCard: View {
                 .frame(width: 9, height: 9)
 
             Text(todo.title)
-                .font(.system(size: 12))
+                .font(.system(size: 11.5))
                 .foregroundStyle(.white.opacity(0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -184,16 +189,16 @@ struct TodoCard: View {
             Spacer(minLength: 4)
 
             Text(shortAge(since: todo.createdAt))
-                .font(.system(size: 9.5, design: .monospaced))
+                .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.28))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(.white.opacity(0.07), lineWidth: 1)
         )
     }

@@ -4,13 +4,19 @@ import Foundation
 struct Mail: Identifiable {
     var id: String
     /// The engine's headline for the thread — a few words, already the shortest honest version.
+    ///
+    /// Not the Gmail subject: the document has no `subject` field. `triage.mjs` has it in hand
+    /// when it writes the doc and does not keep it, so this is the closest thing to one that
+    /// exists in the collection.
     var gist: String
-    /// A sentence or two of what it says, written by the scoring pass.
-    var summary: String
     var sender: String
     /// 1–3, the engine's score. 3 is the mail you would be annoyed to have missed.
     var importance: Int
     var receivedAt: Date
+    var fromEmail: String
+    /// Starred on the phone — either this mail specifically, or its sender by a standing rule.
+    /// Filled in against `rules` after the fetch, since one is a property of the other document.
+    var starred: Bool
 
     init?(_ doc: Firestore.Document) {
         // `state` is absent on everything the engine has written and nobody has touched, and
@@ -23,10 +29,35 @@ struct Mail: Identifiable {
 
         id = doc.id
         gist = doc.string("gist")
-        summary = doc.string("summary")
         sender = doc.string("sender")
         importance = doc.int("importance", default: 2)
         receivedAt = doc.date("receivedAt") ?? doc.date("createdAt") ?? .distantPast
+        fromEmail = doc.string("fromEmail")
+        starred = doc.bool("favorite")
+    }
+}
+
+/// The senders marked "always important" on the phone, from the `rules` collection.
+///
+/// Worth reading here because the engine only applies a rule to mail it triages *after* the
+/// rule was written — a sender starred this morning has a week of mail already scored as
+/// ordinary. The panel applies it to what it draws, so starring somebody takes effect on the
+/// next glance rather than on the next triage run.
+struct StarredSenders {
+    private var names: Set<String> = []
+    private var emails: Set<String> = []
+
+    init(_ docs: [Firestore.Document]) {
+        for doc in docs where doc.string("type") == "star" {
+            let name = doc.string("sender").lowercased()
+            if !name.isEmpty { names.insert(name) }
+            let email = doc.string("email").lowercased()
+            if !email.isEmpty { emails.insert(email) }
+        }
+    }
+
+    func covers(_ mail: Mail) -> Bool {
+        names.contains(mail.sender.lowercased()) || emails.contains(mail.fromEmail.lowercased())
     }
 }
 
@@ -96,18 +127,28 @@ final class HubStore: ObservableObject {
 
     private func load() async {
         do {
-            // Both at once: they are independent collections and the panel is already on
-            // screen waiting for them.
+            // All three at once: they are independent collections and the panel is already
+            // on screen waiting for them.
             async let mailDocs = Firestore.collection("mail")
             async let todoDocs = Firestore.collection("todos")
-            let (mailPage, todoPage) = try await (mailDocs, todoDocs)
+            async let ruleDocs = Firestore.collection("rules")
+            let (mailPage, todoPage, rulePage) = try await (mailDocs, todoDocs, ruleDocs)
             guard !Task.isCancelled else { return }
 
+            let starred = StarredSenders(rulePage)
             mail = mailPage.compactMap(Mail.init)
+                .map {
+                    var mail = $0
+                    mail.starred = mail.starred || starred.covers(mail)
+                    return mail
+                }
+                // Starred first, whatever the engine scored it: a standing rule about a sender
+                // is a judgement you made yourself, and it outranks a guess made by a model at
+                // four in the morning.
                 .sorted {
-                    $0.importance != $1.importance
-                        ? $0.importance > $1.importance
-                        : $0.receivedAt > $1.receivedAt
+                    if $0.starred != $1.starred { return $0.starred }
+                    if $0.importance != $1.importance { return $0.importance > $1.importance }
+                    return $0.receivedAt > $1.receivedAt
                 }
             todos = todoPage.compactMap(Todo.init)
                 .sorted { $0.createdAt < $1.createdAt }

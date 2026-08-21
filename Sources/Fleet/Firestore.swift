@@ -44,7 +44,13 @@ enum Firestore {
         guard task.terminationStatus == 0 else { return nil }
         let key = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return key.isEmpty ? nil : key
+        guard !key.isEmpty else {
+            // Said out loud, because the failure is otherwise invisible: no key means no side
+            // columns, and a panel with no side columns looks like a panel that never had them.
+            NSLog("Fleet: no firebase-api-key in the Keychain — the side columns stay hidden")
+            return nil
+        }
+        return key
     }()
 
     /// Whether the side columns have any chance of filling — a machine without the key gets no

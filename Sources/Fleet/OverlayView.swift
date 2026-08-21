@@ -61,8 +61,7 @@ struct OverlayView: View {
         + tileSpacing * CGFloat(Self.tilesPerRow - 1) }
     /// Narrow on purpose. These two are what is on your plate, not what you are working on —
     /// they earn a glance each, and anything wider starts competing with the fleet.
-    private let sideWidth: CGFloat = 292
-    private let columnGap: CGFloat = 30
+    private let sideWidth: CGFloat = 250
 
     var body: some View {
         ZStack {
@@ -120,16 +119,25 @@ struct OverlayView: View {
     /// glance down the page is not: the fleet stays exactly where it has always been, in the
     /// middle, and the sides are only in your eye if you look for them.
     ///
+    /// Each side column is centred in its own half of what the grid leaves over, rather than
+    /// pushed up against it: the two flexible frames either side of a fixed middle split the
+    /// slack evenly and centre what they hold. A column butted against the tiles reads as part
+    /// of them, and it is not — it is the other half of your day.
+    ///
     /// Both vanish together on a machine with no key in the Keychain, so the grid re-centres
     /// instead of sitting between two empty apologies.
     private func board(scrolling: Bool) -> some View {
-        HStack(alignment: .top, spacing: columnGap) {
+        HStack(alignment: .top, spacing: 0) {
             if controller.hub.isConfigured {
-                MailColumn(hub: controller.hub).frame(width: sideWidth)
+                MailColumn(hub: controller.hub)
+                    .frame(width: sideWidth)
+                    .frame(maxWidth: .infinity)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
             if controller.hub.isConfigured {
-                TodoColumn(hub: controller.hub).frame(width: sideWidth)
+                TodoColumn(hub: controller.hub)
+                    .frame(width: sideWidth)
+                    .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
