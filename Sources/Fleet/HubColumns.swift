@@ -246,7 +246,10 @@ struct TodoCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.white.opacity(commandHeld ? 0.16 : 0.07), lineWidth: 1)
+                // Not brightened while ⌘ is down. It was, and every row in the column changing
+                // shade at once read as the whole list reacting — a flicker you notice and then
+                // have to interpret. The ✕ appearing is the entire announcement needed.
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture { commandHeld ? onToggle() : onDismiss() }
