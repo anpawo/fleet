@@ -543,6 +543,38 @@ AXRaise(AXWindows[0])  → <b>err=0</b>   la fenêtre traverse le bureau</pre>
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-open">Ouvert</span>
+        <span class="chip chip-where">main · --render</span>
+      </div>
+      <h3>Un rendu hors écran sur deux colonnes vides</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>fleet --render</code> écrit parfois une image où les deux colonnes disent encore
+          «&nbsp;Loading…&nbsp;», alors que le processus n'a vécu que 1,3&nbsp;s — bien moins que
+          les 8&nbsp;s que la boucle d'attente est censée tenir.
+        </dd>
+        <dt>Conséquence</dt>
+        <dd>
+          Aucune sur l'app&nbsp;: le panneau réel ne rend pas hors écran, il affiche
+          «&nbsp;Loading…&nbsp;» une seconde puis se remplit tout seul quand la réponse arrive.
+          Le drapeau <code>--render</code> est un outil de mise en page, et il ment une fois sur
+          cinq.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non reproductible sous instrumentation&nbsp;: avec des <code>NSLog</code> dans la
+          boucle, dix tirs d'affilée montrent <code>configured=true</code>, puis
+          <code>loaded=true / 11 todos</code> en 0,5&nbsp;s, et l'image est bonne. Les conditions
+          de sortie de boucle sont pourtant les seules qui existent. Hypothèse non vérifiée&nbsp;:
+          une course sur la lecture Keychain la toute première fois qu'un binaire fraîchement
+          lié la demande. Contournement&nbsp;: relancer la commande.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-open">Ouvert</span>
         <span class="chip chip-where">SessionRegistry · états</span>
       </div>
       <h3>Un tour mort et un tour en attente de quota se ressemblent</h3>
@@ -561,10 +593,13 @@ AXRaise(AXWindows[0])  → <b>err=0</b>   la fenêtre traverse le bureau</pre>
         </dd>
         <dt>État</dt>
         <dd>
-          Non résolu&nbsp;: il faudrait que Claude Code distingue les deux — un hook, une ligne
-          de transcript, quoi que ce soit. Rien de tel n'a été trouvé côté hooks
-          (<code>UserPromptSubmit</code>, <code>PreToolUse</code>, <code>PostToolUse</code>,
-          <code>Notification</code>, <code>Stop</code>).
+          Largement refermé depuis, mais par un autre chemin. Claude Code ne distingue toujours
+          pas les deux — rien côté hooks (<code>UserPromptSubmit</code>,
+          <code>PreToolUse</code>, <code>PostToolUse</code>, <code>Notification</code>,
+          <code>Stop</code>) ni côté transcript. C'est l'écran du terminal qui tranche&nbsp;:
+          <code>TerminalWatch</code> y lit «&nbsp;retrying&nbsp;», «&nbsp;session limit&nbsp;» ou
+          le spinner, et repeint la tuile en ambre ou en rouge. Reste ouvert pour les terminaux
+          sans scripting d'onglet, où il n'y a rien à lire.
         </dd>
       </dl>
     </article>
