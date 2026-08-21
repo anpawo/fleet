@@ -18,6 +18,17 @@ enum Config {
     /// our wakeups with other timers instead of waking the CPU on its own.
     static let timerTolerance: Double = 0.5
 
+    /// How often the terminal hosting a session may be asked what is on its screen, and how
+    /// often once the answer has been "nothing wrong" — see `ApiErrorWatch`.
+    ///
+    /// Only ever asked about a session that already looks like it is waiting for you, and the
+    /// answer is kept in between: a Scripting Bridge round trip blocks the main thread, and the
+    /// panel refreshes once a second. The two rates exist because the cheap case is the common
+    /// one — a session genuinely waiting on a question sits there for an hour, and asking its
+    /// terminal every four seconds for that hour buys nothing.
+    static let terminalReadInterval: TimeInterval = 4
+    static let terminalRecheckInterval: TimeInterval = 30
+
     /// A pending tool older than this, with no CPU burn, is treated as "blocked on you"
     /// rather than "still working".
     static let pendingStaleAfter: TimeInterval = 12
@@ -89,16 +100,20 @@ enum SessionState {
     case running        // red   — a tool is in flight
     case ready          // green — finished its turn, waiting for a new prompt
     case awaitingAnswer // blue  — blocked on a question or a permission approval
+    case apiError       // amber — the request failed and Claude Code is retrying it
 
     /// What comes first in the panel. Ready leads: those are the sessions you can pick up and
     /// type into right now, which is what you open the panel to do. A session blocked on a
     /// question is next — it needs you, but answering it is a smaller thing than starting the
-    /// next piece of work. One that is working needs nothing from you at all, so it comes last.
+    /// next piece of work. Then the one stuck on a failed request: nothing to answer and
+    /// nothing to pick up, but it is the only one going nowhere, so it beats the merely busy.
+    /// One that is working needs nothing from you at all, so it comes last.
     var sortRank: Int {
         switch self {
         case .ready: return 0
         case .awaitingAnswer: return 1
-        case .running: return 2
+        case .apiError: return 2
+        case .running: return 3
         }
     }
 }

@@ -10,7 +10,7 @@ enum DemoFleet {
     static func sessions(_ count: Int) -> [Session] {
         let names = ["portfolio", "atlas", "video-code", "my-hub", "fleet", "siege",
                      "orchard", "lantern", "harbour", "quarry", "meridian", "tessera"]
-        let states: [SessionState] = [.ready, .running, .awaitingAnswer]
+        let states: [SessionState] = [.ready, .running, .awaitingAnswer, .apiError]
 
         return (0 ..< count).map { i in
             let state = states[i % states.count]

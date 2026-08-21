@@ -383,6 +383,34 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
     }
 }
 
+// `--screen <pid>` prints what Fleet can read off that session's terminal tab, and whether it
+// reads as a failed request. The API-error colour depends entirely on this working, and it can
+// fail for reasons that are invisible from the panel — a denied Automation permission, a
+// terminal without tab-level scripting, a `contents` property that came back empty.
+if let i = CommandLine.arguments.firstIndex(of: "--screen"),
+   i + 1 < CommandLine.arguments.count,
+   let pid = pid_t(CommandLine.arguments[i + 1]) {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        guard let session = registry.refresh().first(where: { $0.proc.pid == pid }) else {
+            print("no session with pid \(pid)")
+            exit(1)
+        }
+        guard let text = TerminalFocus.visibleText(pid: pid, tty: session.proc.tty) else {
+            print("could not read the tab for \(session.dirName) (tty \(session.proc.tty))")
+            exit(1)
+        }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        print("--- last 8 lines on \(session.dirName) (tty \(session.proc.tty))")
+        for line in lines.suffix(8) { print("| \(line)") }
+        print("--- reads as a failed request: \(ApiErrorWatch.showsFailure(text))")
+        exit(0)
+    }
+}
+
 // `--focus <pid>` runs just the tab-raising path for one session and reports what happened.
 // Clicking a tile is otherwise the only way to exercise it, which makes a silent failure —
 // a missing Automation permission, usually — awkward to tell apart from a layout problem.

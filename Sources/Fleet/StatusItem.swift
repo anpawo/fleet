@@ -109,7 +109,7 @@ final class StatusItemController {
         if sessions.isEmpty {
             menu.addItem(disabled("No sessions running"))
         } else {
-            for state in [SessionState.awaitingAnswer, .ready, .running] {
+            for state in [SessionState.awaitingAnswer, .apiError, .ready, .running] {
                 let n = sessions.filter { $0.state == state }.count
                 guard n > 0 else { continue }
                 menu.addItem(disabled("\(n) \(state.label.lowercased())"))

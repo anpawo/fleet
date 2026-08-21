@@ -111,18 +111,14 @@ struct HubEmptyLine: View {
 struct MailCard: View {
     let mail: Mail
 
-    /// The score, as the one colour on the card. Deliberately not one of the three state tints
-    /// — those mean something about a session, and a mail that borrowed the blue would read as
-    /// a fourth thing needing an answer. Amber is the "in flight" colour the sub-agent line
-    /// already uses, and a 3 is exactly that: something of yours in flight elsewhere.
-    private var accent: Color {
-        if mail.starred { return SessionTile.subagentTint }
-        switch mail.importance {
-        case 3...: return SessionTile.subagentTint
-        case 2: return .white.opacity(0.30)
-        default: return .white.opacity(0.13)
-        }
-    }
+    /// Starred by you, or scored a 3 by the engine. The whole card is outlined in amber when
+    /// it is — and nothing marks the rest.
+    ///
+    /// A three-step scale down the left edge was tried and dropped: a grey bar and a fainter
+    /// grey bar are two shades nobody reads as a ranking, so all they did was add a second
+    /// vertical line to every card. Important or not is the only distinction this column is
+    /// narrow enough to make.
+    private var important: Bool { mail.starred || mail.importance >= 3 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -151,20 +147,13 @@ struct MailCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
-        .padding(.leading, 11)
-        .padding(.trailing, 9)
+        .padding(.horizontal, 10)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        // Inside the clip, so the bar follows the rounded corners instead of squaring them off.
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(accent)
-                .frame(width: 3)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(important ? SessionTile.subagentTint : .white.opacity(0.07),
+                              lineWidth: important ? 1.5 : 1)
         )
     }
 }

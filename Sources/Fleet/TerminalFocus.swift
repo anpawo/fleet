@@ -64,6 +64,66 @@ enum TerminalFocus {
         return ok
     }
 
+    /// What is on screen in the tab hosting this session, or nil when we cannot see it.
+    ///
+    /// The one signal that only exists here. When a request fails, Claude Code prints
+    /// "API error · Retrying in 4s · attempt 3/10" and writes *nothing at all* to the
+    /// transcript — no entry, no hook, no CPU — so from the file the session is indis-
+    /// tinguishable from one sitting on a question waiting for an answer. The screen is the
+    /// only place the difference is written down, and Fleet is already in this file talking to
+    /// the same tab by the same tty.
+    ///
+    /// Costs a Scripting Bridge round trip on the main thread, so the caller is expected to ask
+    /// rarely and about few sessions — see `Config.terminalReadInterval`.
+    static func visibleText(pid: pid_t, tty: String) -> String? {
+        guard let host = ProcessScanner.hostApplication(of: pid)?.app else { return nil }
+        switch host.bundleIdentifier ?? "" {
+        case "com.apple.Terminal":
+            return contents(tty: tty, inTerminal: host.processIdentifier)
+        case "com.googlecode.iterm2":
+            return contents(tty: tty, iniTerm: host.processIdentifier)
+        default:
+            return nil
+        }
+    }
+
+    /// Terminal.app: `contents` is the visible screen, `history` the whole scrollback. The
+    /// visible screen is the one that matters — the status line we are after is pinned to the
+    /// bottom of it, and the scrollback is megabytes.
+    private static func contents(tty: String, inTerminal pid: pid_t) -> String? {
+        guard let app = app(pid: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
+
+        for case let window as SBObject in windows {
+            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            for case let tab as SBObject in tabs
+            where tab.value(forKey: "tty") as? String == tty {
+                return tab.value(forKey: "contents") as? String
+            }
+        }
+        return nil
+    }
+
+    /// iTerm2 hangs the text off the session rather than the tab, and calls it `text`.
+    private static func contents(tty: String, iniTerm pid: pid_t) -> String? {
+        guard let app = app(pid: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
+
+        for case let window as SBObject in windows {
+            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            for case let tab as SBObject in tabs {
+                guard let sessions = tab.value(forKey: "sessions") as? SBElementArray else {
+                    continue
+                }
+                for case let session as SBObject in sessions
+                where session.value(forKey: "tty") as? String == tty {
+                    return session.value(forKey: "text") as? String
+                }
+            }
+        }
+        return nil
+    }
+
     /// The scripting connection to one specific process.
     ///
     /// Scripting Bridge blocks the calling thread waiting for a reply, and this runs on the

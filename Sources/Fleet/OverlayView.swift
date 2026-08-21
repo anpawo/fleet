@@ -6,6 +6,9 @@ extension SessionState {
         case .running: return Color(red: 1.00, green: 0.35, blue: 0.32)
         case .ready: return Color(red: 0.24, green: 0.82, blue: 0.35)
         case .awaitingAnswer: return Color(red: 0.27, green: 0.62, blue: 1.00)
+        // The panel's one amber, shared with the sub-agent pill, and it means the same thing in
+        // both places: something is happening that is not yours to answer.
+        case .apiError: return Color(red: 1.00, green: 0.62, blue: 0.15)
         }
     }
 
@@ -14,6 +17,7 @@ extension SessionState {
         case .running: return "WORKING"
         case .ready: return "READY"
         case .awaitingAnswer: return "NEEDS YOU"
+        case .apiError: return "API ERROR"
         }
     }
 }
@@ -119,32 +123,32 @@ struct OverlayView: View {
     /// glance down the page is not: the fleet stays exactly where it has always been, in the
     /// middle, and the sides are only in your eye if you look for them.
     ///
-    /// Each side column is centred in its own half of what the grid leaves over, rather than
-    /// pushed up against it: the two flexible frames either side of a fixed middle split the
-    /// slack evenly and centre what they hold. A column butted against the tiles reads as part
-    /// of them, and it is not — it is the other half of your day.
+    /// The four spacers are the layout: one at each edge and one between each pair, all
+    /// splitting the slack equally, so the gap from the screen edge to the mail column is the
+    /// same as the gap from the mail column to the tiles. Anything tighter than that on the
+    /// inside makes a column read as part of the grid, and it is not — it is the other half of
+    /// your day.
     ///
     /// Both vanish together on a machine with no key in the Keychain, so the grid re-centres
     /// instead of sitting between two empty apologies.
     private func board(scrolling: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 24)
             if controller.hub.isConfigured {
-                MailColumn(hub: controller.hub)
-                    .frame(width: sideWidth)
-                    .frame(maxWidth: .infinity)
+                MailColumn(hub: controller.hub).frame(width: sideWidth)
+                Spacer(minLength: 24)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
             if controller.hub.isConfigured {
-                TodoColumn(hub: controller.hub)
-                    .frame(width: sideWidth)
-                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 24)
+                TodoColumn(hub: controller.hub).frame(width: sideWidth)
             }
+            Spacer(minLength: 24)
         }
         .frame(maxWidth: .infinity)
         // Room for the glow on the top row — the ScrollView clips to its bounds, and the
         // shadow reaches 16pt out on hover.
         .padding(.top, 26)
-        .padding(.horizontal, 34)
         .background(dismissLayer)
     }
 
@@ -222,6 +226,11 @@ struct OverlayView: View {
                 legend(.awaitingAnswer)
                 legend(.ready)
                 legend(.running)
+                // Only when there is one. A fourth colour explained on every panel, for a state
+                // you see once a month, is three words of noise the rest of the time.
+                if controller.sessions.contains(where: { $0.state == .apiError }) {
+                    legend(.apiError)
+                }
             }
             .padding(.top, 4)
 
