@@ -322,7 +322,46 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
-        <span class="chip chip-where">ApiErrorWatch</span>
+        <span class="chip chip-where">TerminalWatch.read</span>
+        <span class="chip chip-sha">60adf8d</span>
+      </div>
+      <h3>Un tour long pris pour une question</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <em>alt-tab</em> en <span style="color: var(--open)">NEEDS YOU</span> pendant dix
+          minutes, sans rien demander. Sur son écran&nbsp;:
+          <code>✶ Slithering… (9m 59s · ↓ 4.8k tokens)</code> — le modèle écrivait.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le même angle mort que l'erreur d'API, sous un autre visage. Un tour qui met des
+          minutes à dire quoi que ce soit — un long bloc de réflexion, un flux lent — n'écrit
+          rien dans le transcript tant que le message n'a pas atterri, ne brûle pas de CPU
+          pendant qu'il attend le réseau, et ne tire aucun hook. Silence et tour dû&nbsp;: la
+          signature exacte d'une question posée à l'écran.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La lecture d'écran répond maintenant en trois temps au lieu de deux&nbsp;: en train de
+          réessayer, en train de travailler, ou rien à ajouter. Le spinner est reconnu à son
+          compteur de tokens, pas au mot qui le précède — ce mot change à chaque fois, exprès.
+          Le troisième cas est celui qui compte&nbsp;: il laisse le bleu en place, donc une
+          vraie question reste bleue.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>alt-tab     spinner à l'écran           →  <b>working</b>   NEEDS YOU → WORKING
+my-hub      spinner à l'écran           →  <b>working</b>
+video-code  posé sur son prompt, vide   →  <b>unknown</b>   la couleur devinée est gardée</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TerminalWatch</span>
         <span class="chip chip-sha">1e39c05</span>
       </div>
       <h3>Une erreur d'API qui réclamait ton attention</h3>
