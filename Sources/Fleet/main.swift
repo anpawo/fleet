@@ -139,6 +139,10 @@ if CommandLine.arguments.contains("--scan") {
             print("state hooks not installed — colours are inferred from the transcripts. "
                   + "Run `fleet --install-hooks`.")
         }
+        // Two grants the panel leans on, both of which fail silently: without Accessibility a
+        // panel that opens on its own cannot take the keyboard back from whatever had it, and
+        // without notifications nothing is said when a session starts waiting on you.
+        print("accessibility: \(Desktop.accessibilityTrusted(prompt: false) ? "granted" : "DENIED")")
         if let awake = ScreenWatcher.holdingDisplayAwake() {
             print("display held awake by \"\(awake)\" — the idle trigger is deferred")
         }

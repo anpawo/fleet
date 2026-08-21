@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SwiftUI
 
 /// Borderless full-screen window hosting the session grid.
@@ -51,7 +52,46 @@ final class OverlayWindowController {
         // Accessory apps need an explicit activation to take key focus and receive clicks.
         NSApp.activate(ignoringOtherApps: true)
         window.makeKey()
+        claimFocus(window)
     }
+
+    /// Make sure the panel actually got the keyboard, and take it by force if not.
+    ///
+    /// macOS 14 turned activation from something an app does into something the system grants.
+    /// A request carrying a user event behind it — the hotkey, the menu bar, `fleet` — is
+    /// honoured; the same call from a timer, with the machine untouched for forty-five seconds,
+    /// is quietly declined. The window still comes to the front, because `orderFrontRegardless`
+    /// is not activation, which is exactly what makes the failure so confusing: the panel is
+    /// right there, and it is deaf. No caret in the field, Esc going to the terminal
+    /// underneath, ⌘ never reaching the todo column.
+    ///
+    /// The Accessibility API does not go through cooperative activation, and Fleet already
+    /// holds that grant to raise a terminal across a desktop. Asked a beat later rather than
+    /// immediately: `makeKey` on an app that is mid-activation reports not-key for a moment and
+    /// then becomes key on its own, and there is no point fighting the path that works.
+    private func claimFocus(_ window: PanelWindow) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.focusCheck) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.controller.isPanelVisible, !window.isKeyWindow else { return }
+                guard Desktop.accessibilityTrusted(prompt: false) else {
+                    NSLog("Fleet: the panel is up without the keyboard, and Accessibility is "
+                          + "not granted — nothing left to try. System Settings → Privacy & "
+                          + "Security → Accessibility.")
+                    return
+                }
+                let me = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+                AXUIElementSetAttributeValue(me, kAXFrontmostAttribute as CFString,
+                                             kCFBooleanTrue)
+                window.makeKey()
+                NSLog("Fleet: activation was declined, took the keyboard through Accessibility "
+                      + "— key now: \(window.isKeyWindow)")
+            }
+        }
+    }
+
+    /// Long enough for a granted activation to land, short enough that nobody types into the
+    /// gap: the panel opens on an idle machine, so the first keystroke is a while away.
+    private static let focusCheck: TimeInterval = 0.12
 
     /// Dismissal is in two beats. The window goes transparent immediately, so it reads as gone,
     /// but stays on screen and *stays key* for a moment before we actually order it out.
