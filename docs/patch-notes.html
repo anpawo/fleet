@@ -322,6 +322,50 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">ApiErrorWatch</span>
+        <span class="chip chip-sha">1e39c05</span>
+      </div>
+      <h3>Une erreur d'API qui réclamait ton attention</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <em>fleet</em> et <em>alt-tab</em> en
+          <span style="color: var(--open)">NEEDS YOU</span> alors qu'aucune des deux ne demandait
+          quoi que ce soit&nbsp;: en bas de leur terminal,
+          <code>API error · Retrying in 0s · attempt 1/10</code>.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          La suite directe du correctif ci-dessous. Une requête qui échoue n'écrit
+          <em>rien</em>&nbsp;: pas une entrée de transcript, pas un hook, pas de CPU. Le tour
+          reste dû, le fichier ne bouge plus — exactement la signature d'une question posée à
+          l'écran, que l'heuristique lit en bleu au bout de 25&nbsp;s. Les dix tentatives avec
+          backoff dépassent les trois minutes au bout desquelles le hook «&nbsp;running&nbsp;»
+          cesse d'être cru, donc le bleu finit toujours par tomber.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Le seul témoin est l'écran. Fleet parle déjà à l'onglet par son tty pour le remonter
+          au premier plan&nbsp;; il lui demande maintenant ce qu'il affiche — mais uniquement
+          pour une session qui a <em>déjà</em> l'air de t'attendre, et seulement sur les huit
+          dernières lignes, parce que Claude Code épingle son statut en bas de l'écran alors que
+          le scrollback au-dessus peut très bien être une conversation <em>au sujet</em> des
+          erreurs d'API. Ces sessions-là prennent une quatrième couleur, l'ambre, et ne comptent
+          plus dans le «&nbsp;n of m need your input&nbsp;» ni dans les notifications.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>alt-tab  hook working <b>607 s</b>   cpu 0.1 %   transcript muet
+écran    <b>✻ API error · Retrying in 0s · attempt 1/10</b>
+tuile    NEEDS YOU  →  <b>API ERROR</b>
+fleet    même écran cité <b>en prose</b> dans le scrollback  →  reste WORKING</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
         <span class="chip chip-where">SessionRegistry.state</span>
         <span class="chip chip-sha">b39469e</span>
       </div>
