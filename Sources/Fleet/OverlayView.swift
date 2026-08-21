@@ -67,6 +67,12 @@ struct OverlayView: View {
     /// they earn a glance each, and anything wider starts competing with the fleet.
     private let sideWidth: CGFloat = 250
 
+    /// How the leftover width is shared out: 2 : 3 : 3 : 2, edges to insides. Ratios rather
+    /// than points, so the balance holds on a laptop screen and on a 34-inch one — a fixed
+    /// margin on a wide display would pin the columns to the bezel and leave the middle adrift.
+    private static let edgeWeight = 2
+    private static let innerWeight = 3
+
     var body: some View {
         ZStack {
             // Flat scrim rather than a live blur. Two reasons, and the second one is why the
@@ -100,6 +106,13 @@ struct OverlayView: View {
         .onTapGesture { controller.hidePanel() }
     }
 
+    /// Flexible space of a given weight. Adjacent `Spacer`s in an HStack split the slack
+    /// equally, so three of them are half again as wide as two — which is the only way to say
+    /// "flex-grow" in SwiftUI.
+    @ViewBuilder private func gap(_ weight: Int) -> some View {
+        ForEach(0 ..< weight, id: \.self) { _ in Spacer(minLength: 8) }
+    }
+
     /// A ScrollView claims hit-testing across its whole area, so taps landing in the gaps
     /// between tiles never reach the outer gesture. This puts a dismiss target behind them.
     private var dismissLayer: some View {
@@ -123,27 +136,27 @@ struct OverlayView: View {
     /// glance down the page is not: the fleet stays exactly where it has always been, in the
     /// middle, and the sides are only in your eye if you look for them.
     ///
-    /// The four spacers are the layout: one at each edge and one between each pair, all
-    /// splitting the slack equally, so the gap from the screen edge to the mail column is the
-    /// same as the gap from the mail column to the tiles. Anything tighter than that on the
-    /// inside makes a column read as part of the grid, and it is not — it is the other half of
-    /// your day.
+    /// The four gaps are the layout — one at each edge, one between each pair — and they carry
+    /// all of the flex, since the three blocks themselves are fixed. The inside gaps are half
+    /// again as wide as the outside ones, so the columns sit slightly out towards the edges of
+    /// the screen: a column too close to the grid reads as part of it, and it is not — it is
+    /// the other half of your day.
     ///
     /// Both vanish together on a machine with no key in the Keychain, so the grid re-centres
     /// instead of sitting between two empty apologies.
     private func board(scrolling: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            Spacer(minLength: 24)
+            gap(Self.edgeWeight)
             if controller.hub.isConfigured {
                 MailColumn(hub: controller.hub).frame(width: sideWidth)
-                Spacer(minLength: 24)
+                gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
             if controller.hub.isConfigured {
-                Spacer(minLength: 24)
+                gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub).frame(width: sideWidth)
             }
-            Spacer(minLength: 24)
+            gap(Self.edgeWeight)
         }
         .frame(maxWidth: .infinity)
         // Room for the glow on the top row — the ScrollView clips to its bounds, and the
