@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The panel's left column: the mail the triage engine scored and nobody has dealt with yet,
@@ -224,8 +225,18 @@ struct TodoCard: View {
     let onDismiss: () -> Void
 
     @State private var hoveringFinish = false
+    /// The room the text has to wrap in. Seeded with roughly the right number so the first
+    /// frame is not laid out against a width of zero.
+    @State private var textWidth: CGFloat = 190
 
     private static let finishTint = Color(red: 1.00, green: 0.35, blue: 0.32)
+    private static let fontSize: CGFloat = 11.5
+
+    /// What the row shows: everything, or the first line of exactly that same text.
+    private var line: String {
+        guard !expanded else { return todo.name }
+        return FirstLine.of(todo.name, width: textWidth, size: Self.fontSize) ?? todo.title
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -240,15 +251,19 @@ struct TodoCard: View {
             // `withAnimation` — see `TodoColumn.unroll`. The extra lines exist the moment the
             // limit lifts; the card grows into them over the next fifth of a second, and clips
             // whatever has not been uncovered yet to its own rounded rectangle.
-            Text(expanded ? todo.name : todo.title)
-                .font(.system(size: 11.5))
+            Text(line)
+                .font(.system(size: Self.fontSize))
                 .foregroundStyle(.white.opacity(0.85))
                 .lineLimit(expanded ? nil : 1)
-                .truncationMode(.tail)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: expanded)
-
-            Spacer(minLength: 4)
+                // Takes the whole width rather than sitting next to a spacer, so what the
+                // reader below measures is the room the text actually has to wrap in.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: TextWidth.self, value: proxy.size.width)
+                })
+                .onPreferenceChange(TextWidth.self) { textWidth = $0 }
 
             // The ✕ takes the age's place rather than sitting beside it, so nothing shifts
             // sideways the moment ⌘ goes down and the thing you were aiming at stays there.
@@ -296,5 +311,59 @@ struct TodoCard: View {
         .buttonStyle(.plain)
         .onHover { hoveringFinish = $0 }
         .help("Mark done")
+    }
+}
+
+
+private struct TextWidth: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// The first line of a piece of text, cut where the text engine would cut it.
+///
+/// Not `truncationMode(.tail)`, which is what this replaces. That cuts wherever the pixels run
+/// out — mid-word, mid-letter — so the row's one visible line is not the same line the text
+/// wraps into when the row opens. Every word after the cut then shuffles into a different
+/// place as it unrolls, which is the one thing an animation must not do: the eye is following
+/// the words, and they are not where they were a moment ago.
+///
+/// `CTTypesetterSuggestLineBreak` answers the exact question — how much of this fits on a line
+/// this wide, breaking where a line is allowed to break — and it is the same answer the layout
+/// will give when the limit comes off. So the first line collapsed and the first line expanded
+/// are the same line, and only the lines below it are new.
+enum FirstLine {
+    private static let ellipsis = "\u{2026}"
+
+    /// Nil when the whole thing fits and there is nothing to cut.
+    static func of(_ text: String, width: CGFloat, size: CGFloat) -> String? {
+        guard width > 24, !text.isEmpty else { return nil }
+        let font = NSFont.systemFont(ofSize: size)
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+
+        let fits = CTTypesetterSuggestLineBreak(typesetter, 0, Double(width))
+        guard fits > 0, fits < attributed.length else { return nil }
+
+        let candidate = head(of: text, upTo: fits)
+        if measure(candidate, font: font) <= width { return candidate }
+
+        // The line was full to the pixel and the ellipsis has nowhere to go. Give it a line's
+        // worth of room less and break again — still on a word, one word shorter.
+        let room = width - measure(ellipsis, font: font)
+        let narrower = CTTypesetterSuggestLineBreak(typesetter, 0, Double(max(room, 1)))
+        return head(of: text, upTo: max(Int(narrower), 1))
+    }
+
+    /// UTF-16 indices, because that is what CoreText counts in and `String.prefix` does not —
+    /// the two disagree on every accent in the list.
+    private static func head(of text: String, upTo index: CFIndex) -> String {
+        let ns = text as NSString
+        let cut = ns.substring(to: min(Int(index), ns.length))
+        return cut.trimmingCharacters(in: .whitespacesAndNewlines) + ellipsis
+    }
+
+    private static func measure(_ text: String, font: NSFont) -> CGFloat {
+        NSAttributedString(string: text, attributes: [.font: font]).size().width
     }
 }
