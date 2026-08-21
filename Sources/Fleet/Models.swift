@@ -29,6 +29,22 @@ enum Config {
     static let terminalReadInterval: TimeInterval = 4
     static let terminalRecheckInterval: TimeInterval = 30
 
+    /// How long a finished todo stays in `done` before Fleet files it away under `past`.
+    ///
+    /// `past` is a fourth pile that only exists in the data: nothing shows it — not this panel,
+    /// and not the phone, whose three tabs match on the exact strings `todo`, `doing` and
+    /// `done`. That is the point. A todo finished a month ago is neither a plan nor a decision
+    /// any more, and the "Done" tab it sat in was becoming a filing cabinet.
+    static let todoArchiveAfter: TimeInterval = 14 * 24 * 3600
+
+    /// What a todo already marked done, but carrying no date, is assumed to have been finished.
+    ///
+    /// Nothing has ever stamped one — the phone writes `state` and nothing else — so the ones
+    /// already in the pile have no date to age. Rather than archive them all at once or leave
+    /// them there forever, they are stamped as of a week ago, which gives them the other week
+    /// before they file themselves away.
+    static let todoAssumedDoneAgo: TimeInterval = 7 * 24 * 3600
+
     /// A pending tool older than this, with no CPU burn, is treated as "blocked on you"
     /// rather than "still working".
     static let pendingStaleAfter: TimeInterval = 12

@@ -28,18 +28,42 @@ struct MailColumn: View {
 /// longest is the one worth being reminded of.
 struct TodoColumn: View {
     @ObservedObject var hub: HubStore
+    /// Whether ⌘ is down. The column is a list while it is not, and a set of controls while it
+    /// is — see `TodoCard`.
+    let commandHeld: Bool
+    /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
+    /// notification board, and getting out of it must never take aim.
+    let onDismiss: () -> Void
 
-    /// Many more than the mail column holds, because a todo is one line and a mail is four.
+    /// Many more than the mail column holds, because a todo is one line and a mail is two.
     /// Enough, in practice, that the list is never truncated at all — which is the point of a
     /// list whose whole job is to be the thing you have not done.
     private static let maxItems = 12
+
+    /// Which rows are showing their whole text. Held here rather than on the row, because a row
+    /// is rebuilt from scratch every time the fleet refreshes — once a second while the panel is
+    /// up — and state on a view that gets replaced does not survive.
+    @State private var expanded: Set<String> = []
 
     var body: some View {
         HubColumn(title: "TODO", count: hub.todos.count, note: hub.failure) {
             if hub.todos.isEmpty {
                 HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
             } else {
-                ForEach(hub.todos.prefix(Self.maxItems)) { TodoCard(todo: $0) }
+                ForEach(hub.todos.prefix(Self.maxItems)) { todo in
+                    TodoCard(todo: todo,
+                             commandHeld: commandHeld,
+                             expanded: expanded.contains(todo.id),
+                             onFinish: { hub.markDone(todo) },
+                             onToggle: {
+                                 if expanded.contains(todo.id) {
+                                     expanded.remove(todo.id)
+                                 } else {
+                                     expanded.insert(todo.id)
+                                 }
+                             },
+                             onDismiss: onDismiss)
+                }
             }
         }
     }
@@ -158,28 +182,55 @@ struct MailCard: View {
     }
 }
 
-/// One todo, one line. The age on the right is the whole editorial: a todo from this morning is
-/// a plan, one from three weeks ago is a question.
+/// One todo. One line at rest, its whole text on ⌘-click, and a ✕ that finishes it.
+///
+/// ⌘ is what separates reading from doing here. Without it the row behaves like everything else
+/// on the panel — a click puts the panel away — and there is nothing to aim at and nothing to
+/// hit by accident. Hold ⌘ and every row grows a ✕ where its age was, so clearing three things
+/// off the list is three clicks without the row ever moving under the pointer.
 struct TodoCard: View {
     let todo: Todo
+    let commandHeld: Bool
+    let expanded: Bool
+    /// The ✕: finished, not deleted. The row leaves the column either way, and only one of the
+    /// two can be taken back from the phone.
+    let onFinish: () -> Void
+    let onToggle: () -> Void
+    let onDismiss: () -> Void
+
+    @State private var hoveringFinish = false
+
+    private static let finishTint = Color(red: 1.00, green: 0.35, blue: 0.32)
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(alignment: .top, spacing: 9) {
+            // A dot, not a ring. A ring is a checkbox — it invites a click that does nothing,
+            // since finishing a todo here is the ✕ on the other side of the row.
             Circle()
-                .strokeBorder(.white.opacity(0.28), lineWidth: 1.2)
-                .frame(width: 9, height: 9)
+                .fill(.white.opacity(0.32))
+                .frame(width: 3.5, height: 3.5)
+                .padding(.top, 6)
 
-            Text(todo.title)
+            Text(expanded ? todo.name : todo.title)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
+                .lineLimit(expanded ? nil : 1)
                 .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: expanded)
 
             Spacer(minLength: 4)
 
-            Text(shortAge(since: todo.createdAt))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.28))
+            // The ✕ takes the age's place rather than sitting beside it, so nothing shifts
+            // sideways the moment ⌘ goes down and the thing you were aiming at stays there.
+            if commandHeld {
+                finish
+            } else {
+                Text(shortAge(since: todo.createdAt))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
+                    .padding(.top, 1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
@@ -188,7 +239,22 @@ struct TodoCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(.white.opacity(commandHeld ? 0.16 : 0.07), lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture { commandHeld ? onToggle() : onDismiss() }
+    }
+
+    private var finish: some View {
+        Button(action: onFinish) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Self.finishTint.opacity(hoveringFinish ? 1 : 0.75))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Self.finishTint.opacity(hoveringFinish ? 0.22 : 0.10)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveringFinish = $0 }
+        .help("Mark done")
     }
 }

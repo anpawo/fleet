@@ -84,6 +84,33 @@ enum Firestore {
         return try await send(request, decoding: Page.self).documents
     }
 
+    /// Change some fields of one document, leaving the rest alone.
+    ///
+    /// The mask is not optional in practice: without it a PATCH *replaces* the document, so
+    /// marking a todo done would take its name and its creation date down with it.
+    static func patch(_ path: String, fields: [String: Any]) async throws {
+        var url = Firestore.documents.appending(path: path)
+        url.append(queryItems: fields.keys.map {
+            URLQueryItem(name: "updateMask.fieldPaths", value: $0)
+        })
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
+                         forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["fields": fields])
+        _ = try await send(request)
+    }
+
+    /// Firestore's wire form for a timestamp. The phone writes a server timestamp, which over
+    /// REST would need a commit with a field transform; the clock on this Mac is close enough
+    /// for a field that only ever decides whether two weeks have passed.
+    static func timestamp(_ date: Date) -> [String: Any] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return ["timestampValue": formatter.string(from: date)]
+    }
+
     /// One place where a non-2xx becomes an error. `URLSession` hands back a 403 as a perfectly
     /// good response with the refusal in the body, and decoding that fails further along with a
     /// complaint about a missing key — which says nothing about the permission actually denied.

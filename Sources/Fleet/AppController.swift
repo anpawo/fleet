@@ -22,6 +22,9 @@ final class AppController: ObservableObject {
         }
     }
     @Published private(set) var isPanelVisible = false
+    /// Whether ⌘ is down right now. The todo column grows a ✕ on every row while it is, so a
+    /// list you can only read becomes a list you can clear without ever leaving the panel.
+    @Published private(set) var commandHeld = false
 
     /// The prompt field and where what you write goes. Owned here rather than by the view so
     /// a half-written prompt survives the panel's SwiftUI tree being rebuilt on every refresh.
@@ -200,9 +203,20 @@ final class AppController: ObservableObject {
         overlay?.show()
     }
 
+    /// Modifier keys, straight from the panel window — see `PanelWindow.sendEvent`. Nothing
+    /// else observes them, so this is only ever ⌘ being pressed or let go.
+    func modifiersChanged(_ flags: NSEvent.ModifierFlags) {
+        let held = flags.contains(.command)
+        guard held != commandHeld else { return }
+        commandHeld = held
+    }
+
     func hidePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
+        // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
+        // somebody who is not holding anything.
+        commandHeld = false
         prompt.panelClosed()
         overlay?.hide()
         schedule(Config.idlePollActive)

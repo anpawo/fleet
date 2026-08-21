@@ -23,14 +23,21 @@ fi
 
 echo "==> Installing to $DEST"
 mkdir -p "$HOME/Applications"
-# Stop any running copy so the bundle can be replaced cleanly.
-launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
-rm -rf "$DEST"
-cp -R dist/Fleet.app "$DEST"
+# Stop the running copy, but do NOT bootout: unregistering the agent and registering it again
+# is what makes macOS post the "App Background Activity" banner on every install. `kill` stops
+# the process and KeepAlive is suppressed until we kickstart it below.
+launchctl kill SIGTERM "gui/$UID/$LABEL" 2>/dev/null || true
+
+# Replaced in place rather than removed and re-copied, for the same reason. Background Task
+# Management watches the bundle it was told about; delete it and put a new one at the same path
+# and that is a new background item as far as it is concerned. `--delete` still clears out
+# anything the new build dropped.
+mkdir -p "$DEST"
+rsync -a --delete dist/Fleet.app/ "$DEST/"
 
 echo "==> Writing $PLIST"
 mkdir -p "$HOME/Library/LaunchAgents"
-cat > "$PLIST" <<PLIST_EOF
+cat > "$PLIST.new" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -55,8 +62,19 @@ cat > "$PLIST" <<PLIST_EOF
 </plist>
 PLIST_EOF
 
+# Only replaced when it actually differs. Rewriting the plist byte-for-byte identically is
+# still a write, and a modified login item is the other thing that provokes the banner.
+if cmp -s "$PLIST.new" "$PLIST"; then
+	rm -f "$PLIST.new"
+else
+	mv "$PLIST.new" "$PLIST"
+	launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
+fi
+
 echo "==> Starting"
-launchctl bootstrap "gui/$UID" "$PLIST"
+# Bootstrap only when it is not already loaded — `kickstart` restarts what is there, which is
+# the quiet path. The `|| true` covers the already-loaded case, which bootstrap calls an error.
+launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null || true
 launchctl kickstart -k "gui/$UID/$LABEL"
 
 # Register the bundle with LaunchServices so Spotlight can find "Fleet" straight away

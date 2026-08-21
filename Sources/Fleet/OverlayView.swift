@@ -154,7 +154,10 @@ struct OverlayView: View {
             fleet(scrolling: scrolling).frame(width: centerWidth)
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                TodoColumn(hub: controller.hub).frame(width: sideWidth)
+                TodoColumn(hub: controller.hub,
+                           commandHeld: controller.commandHeld,
+                           onDismiss: { controller.hidePanel() })
+                    .frame(width: sideWidth)
             }
             gap(Self.edgeWeight)
         }

@@ -149,6 +149,7 @@ final class OverlayWindowController {
         // it is the behaviour actually wanted, and it is observable.
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.onCancel = { [weak self] in self?.controller.escape() }
+        window.onModifiers = { [weak self] flags in self?.controller.modifiersChanged(flags) }
         window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
 
         let root = OverlayView(controller: controller)
@@ -165,6 +166,9 @@ final class PanelWindow: NSWindow {
     private static let returnKeyCodes: Set<UInt16> = [36, 76]
 
     var onCancel: (() -> Void)?
+    /// Every change to the modifier keys while the panel holds focus. ⌘ turns the todo column
+    /// from a list into a set of controls, so the panel has to know it is being held.
+    var onModifiers: ((NSEvent.ModifierFlags) -> Void)?
     /// Return, with no Shift. Returns whether it was used — when it isn't, the key goes on to
     /// the field as an ordinary newline.
     var onReturn: () -> Bool = { false }
@@ -196,6 +200,9 @@ final class PanelWindow: NSWindow {
         // mouse event and you get a junk value, and then this method silently eats clicks
         // instead of passing them to the panel.
         switch event.type {
+        case .flagsChanged:
+            onModifiers?(event.modifierFlags)
+            super.sendEvent(event)
         case .keyDown where event.keyCode == Self.escKeyCode:
             // Esc is taken here rather than in `cancelOperation` for the same reason as Space:
             // once the prompt field has focus, the field editor answers Esc first and would

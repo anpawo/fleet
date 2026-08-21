@@ -365,6 +365,12 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
 
+        // `--cmd` draws the panel as it looks with ⌘ held: the todo column's ✕s are otherwise
+        // impossible to see in a render, since nobody is holding a key.
+        if CommandLine.arguments.contains("--cmd") {
+            controller.modifiersChanged(.command)
+        }
+
         let view = OverlayView(controller: controller, eagerLayout: true)
             .frame(width: 1512, height: 1100)
         let renderer = ImageRenderer(content: view)

@@ -61,23 +61,44 @@ struct StarredSenders {
     }
 }
 
-/// One line of the todo list. The collection has a `state`, but in practice it only ever holds
-/// `todo` and `done` — the middle pile the phone's UI offers goes unused — so this is simply
-/// everything not yet done.
+/// One line of the todo list.
+///
+/// The collection's `state` is `todo`, `doing` or `done` — the phone's three tabs — plus one
+/// this panel writes and nobody displays: see `Pile.past`.
 struct Todo: Identifiable {
     var id: String
     var name: String
+    var state: String
     var createdAt: Date
+    /// When it was finished. Absent on everything finished before Fleet started stamping it —
+    /// the phone writes `state` alone.
+    var doneAt: Date?
 
-    init?(_ doc: Firestore.Document) {
-        guard doc.string("state") != "done" else { return nil }
+    /// The four values `state` takes. Not an enum on the model: an unknown string must survive
+    /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
+    /// quietly rewritten to something else by whichever of the two is older.
+    enum Pile {
+        static let todo = "todo"
+        static let doing = "doing"
+        static let done = "done"
+        static let past = "past"
+    }
+
+    init(_ doc: Firestore.Document) {
         id = doc.id
         name = doc.string("name")
+        state = doc.string("state")
         createdAt = doc.date("createdAt") ?? .distantPast
+        doneAt = doc.date("doneAt")
     }
+
+    /// Still on your plate. In practice the middle pile goes unused — the phone offers it and
+    /// nothing is ever in it — so this is everything not yet finished.
+    var open: Bool { state != Pile.done && state != Pile.past }
 
     /// The first line only, for a row one line tall. Some todos are a whole page — a pasted
     /// receipt, a list of refunds to chase — and rendered raw one of them fills the column.
+    /// The rest is one ⌘-click away.
     var title: String {
         name.split(separator: "\n", maxSplits: 1).first
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
@@ -110,6 +131,62 @@ final class HubStore: ObservableObject {
     private var inFlight: Task<Void, Never>?
 
     var isConfigured: Bool { Firestore.isConfigured }
+
+    // MARK: - Writing
+
+    /// The ✕ on a todo. Finished, not deleted — the row leaves the column either way, and one
+    /// of the two is undoable from the phone.
+    ///
+    /// Applied here before it is applied there, and not reconciled afterwards: the panel is
+    /// about to be looked away from, and a row that hangs about for the length of a round trip
+    /// reads as a click that missed.
+    func markDone(_ todo: Todo) {
+        todos.removeAll { $0.id == todo.id }
+        Task {
+            do {
+                try await Firestore.patch("todos/\(todo.id)", fields: [
+                    "state": ["stringValue": Todo.Pile.done],
+                    "doneAt": Firestore.timestamp(Date()),
+                ])
+            } catch {
+                NSLog("Fleet: could not finish todo \(todo.id) — \(error.localizedDescription)")
+                // Put it back rather than leave the panel claiming something that did not
+                // happen. The next fetch would do it too, a minute later.
+                refresh()
+            }
+        }
+    }
+
+    /// Move whatever has been done long enough out of `done` and into `past`, and put a date on
+    /// anything that has none.
+    ///
+    /// Fire and forget, on the same rhythm as the read: this is filing, not an interaction, and
+    /// nothing on screen is waiting for it. There is no engine behind `todos` — no cron, no
+    /// Action, nothing but the two apps that read it — so it happens here or it does not happen.
+    private func file(_ done: [Todo]) {
+        let now = Date()
+        for todo in done {
+            guard let doneAt = todo.doneAt else {
+                stamp(todo, doneAt: now.addingTimeInterval(-Config.todoAssumedDoneAgo))
+                continue
+            }
+            guard now.timeIntervalSince(doneAt) > Config.todoArchiveAfter else { continue }
+            Task {
+                try? await Firestore.patch("todos/\(todo.id)",
+                                           fields: ["state": ["stringValue": Todo.Pile.past]])
+                NSLog("Fleet: filed todo \(todo.id) away as past")
+            }
+        }
+    }
+
+    private func stamp(_ todo: Todo, doneAt: Date) {
+        Task {
+            try? await Firestore.patch("todos/\(todo.id)",
+                                       fields: ["doneAt": Firestore.timestamp(doneAt)])
+        }
+    }
+
+    // MARK: - Reading
 
     /// Called when the panel appears. Cheap to call — it does nothing at all most times.
     func refreshIfStale() {
@@ -150,8 +227,9 @@ final class HubStore: ObservableObject {
                     if $0.importance != $1.importance { return $0.importance > $1.importance }
                     return $0.receivedAt > $1.receivedAt
                 }
-            todos = todoPage.compactMap(Todo.init)
-                .sorted { $0.createdAt < $1.createdAt }
+            let all = todoPage.map(Todo.init)
+            todos = all.filter(\.open).sorted { $0.createdAt < $1.createdAt }
+            file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
             fetchedAt = Date()
