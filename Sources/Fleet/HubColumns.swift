@@ -223,14 +223,21 @@ struct TodoCard: View {
 
             // The ✕ takes the age's place rather than sitting beside it, so nothing shifts
             // sideways the moment ⌘ goes down and the thing you were aiming at stays there.
-            if commandHeld {
-                finish
-            } else {
+            //
+            // Stacked rather than swapped, and pinned to the age's height: the ✕ is a 16pt
+            // target and the age is a 9pt line, so a plain swap made every row in the column
+            // grow by a couple of points the instant ⌘ went down. The age keeps its place in
+            // the layout with the lights off, the ✕ is drawn over it, and the pixels it spills
+            // past the fixed height land in the row's own padding.
+            ZStack(alignment: .trailing) {
                 Text(shortAge(since: todo.createdAt))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
-                    .padding(.top, 1)
+                    .opacity(commandHeld ? 0 : 1)
+                if commandHeld { finish }
             }
+            .frame(height: 12, alignment: .trailing)
+            .padding(.top, 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
