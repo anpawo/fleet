@@ -413,7 +413,7 @@ struct PromptBar: View {
     /// Capsule while it is a one-line status, rounded rectangle once it is a paragraph.
     private static func bubble(wrapping: Bool) -> AnyInsettableShape {
         wrapping
-            ? AnyInsettableShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            ? AnyInsettableShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             : AnyInsettableShape(Capsule(style: .continuous))
     }
 
@@ -501,9 +501,9 @@ struct SessionTile: View {
             }
             .frame(height: Self.height, alignment: .top)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(session.state.tint, lineWidth: 2.5)
             )
             // Order matters. `scaleEffect` renders the card into an offscreen buffer sized to

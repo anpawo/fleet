@@ -198,9 +198,9 @@ struct MailCard: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(important ? SessionTile.subagentTint : .white.opacity(0.07),
                               lineWidth: important ? 1.5 : 1)
         )
@@ -303,9 +303,9 @@ struct TodoCard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 // Not brightened while ⌘ is down. It was, and every row in the column changing
                 // shade at once read as the whole list reacting — a flicker you notice and then
                 // have to interpret. The ✕ appearing is the entire announcement needed.
