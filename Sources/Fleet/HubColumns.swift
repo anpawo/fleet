@@ -15,8 +15,13 @@ struct MailColumn: View {
     private static let maxItems = 10
 
     var body: some View {
-        HubColumn(title: hub.showingSeen ? "SEEN" : "INBOX",
-                  count: hub.mail.count, note: hub.failure) {
+        // Named for what it holds, like TODO beside it — not for which pile of it you happen
+        // to be looking at. Which pile that is goes in the note slot instead, in the dim type
+        // the offline warning uses: a mail you have already dealt with must not be able to
+        // pass for one that just arrived, but that is a footnote on the column, not its name.
+        HubColumn(title: "MAIL",
+                  count: hub.mail.count,
+                  note: hub.failure ?? (hub.showingSeen ? "seen" : nil)) {
             if hub.mail.isEmpty {
                 HubEmptyLine(text: hub.loaded ? "Nothing waiting" : "Loading\u{2026}")
             } else {
