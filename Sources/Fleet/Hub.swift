@@ -14,6 +14,9 @@ struct Mail: Identifiable {
     var importance: Int
     var receivedAt: Date
     var fromEmail: String
+    /// `new` — triaged and untouched — or `ongoing`, which the phone calls Seen: something you
+    /// have looked at and not finished with.
+    var state: String
     /// Starred on the phone — either this mail specifically, or its sender by a standing rule.
     /// Filled in against `rules` after the fetch, since one is a property of the other document.
     var starred: Bool
@@ -23,10 +26,11 @@ struct Mail: Identifiable {
         // the phone reads absent as "new" — so this has to, or the column shows only the mail
         // that has already been handled.
         let state = doc.fields["state"]?.stringValue ?? "new"
-        guard state == "new",
+        guard state == "new" || state == "ongoing",
               !doc.bool("archived"),
               !doc.bool("trashRequested") else { return nil }
 
+        self.state = state
         id = doc.id
         gist = doc.string("gist")
         sender = doc.string("sender")
@@ -114,6 +118,9 @@ struct Todo: Identifiable {
 @MainActor
 final class HubStore: ObservableObject {
     @Published private(set) var mail: [Mail] = []
+    /// Whether the mail on show is the Seen pile rather than the new one — which is to say,
+    /// whether the inbox is empty.
+    @Published private(set) var showingSeen = false
     @Published private(set) var todos: [Todo] = []
     /// Why the columns are empty, when they are empty for a reason worth saying.
     @Published private(set) var failure: String?
@@ -213,7 +220,7 @@ final class HubStore: ObservableObject {
             guard !Task.isCancelled else { return }
 
             let starred = StarredSenders(rulePage)
-            mail = mailPage.compactMap(Mail.init)
+            let unread = mailPage.compactMap(Mail.init)
                 .map {
                     var mail = $0
                     mail.starred = mail.starred || starred.covers(mail)
@@ -227,6 +234,14 @@ final class HubStore: ObservableObject {
                     if $0.importance != $1.importance { return $0.importance > $1.importance }
                     return $0.receivedAt > $1.receivedAt
                 }
+
+            // Nothing new is good news, and a column of good news is a strip of empty black
+            // taking up a sixth of the panel. What you were part-way through is the next most
+            // useful thing it can hold — and the heading changes with it, because a mail you
+            // have already dealt with once must not be able to pass for one that arrived.
+            let fresh = unread.filter { $0.state == "new" }
+            mail = fresh.isEmpty ? unread.filter { $0.state == "ongoing" } : fresh
+            showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
             todos = all.filter(\.open).sorted { $0.createdAt < $1.createdAt }
             file(all.filter { $0.state == Todo.Pile.done })

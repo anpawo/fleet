@@ -15,7 +15,8 @@ struct MailColumn: View {
     private static let maxItems = 10
 
     var body: some View {
-        HubColumn(title: "INBOX", count: hub.mail.count, note: hub.failure) {
+        HubColumn(title: hub.showingSeen ? "SEEN" : "INBOX",
+                  count: hub.mail.count, note: hub.failure) {
             if hub.mail.isEmpty {
                 HubEmptyLine(text: hub.loaded ? "Nothing waiting" : "Loading\u{2026}")
             } else {
