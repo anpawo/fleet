@@ -73,6 +73,11 @@ struct OverlayView: View {
     private static let edgeWeight = 2
     private static let innerWeight = 3
 
+    /// How far below the fleet the two side columns start. A podium: the sessions are what the
+    /// panel is for, and standing them a step above what is merely waiting says so before a
+    /// word is read.
+    private static let podiumDrop: CGFloat = 36
+
     var body: some View {
         ZStack {
             // Flat scrim rather than a live blur. Two reasons, and the second one is why the
@@ -96,7 +101,7 @@ struct OverlayView: View {
                         .background(dismissLayer)
                 }
             }
-            .padding(.top, 52)
+            .padding(.top, 76)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
@@ -146,7 +151,9 @@ struct OverlayView: View {
         HStack(alignment: .top, spacing: 0) {
             gap(Self.edgeWeight)
             if controller.hub.isConfigured {
-                MailColumn(hub: controller.hub).frame(width: sideWidth)
+                MailColumn(hub: controller.hub)
+                    .frame(width: sideWidth)
+                    .padding(.top, Self.podiumDrop)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
@@ -156,6 +163,7 @@ struct OverlayView: View {
                            commandHeld: controller.commandHeld,
                            onDismiss: { controller.hidePanel() })
                     .frame(width: sideWidth)
+                    .padding(.top, Self.podiumDrop)
             }
             gap(Self.edgeWeight)
         }
@@ -224,7 +232,7 @@ struct OverlayView: View {
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 9) {
                 legend(.awaitingAnswer)
                 legend(.ready)
                 legend(.running)
@@ -287,16 +295,17 @@ struct OverlayView: View {
     /// Sessions past the first screenful.
     private var offscreenCount: Int { max(0, controller.sessions.count - pageSize) }
 
-    /// Small: four of these sit centred on a heading that also carries a name and a count, and
-    /// they are a key rather than something to read.
+    /// Four dots, and no words.
+    ///
+    /// The words were there to teach the colours and they had stopped teaching anybody
+    /// anything — the tiles carry them, spelled out, on every pill. What is left is the palette
+    /// itself, which is worth having on the heading for a different reason: it says how many
+    /// states there are, so a colour you have not seen this week still reads as one of a set
+    /// rather than as something new.
     private func legend(_ state: SessionState) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(state.tint).frame(width: 6, height: 6)
-            Text(state.label)
-                .font(.system(size: 9.5, weight: .medium))
-                .tracking(0.4)
-                .foregroundStyle(.white.opacity(0.55))
-        }
+        Circle()
+            .fill(state.tint)
+            .frame(width: 7, height: 7)
     }
 }
 
@@ -508,7 +517,8 @@ struct SessionTile: View {
                 // whatever the spacers said.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: 7) {
+                    number
                     path
                     Spacer(minLength: 6)
                     subagentPill
@@ -592,6 +602,17 @@ struct SessionTile: View {
         case .user: return Color(red: 0.42, green: 0.70, blue: 1.00)
         case .assistant: return .white.opacity(0.5)
         case .tool: return .white.opacity(0.3)
+        }
+    }
+
+    /// The session's number, top left. Two sessions in the same directory are told apart by
+    /// their tiles' contents and nothing else; this is the one thing on a tile that is short
+    /// enough to say out loud and belongs to that session alone.
+    @ViewBuilder private var number: some View {
+        if session.number > 0 {
+            Text("\(session.number)")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.38))
         }
     }
 

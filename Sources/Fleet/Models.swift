@@ -218,6 +218,10 @@ struct PreviewLine: Identifiable {
 /// A process joined with its transcript — the unit the UI renders.
 struct Session: Identifiable {
     var id: pid_t { proc.pid }
+    /// A small number of this session's own, handed out when it first appears and given back
+    /// when it exits — see `SessionRegistry.assignNumbers`. Nought for a session that has not
+    /// been through the registry, which is only ever a demo one.
+    var number: Int = 0
     var proc: ClaudeProcess
     var transcript: TranscriptInfo?
     var state: SessionState

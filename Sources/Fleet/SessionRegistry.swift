@@ -12,6 +12,8 @@ final class SessionRegistry {
     /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
     private var lastWideScan = Date.distantPast
     private let screens = TerminalWatch()
+    /// pid -> the number its tile wears. See `assignNumbers`.
+    private var numbers: [pid_t: Int] = [:]
 
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
@@ -22,6 +24,8 @@ final class SessionRegistry {
         cpuSamples = cpuSamples.filter { live.contains($0.key) }
         bindings = bindings.filter { live.contains($0.key) }
         screens.forget(everythingBut: live)
+        numbers = numbers.filter { live.contains($0.key) }
+        assignNumbers(procs)
 
         bind(procs)
         store.retain(paths: Set(bindings.values))
@@ -49,6 +53,7 @@ final class SessionRegistry {
                 }
             }
             sessions.append(Session(
+                number: numbers[proc.pid] ?? 0,
                 proc: proc,
                 transcript: info,
                 state: state,
@@ -61,6 +66,25 @@ final class SessionRegistry {
             $0.state.sortRank != $1.state.sortRank
                 ? $0.state.sortRank < $1.state.sortRank
                 : $0.proc.pid < $1.proc.pid
+        }
+    }
+
+    /// Give every new session the lowest number nobody is using.
+    ///
+    /// Lowest free rather than ever-increasing, because the number is meant to be said out loud
+    /// and pointed at — six sessions should be one to six, not thirty-one to thirty-six because
+    /// of everything that ran this morning. A number is a session's for as long as it lives and
+    /// goes back in the pot the moment it exits.
+    ///
+    /// Handed out oldest first, so on a cold start the numbers follow the order the sessions
+    /// were actually started in rather than whatever order the process table came back in.
+    private func assignNumbers(_ procs: [ClaudeProcess]) {
+        for proc in procs.sorted(by: { $0.startedAt < $1.startedAt })
+        where numbers[proc.pid] == nil {
+            let taken = Set(numbers.values)
+            var free = 1
+            while taken.contains(free) { free += 1 }
+            numbers[proc.pid] = free
         }
     }
 

@@ -48,7 +48,7 @@ enum DemoFleet {
                                               lastActivity: Date())]
             }
 
-            return Session(proc: proc, transcript: info, state: state,
+            return Session(number: i + 1, proc: proc, transcript: info, state: state,
                            cpuPercent: state == .running ? 4 : 0)
         }
         .sorted {

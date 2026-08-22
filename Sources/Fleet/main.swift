@@ -107,7 +107,7 @@ if CommandLine.arguments.contains("--scan") {
         for s in sessions {
             let file = s.transcript.map { ($0.path as NSString).lastPathComponent } ?? "—"
             print("  [\(s.state.label.padding(toLength: 9, withPad: " ", startingAt: 0))] "
-                  + "\(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
+                  + "#\(s.number)  \(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
                   + String(format: "cpu=%.1f%%", s.cpuPercent))
             print("      path:  \(s.displayPath)")
             print("      topic: \(s.topic)")
