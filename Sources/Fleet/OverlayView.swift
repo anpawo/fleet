@@ -76,7 +76,7 @@ struct OverlayView: View {
     /// How far below the fleet the two side columns start. A podium: the sessions are what the
     /// panel is for, and standing them a step above what is merely waiting says so before a
     /// word is read.
-    private static let podiumDrop: CGFloat = 36
+    private static let podiumDrop: CGFloat = 72
 
     var body: some View {
         ZStack {
@@ -101,7 +101,7 @@ struct OverlayView: View {
                         .background(dismissLayer)
                 }
             }
-            .padding(.top, 76)
+            .padding(.top, 100)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
