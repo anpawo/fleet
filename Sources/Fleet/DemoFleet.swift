@@ -51,10 +51,5 @@ enum DemoFleet {
             return Session(number: i + 1, proc: proc, transcript: info, state: state,
                            cpuPercent: state == .running ? 4 : 0)
         }
-        .sorted {
-            $0.state.sortRank != $1.state.sortRank
-                ? $0.state.sortRank < $1.state.sortRank
-                : $0.proc.pid < $1.proc.pid
-        }
     }
 }

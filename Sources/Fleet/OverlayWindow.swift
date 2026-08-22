@@ -190,6 +190,7 @@ final class OverlayWindowController {
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.onCancel = { [weak self] in self?.controller.escape() }
         window.onModifiers = { [weak self] flags in self?.controller.modifiersChanged(flags) }
+        window.onNumber = { [weak self] n in self?.controller.activate(number: n) ?? false }
         window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
 
         let root = OverlayView(controller: controller)
@@ -209,6 +210,8 @@ final class PanelWindow: NSWindow {
     /// Every change to the modifier keys while the panel holds focus. ⌘ turns the todo column
     /// from a list into a set of controls, so the panel has to know it is being held.
     var onModifiers: ((NSEvent.ModifierFlags) -> Void)?
+    /// ⌘ and a digit. Returns whether a session wore that number.
+    var onNumber: (Int) -> Bool = { _ in false }
     /// Return, with no Shift. Returns whether it was used — when it isn't, the key goes on to
     /// the field as an ordinary newline.
     var onReturn: () -> Bool = { false }
@@ -224,6 +227,16 @@ final class PanelWindow: NSWindow {
     /// holding key focus — losing it mid-sentence sends the rest of what you type into whatever
     /// app took it. If that ever happens, this names the culprit instead of leaving it to
     /// guesswork.
+    /// The digit of a ⌘-digit chord, or nil for anything else. Read from
+    /// `charactersIgnoringModifiers`, so it is the digit printed on the key whatever the layout
+    /// underneath — and so ⌘⇧1 counts, which on some layouts sends a different character.
+    private static func digit(in event: NSEvent) -> Int? {
+        guard event.modifierFlags.contains(.command),
+              let text = event.charactersIgnoringModifiers,
+              let value = Int(text), (1 ... 9).contains(value) else { return nil }
+        return value
+    }
+
     override func resignKey() {
         super.resignKey()
         NSLog("Fleet: panel lost key focus to "
@@ -255,6 +268,13 @@ final class PanelWindow: NSWindow {
             return
         case .keyUp where event.keyCode == Self.escKeyCode:
             return
+        case .keyDown where Self.digit(in: event) != nil:
+            // ⌘1 through ⌘9 go to the session wearing that number, which is the tile in that
+            // position — the grid is laid out by number precisely so the two agree. Matched in
+            // the `where` clause rather than inside the case, so every other ⌘ chord falls
+            // through to the cases below instead of being handled here and swallowed.
+            if let digit = Self.digit(in: event), onNumber(digit) { return }
+            super.sendEvent(event)
         case .keyDown where Self.returnKeyCodes.contains(event.keyCode)
             && !event.modifierFlags.contains(.shift):
             // Sending the prompt is claimed from the field editor, which would otherwise

@@ -61,12 +61,11 @@ final class SessionRegistry {
             ))
         }
 
-        // Ready first — see `SessionState.sortRank` — then stable by pid so tiles don't shuffle.
-        return sessions.sorted {
-            $0.state.sortRank != $1.state.sortRank
-                ? $0.state.sortRank < $1.state.sortRank
-                : $0.proc.pid < $1.proc.pid
-        }
+        // By number, so tile three is always tile three. Sorting by state used to put the
+        // sessions you could pick up first, and it meant the grid rearranged itself under you
+        // every time one of them finished a turn — you would go to click a tile and it would
+        // have moved. A number is worth nothing if the thing wearing it wanders.
+        return sessions.sorted { $0.number < $1.number }
     }
 
     /// Give every new session the lowest number nobody is using.

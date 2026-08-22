@@ -254,6 +254,17 @@ final class AppController: ObservableObject {
         return Array(Set(dirs + sessions.map(\.dirName))).sorted()
     }
 
+    /// ⌘ and a digit, while the panel is up: the same thing as clicking the tile wearing that
+    /// number. Returns whether anything wore it, so an unclaimed number falls through to
+    /// whatever else wants the key rather than being swallowed.
+    func activate(number: Int) -> Bool {
+        guard isPanelVisible, let session = sessions.first(where: { $0.number == number }) else {
+            return false
+        }
+        activate(session)
+        return true
+    }
+
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately
     /// not `hidePanel()` — see `dismissForHandoff`.
     func activate(_ session: Session) {

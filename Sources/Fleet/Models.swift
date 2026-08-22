@@ -118,12 +118,14 @@ enum SessionState {
     case awaitingAnswer // blue  — blocked on a question or a permission approval
     case apiError       // amber — the request failed and Claude Code is retrying it
 
-    /// What comes first in the panel. Ready leads: those are the sessions you can pick up and
-    /// type into right now, which is what you open the panel to do. A session blocked on a
-    /// question is next — it needs you, but answering it is a smaller thing than starting the
-    /// next piece of work. Then the one stuck on a failed request: nothing to answer and
-    /// nothing to pick up, but it is the only one going nowhere, so it beats the merely busy.
-    /// One that is working needs nothing from you at all, so it comes last.
+    /// How much a state wants you, most first. The tiles are laid out by number rather than by
+    /// this — a grid that rearranges itself as sessions finish their turns is a grid you cannot
+    /// point at — but the menu bar has room for one dot and has to choose which session it
+    /// speaks for. Ready leads: those are the ones you can pick up and type into right now. A
+    /// session blocked on a question is next; it needs you, but answering it is a smaller thing
+    /// than starting the next piece of work. Then the one stuck on a failed request: nothing to
+    /// answer and nothing to pick up, but it is the only one going nowhere. One that is working
+    /// needs nothing from you at all, so it comes last.
     var sortRank: Int {
         switch self {
         case .ready: return 0
