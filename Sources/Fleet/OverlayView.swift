@@ -196,7 +196,7 @@ struct OverlayView: View {
             }
 
             HStack(spacing: 12) {
-                PromptBar(prompt: controller.prompt)
+                PromptBar(prompt: controller.prompt, eager: eagerLayout)
                 NewDesktopButton { controller.newDesktop() }
             }
         }
@@ -355,6 +355,12 @@ struct NewDesktopButton: View {
 /// the line underneath, so the field never moves or goes away while you are aiming at it.
 struct PromptBar: View {
     @ObservedObject var prompt: PromptController
+    /// Offscreen, the field is drawn as the text it shows rather than as a field.
+    /// `ImageRenderer` cannot rasterise a `TextField` — it puts a yellow bar with a "no entry"
+    /// sign where one should be — so every screenshot of this panel had a broken control in the
+    /// middle of it. This draws what the field looks like at rest, which is what a screenshot
+    /// of a panel nobody has typed into should show anyway.
+    var eager = false
     /// The field is only useful with the keyboard in it, and a dictation tool pasting from
     /// outside lands wherever focus is — which has to be here.
     @FocusState private var editing: Bool
@@ -388,18 +394,25 @@ struct PromptBar: View {
                 // Written by hand rather than `$prompt.field.draft`: the controller holds the
                 // field as a constant, and a projected binding cannot write through one.
                 // Changes still reach the view — the controller republishes them.
-                TextField(Self.placeholder, text: Binding(get: { prompt.field.draft },
-                                                          set: { prompt.field.draft = $0 }),
-                          axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.95))
-                    // Not the resting tint: a grey caret on a near-black field is hard to spot,
-                    // and the caret is the one thing that has to be obvious here.
-                    .tint(.white.opacity(0.8))
-                    .lineLimit(1 ... 8)
-                    .frame(width: Self.maxTextWidth, alignment: .leading)
-                    .focused($editing)
+                if eager {
+                    Text(prompt.field.draft.isEmpty ? Self.placeholder : prompt.field.draft)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(prompt.field.draft.isEmpty ? 0.3 : 0.95))
+                        .frame(width: Self.maxTextWidth, alignment: .leading)
+                } else {
+                    TextField(Self.placeholder, text: Binding(get: { prompt.field.draft },
+                                                              set: { prompt.field.draft = $0 }),
+                              axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.95))
+                        // Not the resting tint: a grey caret on a near-black field is hard to
+                        // spot, and the caret is the one thing that has to be obvious here.
+                        .tint(.white.opacity(0.8))
+                        .lineLimit(1 ... 8)
+                        .frame(width: Self.maxTextWidth, alignment: .leading)
+                        .focused($editing)
+                }
             }
 
             if let line {

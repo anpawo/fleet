@@ -375,8 +375,20 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             controller.modifiersChanged(.command)
         }
 
+        // `--size <w>x<h>` frames the render. The default is a laptop screen; a screenshot for
+        // somewhere else usually wants a different shape, and cropping one out of the other
+        // moves the panel off its own centre.
+        var size = CGSize(width: 1512, height: 1100)
+        if let i = CommandLine.arguments.firstIndex(of: "--size"),
+           i + 1 < CommandLine.arguments.count {
+            let parts = CommandLine.arguments[i + 1].lowercased().split(separator: "x")
+            if parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]) {
+                size = CGSize(width: w, height: h)
+            }
+        }
+
         let view = OverlayView(controller: controller, eagerLayout: true)
-            .frame(width: 1512, height: 1100)
+            .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
 
