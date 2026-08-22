@@ -130,14 +130,16 @@ struct HubEmptyLine: View {
 struct MailCard: View {
     let mail: Mail
 
-    /// Starred by you, or scored a 3 by the engine. The whole card is outlined in amber when
-    /// it is — and nothing marks the rest.
+    /// The one mark on a card, and it is four points wide.
     ///
-    /// A three-step scale down the left edge was tried and dropped: a grey bar and a fainter
-    /// grey bar are two shades nobody reads as a ranking, so all they did was add a second
-    /// vertical line to every card. Important or not is the only distinction this column is
-    /// narrow enough to make.
-    private var important: Bool { mail.starred || mail.importance >= 3 }
+    /// The whole card used to be outlined in this colour when the mail was starred, and it was
+    /// the loudest thing on the panel — a border reads at the edge of your vision, which is
+    /// exactly where a mail has no business being when you opened this to look at your
+    /// sessions. The star says the same thing to anyone who is already reading the column.
+    ///
+    /// Brass rather than gold: desaturated and dimmed off the amber the tiles use for a state,
+    /// because this is not a state and should not answer to the same reflex.
+    private static let starTint = Color(red: 0.78, green: 0.65, blue: 0.40)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -145,7 +147,7 @@ struct MailCard: View {
                 if mail.starred {
                     Text("\u{2605}")
                         .font(.system(size: 9))
-                        .foregroundStyle(SessionTile.subagentTint)
+                        .foregroundStyle(Self.starTint)
                 }
                 // The engine's headline, not the Gmail subject — there is no subject stored on
                 // the document. See the note in `Mail`.
@@ -171,8 +173,7 @@ struct MailCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(important ? SessionTile.subagentTint : .white.opacity(0.07),
-                              lineWidth: important ? 1.5 : 1)
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
         )
     }
 }
