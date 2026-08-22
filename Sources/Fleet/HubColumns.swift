@@ -225,17 +225,15 @@ struct TodoCard: View {
     let onDismiss: () -> Void
 
     @State private var hoveringFinish = false
-    /// The room the text has to wrap in. Seeded with roughly the right number so the first
+    /// The room the text has to wrap in. Seeded with roughly the right number, so the first
     /// frame is not laid out against a width of zero.
     @State private var textWidth: CGFloat = 190
 
     private static let finishTint = Color(red: 1.00, green: 0.35, blue: 0.32)
     private static let fontSize: CGFloat = 11.5
 
-    /// What the row shows: everything, or the first line of exactly that same text.
-    private var line: String {
-        guard !expanded else { return todo.name }
-        return FirstLine.of(todo.name, width: textWidth, size: Self.fontSize) ?? todo.title
+    private var metrics: FirstLine.Metrics {
+        FirstLine.metrics(todo.name, width: textWidth, size: Self.fontSize)
     }
 
     var body: some View {
@@ -247,23 +245,41 @@ struct TodoCard: View {
                 .frame(width: 3.5, height: 3.5)
                 .padding(.top, 6)
 
-            // Height is what animates, and it animates because the state change is made inside
-            // `withAnimation` — see `TodoColumn.unroll`. The extra lines exist the moment the
-            // limit lifts; the card grows into them over the next fifth of a second, and clips
-            // whatever has not been uncovered yet to its own rounded rectangle.
-            Text(line)
+            // A curtain, not a re-layout. The whole text is laid out once, at its full height,
+            // and never touched again; what moves is the edge it is clipped to. Nothing fades
+            // in, nothing re-wraps, no word is ever in two places on the way down — the lines
+            // below the fold have been sitting there the whole time, unlit.
+            //
+            // Which is why the height has to be a number on both sides. `nil` and "one line"
+            // are not two values with anything in between, so there would be nothing to
+            // animate; measuring the text gives the two ends of a real interpolation.
+            Text(todo.name)
                 .font(.system(size: Self.fontSize))
                 .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(expanded ? nil : 1)
                 .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: expanded)
+                .fixedSize(horizontal: false, vertical: true)
                 // Takes the whole width rather than sitting next to a spacer, so what the
-                // reader below measures is the room the text actually has to wrap in.
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // readers below measure is the room the text actually has to wrap in.
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .background(GeometryReader { proxy in
                     Color.clear.preference(key: TextWidth.self, value: proxy.size.width)
                 })
-                .onPreferenceChange(TextWidth.self) { textWidth = $0 }
+                // Sits where the first line's last word ends, so it reads as part of that line
+                // rather than as something parked at the right margin.
+                .overlay(alignment: .topLeading) {
+                    if !expanded, metrics.truncated {
+                        Text("\u{2026}")
+                            .font(.system(size: Self.fontSize))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .offset(x: metrics.firstLineWidth + 1)
+                    }
+                }
+                .frame(height: expanded ? metrics.fullHeight : metrics.lineHeight,
+                       alignment: .top)
+                .clipped()
+                // A zero is what an offscreen pass reports before it has laid anything out, and
+                // it would throw away a perfectly good seed and collapse every todo to one line.
+                .onPreferenceChange(TextWidth.self) { if $0 > 24 { textWidth = $0 } }
 
             // The ✕ takes the age's place rather than sitting beside it, so nothing shifts
             // sideways the moment ⌘ goes down and the thing you were aiming at stays there.
@@ -320,50 +336,59 @@ private struct TextWidth: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-/// The first line of a piece of text, cut where the text engine would cut it.
-///
-/// Not `truncationMode(.tail)`, which is what this replaces. That cuts wherever the pixels run
-/// out — mid-word, mid-letter — so the row's one visible line is not the same line the text
-/// wraps into when the row opens. Every word after the cut then shuffles into a different
-/// place as it unrolls, which is the one thing an animation must not do: the eye is following
-/// the words, and they are not where they were a moment ago.
-///
-/// `CTTypesetterSuggestLineBreak` answers the exact question — how much of this fits on a line
-/// this wide, breaking where a line is allowed to break — and it is the same answer the layout
-/// will give when the limit comes off. So the first line collapsed and the first line expanded
-/// are the same line, and only the lines below it are new.
-enum FirstLine {
-    private static let ellipsis = "\u{2026}"
 
-    /// Nil when the whole thing fits and there is nothing to cut.
-    static func of(_ text: String, width: CGFloat, size: CGFloat) -> String? {
-        guard width > 24, !text.isEmpty else { return nil }
+/// How a piece of text lays itself out in a column this wide: how many lines it takes, how tall
+/// each one is, and where the first one ends.
+///
+/// Computed rather than measured, and that is deliberate. The row's two heights have to be
+/// numbers on both sides of the animation or there is nothing to interpolate between, and
+/// asking SwiftUI to report the height it arrived at means waiting a frame for the answer to
+/// come back through a preference — which is a frame in which the row has the wrong height, and
+/// which never comes at all in an offscreen render. `CTTypesetterSuggestLineBreak` gives the
+/// same answer the layout will give, before the layout happens.
+///
+/// The line height is the font's own — ascender to descender plus leading — which is what
+/// SwiftUI uses for a plain `Text`. Checked against the rendered article: a one-line row comes
+/// out 28pt tall, which is this 14 plus the row's 7pt of padding top and bottom.
+enum FirstLine {
+    struct Metrics {
+        var lineHeight: CGFloat
+        var lineCount: Int
+        /// How wide the first line's text is, from the leading edge — where the ellipsis goes.
+        var firstLineWidth: CGFloat
+
+        var fullHeight: CGFloat { lineHeight * CGFloat(lineCount) }
+        /// Whether anything is below the fold.
+        var truncated: Bool { lineCount > 1 }
+    }
+
+    static func metrics(_ text: String, width: CGFloat, size: CGFloat) -> Metrics {
         let font = NSFont.systemFont(ofSize: size)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let single = Metrics(lineHeight: lineHeight, lineCount: 1, firstLineWidth: 0)
+        guard width > 24, !text.isEmpty else { return single }
+
         let attributed = NSAttributedString(string: text, attributes: [.font: font])
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-
-        let fits = CTTypesetterSuggestLineBreak(typesetter, 0, Double(width))
-        guard fits > 0, fits < attributed.length else { return nil }
-
-        let candidate = head(of: text, upTo: fits)
-        if measure(candidate, font: font) <= width { return candidate }
-
-        // The line was full to the pixel and the ellipsis has nowhere to go. Give it a line's
-        // worth of room less and break again — still on a word, one word shorter.
-        let room = width - measure(ellipsis, font: font)
-        let narrower = CTTypesetterSuggestLineBreak(typesetter, 0, Double(max(room, 1)))
-        return head(of: text, upTo: max(Int(narrower), 1))
-    }
-
-    /// UTF-16 indices, because that is what CoreText counts in and `String.prefix` does not —
-    /// the two disagree on every accent in the list.
-    private static func head(of text: String, upTo index: CFIndex) -> String {
         let ns = text as NSString
-        let cut = ns.substring(to: min(Int(index), ns.length))
-        return cut.trimmingCharacters(in: .whitespacesAndNewlines) + ellipsis
-    }
 
-    private static func measure(_ text: String, font: NSFont) -> CGFloat {
-        NSAttributedString(string: text, attributes: [.font: font]).size().width
+        var start = 0
+        var lines = 0
+        var firstWidth: CGFloat = 0
+        // The bound is a runaway guard, not a policy: a todo is occasionally a pasted receipt,
+        // and the column sits in a scroll view that can take it.
+        while start < attributed.length, lines < 60 {
+            let fits = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
+            guard fits > 0 else { break }
+            if lines == 0 {
+                let head = ns.substring(with: NSRange(location: start, length: Int(fits)))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                firstWidth = NSAttributedString(string: head,
+                                                attributes: [.font: font]).size().width
+            }
+            start += Int(fits)
+            lines += 1
+        }
+        return Metrics(lineHeight: lineHeight, lineCount: max(lines, 1), firstLineWidth: firstWidth)
     }
 }
