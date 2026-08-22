@@ -98,7 +98,10 @@ struct OverlayView: View {
                         .background(dismissLayer)
                 }
             }
-            .padding(.top, 46)
+            // Lower than the top of the screen by a good margin. The panel is a thing that
+            // appears over your work, and a title flush to the menu bar reads as part of the
+            // system rather than as something that turned up.
+            .padding(.top, 66)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
@@ -242,21 +245,20 @@ struct OverlayView: View {
                 legend(.awaitingAnswer)
                 legend(.ready)
                 legend(.running)
-                // Only when there is one. A fourth colour explained on every panel, for a state
-                // you see once a month, is three words of noise the rest of the time.
-                if controller.sessions.contains(where: { $0.state == .apiError }) {
-                    legend(.apiError)
-                }
+                legend(.apiError)
             }
             .padding(.top, 4)
 
             // Sideways scrolling is not discoverable at all until you know there is something
-            // to scroll to, so it says so when there is.
-            Text("Click a session to jump to its terminal  ·  Esc to dismiss"
-                 + (pages.count > 1 ? "  ·  scroll sideways for \(offscreenCount) more" : ""))
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.38))
-                .padding(.top, 2)
+            // to scroll to, so it says so when there is — and says nothing the rest of the
+            // time. What used to live here, that a tile can be clicked and Esc closes the
+            // panel, was a line of instructions on a panel you have opened a thousand times.
+            if pages.count > 1 {
+                Text("scroll sideways for \(offscreenCount) more")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.38))
+                    .padding(.top, 2)
+            }
         }
     }
 
