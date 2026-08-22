@@ -98,10 +98,7 @@ struct OverlayView: View {
                         .background(dismissLayer)
                 }
             }
-            // Lower than the top of the screen by a good margin. The panel is a thing that
-            // appears over your work, and a title flush to the menu bar reads as part of the
-            // system rather than as something that turned up.
-            .padding(.top, 66)
+            .padding(.top, 52)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
@@ -232,22 +229,36 @@ struct OverlayView: View {
 
     private var header: some View {
         VStack(spacing: 8) {
-            Text("Claude Code")
+            Text("Claude Code Fleet")
                 .font(.system(size: 13, weight: .semibold))
                 .tracking(3.2)
                 .foregroundStyle(.white.opacity(0.45))
 
-            Text(summary)
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(.white)
+            // The count and the legend, on a card of their own — the same near-black the tiles
+            // and the side columns are drawn on. Over a desktop the panel's scrim is the only
+            // thing behind them, and white text on a wash of whatever you happen to have open
+            // is the one place on this panel that has to be read at a glance and was hardest
+            // to. A ground of its own is what makes it a heading rather than a caption.
+            VStack(spacing: 8) {
+                Text(summary)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(.white)
 
-            HStack(spacing: 18) {
-                legend(.awaitingAnswer)
-                legend(.ready)
-                legend(.running)
-                legend(.apiError)
+                HStack(spacing: 18) {
+                    legend(.awaitingAnswer)
+                    legend(.ready)
+                    legend(.running)
+                    legend(.apiError)
+                }
             }
-            .padding(.top, 4)
+            .padding(.horizontal, 30)
+            .padding(.vertical, 16)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.92))
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+            )
 
             // Sideways scrolling is not discoverable at all until you know there is something
             // to scroll to, so it says so when there is — and says nothing the rest of the
