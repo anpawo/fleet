@@ -52,6 +52,27 @@ struct TodoColumn: View {
     /// second while the panel is up — and state on a view that gets replaced does not survive.
     @State private var hovered: String?
 
+    /// The row being dragged, ⌘ held: which one it is, where it started, and which slot it
+    /// would drop into if you let go now.
+    @State private var dragging: Dragging?
+    /// How far the pointer has come since the press. Kept out of `Dragging` because the two
+    /// move under different rules — the list rearranges itself with an animation, and the row
+    /// under your hand must not.
+    @State private var dragOffset: CGFloat = 0
+
+    private struct Dragging {
+        let id: String
+        let from: Int
+        var to: Int
+    }
+
+    /// One row's height plus the gap under it. Every row is one line tall at rest — that is
+    /// what the curtain in `TodoCard` is for — so the column is a regular grid, and where a
+    /// dragged row has been taken is arithmetic rather than hit-testing.
+    private static var pitch: CGFloat {
+        FirstLine.lineHeight(size: TodoCard.fontSize) + TodoCard.verticalPadding * 2 + 8
+    }
+
     /// Quick, but not instant. The point of the unroll is that you see which row grew and where
     /// the ones below it went; at zero duration the column simply teleports into a new shape and
     /// you have to find your place in it again.
@@ -70,27 +91,95 @@ struct TodoColumn: View {
                     HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
                 }
             } else {
-                ForEach(hub.todos.prefix(Self.maxItems)) { todo in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, todo in
                     TodoCard(todo: todo,
                              commandHeld: commandHeld,
                              // Hovering opens a row only while ⌘ is down. Without that guard the
                              // column would rearrange itself under a pointer merely crossing it
-                             // on the way somewhere else.
-                             expanded: commandHeld && hovered == todo.id,
+                             // on the way somewhere else. A row being dragged stays shut too:
+                             // the grid the drag counts in only holds while every row is one
+                             // line tall.
+                             expanded: commandHeld && hovered == todo.id && dragging == nil,
+                             lifted: dragging?.id == todo.id,
                              onFinish: { hub.markDone(todo) },
                              onHover: { inside in
+                                 guard dragging == nil else { return }
                                  withAnimation(Self.unroll) {
                                      if inside { hovered = todo.id }
                                      else if hovered == todo.id { hovered = nil }
                                  }
                              },
                              onDismiss: onDismiss)
+                        .offset(y: lift(todo))
+                        // Over the rows it is passing, not under them.
+                        .zIndex(dragging?.id == todo.id ? 1 : 0)
+                        // The row under your hand is not animated, in either of the two things
+                        // that move it: it follows the pointer exactly, and the slot it jumps
+                        // to when the list rearranges is cancelled out by the offset above in
+                        // the same frame. Animate either half and the two stop cancelling, and
+                        // the row swims away from the pointer and back.
+                        .transaction { if dragging?.id == todo.id { $0.animation = nil } }
+                        // `.gesture` rather than `.highPriorityGesture`: the ✕ is a subview and
+                        // subview gestures win, so a click on it still finishes the todo while
+                        // a drag from anywhere — the ✕ included — reorders.
+                        .gesture(reorder(todo), including: commandHeld ? .all : .subviews)
                 }
             }
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
         // so it needs its own animation or the whole column snaps.
         .animation(Self.unroll, value: commandHeld)
+        // Letting ⌘ go mid-drag drops the row where it stands rather than leaving the column
+        // holding a drag nothing can finish.
+        .onChange(of: commandHeld) { if !commandHeld { drop() } }
+    }
+
+    /// What the column draws: the list as stored, with the dragged row already moved to where
+    /// it would land. The rows it displaces slide out of its way, which is the whole feedback —
+    /// there is no insertion line to read, the gap *is* the answer.
+    private var rows: [Todo] {
+        let visible = Array(hub.todos.prefix(Self.maxItems))
+        guard let dragging, dragging.from != dragging.to,
+              dragging.from < visible.count else { return visible }
+        var list = visible
+        let moved = list.remove(at: dragging.from)
+        list.insert(moved, at: min(dragging.to, list.count))
+        return list
+    }
+
+    /// How far the dragged row is drawn from where the list has just put it: the pointer's
+    /// whole travel, less the slots it has already been moved through.
+    private func lift(_ todo: Todo) -> CGFloat {
+        guard let dragging, dragging.id == todo.id else { return 0 }
+        return dragOffset - CGFloat(dragging.to - dragging.from) * Self.pitch
+    }
+
+    /// ⌘ and a drag: the todo follows the pointer, and the slot it is over is worked out from
+    /// how many rows it has travelled.
+    private func reorder(_ todo: Todo) -> some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                let visible = hub.todos.prefix(Self.maxItems)
+                guard let from = dragging?.from
+                        ?? visible.firstIndex(where: { $0.id == todo.id }) else { return }
+                dragOffset = value.translation.height
+                let travelled = Int((value.translation.height / Self.pitch).rounded())
+                let to = min(max(from + travelled, 0), visible.count - 1)
+                guard dragging?.to != to else { return }
+                withAnimation(Self.unroll) {
+                    dragging = Dragging(id: todo.id, from: from, to: to)
+                }
+            }
+            .onEnded { _ in drop() }
+    }
+
+    /// Let go. The write goes out here and nowhere else — a drag crossing six rows is one
+    /// document changed, not six.
+    private func drop() {
+        guard let dragging else { return }
+        hub.move(dragging.id, to: dragging.to)
+        self.dragging = nil
+        dragOffset = 0
     }
 }
 
@@ -231,6 +320,9 @@ struct TodoCard: View {
     let todo: Todo
     let commandHeld: Bool
     let expanded: Bool
+    /// Whether this is the row being dragged. Off the page a little, and lit — a card that has
+    /// been picked up has to be told apart from the ones sliding around underneath it.
+    var lifted = false
     /// The ✕: finished, not deleted. The row leaves the column either way, and only one of the
     /// two can be taken back from the phone.
     let onFinish: () -> Void
@@ -243,7 +335,10 @@ struct TodoCard: View {
     @State private var textWidth: CGFloat = 190
 
     private static let finishTint = Color(red: 1.00, green: 0.35, blue: 0.32)
-    private static let fontSize: CGFloat = 11.5
+    static let fontSize: CGFloat = 11.5
+    /// Above and below the text, on each side. Part of what makes a row's height, which the
+    /// column needs to know to work out where a dragged row has been taken.
+    static let verticalPadding: CGFloat = 7
 
     private var metrics: FirstLine.Metrics {
         FirstLine.metrics(todo.name, width: textWidth, size: Self.fontSize)
@@ -314,7 +409,7 @@ struct TodoCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, Self.verticalPadding)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
@@ -322,8 +417,12 @@ struct TodoCard: View {
                 // Not brightened while ⌘ is down. It was, and every row in the column changing
                 // shade at once read as the whole list reacting — a flicker you notice and then
                 // have to interpret. The ✕ appearing is the entire announcement needed.
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                //
+                // One row *being dragged* is the exception: that one is answering your hand,
+                // and it is the only thing on the panel that is.
+                .strokeBorder(.white.opacity(lifted ? 0.34 : 0.07), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(lifted ? 0.55 : 0), radius: lifted ? 12 : 0, y: 4)
         .contentShape(Rectangle())
         // Every click puts the panel away, ⌘ or no ⌘. Opening a row is the pointer's job and
         // nothing else's, so there is nothing here a click could mean instead.
@@ -448,9 +547,16 @@ enum FirstLine {
         var truncated: Bool { lineCount > 1 }
     }
 
+    /// A line of this font, ascender to descender plus leading — what SwiftUI gives a plain
+    /// `Text`, and what a row of the todo column is tall.
+    static func lineHeight(size: CGFloat) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: size)
+        return ceil(font.ascender - font.descender + font.leading)
+    }
+
     static func metrics(_ text: String, width: CGFloat, size: CGFloat) -> Metrics {
         let font = NSFont.systemFont(ofSize: size)
-        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let lineHeight = lineHeight(size: size)
         let single = Metrics(lineHeight: lineHeight, lineCount: 1, firstLineWidth: 0)
         guard width > 24, !text.isEmpty else { return single }
 

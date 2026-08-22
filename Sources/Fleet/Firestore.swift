@@ -165,6 +165,7 @@ enum Firestore {
         struct Value: Decodable {
             let stringValue: String?
             let integerValue: String?
+            let doubleValue: Double?
             let timestampValue: String?
             let booleanValue: Bool?
         }
@@ -173,6 +174,7 @@ enum Firestore {
         var id: String { String(name.split(separator: "/").last ?? "") }
 
         func string(_ key: String) -> String { fields[key]?.stringValue ?? "" }
+        func double(_ key: String) -> Double? { fields[key]?.doubleValue }
         func bool(_ key: String) -> Bool { fields[key]?.booleanValue ?? false }
         func int(_ key: String, default fallback: Int = 0) -> Int {
             fields[key]?.integerValue.flatMap(Int.init) ?? fallback

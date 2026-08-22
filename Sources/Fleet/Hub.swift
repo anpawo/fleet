@@ -77,6 +77,9 @@ struct Todo: Identifiable {
     /// When it was finished. Absent on everything finished before Fleet started stamping it —
     /// the phone writes `state` alone.
     var doneAt: Date?
+    /// Where you dragged it to. Absent on everything nobody has dragged, which is most of the
+    /// list and everything the phone writes — see `rank`.
+    var order: Double?
 
     /// The four values `state` takes. Not an enum on the model: an unknown string must survive
     /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
@@ -90,11 +93,12 @@ struct Todo: Identifiable {
 
     /// A todo typed into the panel, on screen before Firestore has confirmed it. The id is a
     /// stand-in until the write comes back with the real one.
-    init(pending name: String) {
+    init(pending name: String, order: Double) {
         id = UUID().uuidString
         self.name = name
         state = Pile.todo
         createdAt = Date()
+        self.order = order
     }
 
     init(_ doc: Firestore.Document) {
@@ -103,7 +107,17 @@ struct Todo: Identifiable {
         state = doc.string("state")
         createdAt = doc.date("createdAt") ?? .distantPast
         doneAt = doc.date("doneAt")
+        order = doc.double("order")
     }
+
+    /// Where the todo sits in the column, dragged or not.
+    ///
+    /// Seconds since 1970, in both cases: a todo nobody has moved ranks by the moment it was
+    /// written, which is the order the list has always been in, and a dragged one carries a
+    /// number picked between its two new neighbours. One scale for both means a drag writes one
+    /// field on one document — no renumbering of the list, and nothing to migrate for the
+    /// twenty todos that were there first.
+    var rank: Double { order ?? createdAt.timeIntervalSince1970 }
 
     /// Still on your plate. In practice the middle pile goes unused — the phone offers it and
     /// nothing is ever in it — so this is everything not yet finished.
@@ -195,7 +209,11 @@ final class HubStore: ObservableObject {
     /// just typed that is not there yet reads as a keystroke that missed. Newest last, which is
     /// where the column's own oldest-first order puts it.
     private func add(_ name: String) {
-        let pending = Todo(pending: name)
+        // Last, and stamped rather than left to its timestamp: a todo dragged to the bottom of
+        // the column ranks above *now*, and a new line has to land under it rather than in
+        // front of it.
+        let pending = Todo(pending: name, order: (todos.last?.rank ?? Date().timeIntervalSince1970)
+            + Self.gap)
         todos.append(pending)
         Task {
             do {
@@ -204,6 +222,7 @@ final class HubStore: ObservableObject {
                     "state": ["stringValue": Todo.Pile.todo],
                     "manual": ["booleanValue": true],
                     "createdAt": Firestore.timestamp(pending.createdAt),
+                    "order": ["doubleValue": pending.rank],
                 ])
                 // The real id, so a ✕ on the row it has just become lands on the document that
                 // exists rather than creating a second one under the stand-in id.
@@ -214,6 +233,43 @@ final class HubStore: ObservableObject {
                 NSLog("Fleet: could not add todo — \(error.localizedDescription)")
                 todos.removeAll { $0.id == pending.id }
                 failure = "not saved"
+            }
+        }
+    }
+
+    /// How far apart two ranks are put when there is nothing on the far side to split against —
+    /// an hour, on a scale that is seconds. Wide enough that a drag to either end of the column
+    /// clears the list, small enough to stay legible next to the timestamps around it.
+    private static let gap: Double = 3600
+
+    /// A todo dragged to a new place in the column, ⌘ held.
+    ///
+    /// One field on one document: the moved todo is given a rank halfway between the two it now
+    /// sits between, so nothing else in the list has to be rewritten. Doubles split about two
+    /// million times at this magnitude before the midpoint stops landing between its
+    /// neighbours — a list dragged into shape for a decade never reaches it.
+    func move(_ id: String, to index: Int) {
+        guard let from = todos.firstIndex(where: { $0.id == id }), from != index else { return }
+        var moved = todos.remove(at: from)
+        let target = min(max(index, 0), todos.count)
+        let before = target > 0 ? todos[target - 1].rank : nil
+        let after = target < todos.count ? todos[target].rank : nil
+        switch (before, after) {
+        case let (before?, after?): moved.order = (before + after) / 2
+        case let (before?, nil): moved.order = before + Self.gap
+        case let (nil, after?): moved.order = after - Self.gap
+        case (nil, nil): moved.order = moved.rank
+        }
+        todos.insert(moved, at: target)
+
+        let rank = moved.rank
+        Task {
+            do {
+                try await Firestore.patch("todos/\(id)", fields: ["order": ["doubleValue": rank]])
+            } catch {
+                NSLog("Fleet: could not reorder todo \(id) — \(error.localizedDescription)")
+                // The column is claiming an order Firestore does not have. Ask for the truth.
+                refresh()
             }
         }
     }
@@ -320,7 +376,9 @@ final class HubStore: ObservableObject {
             mail = fresh.isEmpty ? unread.filter { $0.state == "ongoing" } : fresh
             showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
-            todos = all.filter(\.open).sorted { $0.createdAt < $1.createdAt }
+            todos = all.filter(\.open).sorted {
+                $0.rank != $1.rank ? $0.rank < $1.rank : $0.id < $1.id
+            }
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
