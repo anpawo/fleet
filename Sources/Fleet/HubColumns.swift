@@ -58,9 +58,17 @@ struct TodoColumn: View {
     static let unroll: Animation = .easeOut(duration: 0.18)
 
     var body: some View {
-        HubColumn(title: "TODO", count: hub.todos.count, note: hub.failure) {
+        HubColumn(title: "TODO",
+                  count: hub.todos.count,
+                  note: hub.failure,
+                  onAdd: { withAnimation(Self.unroll) { hub.compose() } }) {
+            if hub.composing {
+                NewTodoRow(hub: hub)
+            }
             if hub.todos.isEmpty {
-                HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
+                if !hub.composing {
+                    HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
+                }
             } else {
                 ForEach(hub.todos.prefix(Self.maxItems)) { todo in
                     TodoCard(todo: todo,
@@ -95,6 +103,8 @@ struct HubColumn<Content: View>: View {
     let count: Int
     /// A word about why the list may not be current — "offline", usually. Nil when it is.
     let note: String?
+    /// The + on the heading, for a column you can write into. Nil on one that only reports.
+    var onAdd: (() -> Void)?
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -111,6 +121,14 @@ struct HubColumn<Content: View>: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                if let onAdd {
+                    AddButton(action: onAdd)
+                        // Pinned to the heading's own line: the button is 16pt tall and the
+                        // words beside it are 11pt, so left to itself it would push this column
+                        // rule a couple of points below the one on MAIL. What it spills lands
+                        // in the gap above the rule.
+                        .frame(height: 13)
+                }
                 if count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -327,6 +345,77 @@ struct TodoCard: View {
     }
 }
 
+
+/// The + on a column heading. Sized and shaded like the ✕ on a todo, because it is the same
+/// kind of thing: a small target that appears on a heading and does one thing to the list.
+struct AddButton: View {
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.5))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(.white.opacity(hovering ? 0.16 : 0.07)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Add a todo")
+    }
+}
+
+/// The row the + opens: a todo being written, at the top of the column.
+///
+/// Built to be the same row as the ones under it — same dot, same card, same type — so what
+/// you are typing is already sitting where it will end up. Return files it and leaves the row
+/// open for the next one; Esc takes it back.
+struct NewTodoRow: View {
+    @ObservedObject var hub: HubStore
+
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Circle()
+                .fill(.white.opacity(0.32))
+                .frame(width: 3.5, height: 3.5)
+                .padding(.top, 6)
+
+            // Vertical axis, like the prompt: a todo is occasionally a paragraph, and it should
+            // wrap rather than scroll off the side. Return never reaches the field editor here —
+            // the panel window claims it — so wrapping costs nothing.
+            TextField("New todo", text: $hub.draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.9))
+                .tint(.white.opacity(0.8))
+                .lineLimit(1 ... 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focused($editing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                // Brighter than a todo's border: this row is being typed into, and the only
+                // other lit thing on the panel is the prompt field.
+                .strokeBorder(.white.opacity(0.22), lineWidth: 1)
+        )
+        // A click in the padding around the field would otherwise be an unclaimed tap, and an
+        // unclaimed tap on this panel puts it away — mid-sentence.
+        .contentShape(Rectangle())
+        .onTapGesture { editing = true }
+        .onAppear { editing = true }
+        // Return goes to whichever field has the caret, and only the field knows which that is.
+        .onChange(of: editing) { hub.composerFocused = editing }
+    }
+}
 
 private struct TextWidth: PreferenceKey {
     static let defaultValue: CGFloat = 0

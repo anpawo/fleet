@@ -102,6 +102,20 @@ enum Firestore {
         _ = try await send(request)
     }
 
+    /// A new document in a collection, with Firestore picking the id — the POST the phone's
+    /// widget makes when you type a todo into it. The written document comes back, which is
+    /// where the real id is.
+    @discardableResult
+    static func create(in collection: String, fields: [String: Any]) async throws -> Document {
+        var request = URLRequest(url: Firestore.documents.appending(path: collection))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
+                         forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["fields": fields])
+        return try await send(request, decoding: Document.self)
+    }
+
     /// Firestore's wire form for a timestamp. The phone writes a server timestamp, which over
     /// REST would need a commit with a field transform; the clock on this Mac is close enough
     /// for a field that only ever decides whether two weeks have passed.

@@ -39,6 +39,12 @@ final class PromptField: ObservableObject {
         return true
     }
 
+    /// Take the keyboard back without touching what is written — another field on the panel
+    /// having just closed, say.
+    func refocus() {
+        focusRequests += 1
+    }
+
     /// Esc on a half-written prompt, or the panel closing.
     func clear() {
         draft = ""

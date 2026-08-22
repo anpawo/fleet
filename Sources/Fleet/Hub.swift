@@ -88,6 +88,15 @@ struct Todo: Identifiable {
         static let past = "past"
     }
 
+    /// A todo typed into the panel, on screen before Firestore has confirmed it. The id is a
+    /// stand-in until the write comes back with the real one.
+    init(pending name: String) {
+        id = UUID().uuidString
+        self.name = name
+        state = Pile.todo
+        createdAt = Date()
+    }
+
     init(_ doc: Firestore.Document) {
         id = doc.id
         name = doc.string("name")
@@ -124,6 +133,16 @@ final class HubStore: ObservableObject {
     @Published private(set) var todos: [Todo] = []
     /// Why the columns are empty, when they are empty for a reason worth saying.
     @Published private(set) var failure: String?
+    /// Whether the todo column has an empty row open at its top, waiting to be written into.
+    @Published private(set) var composing = false
+    /// What is in that row.
+    @Published var draft = ""
+    /// Whether that row holds the caret. Return is claimed by the panel window and handed to
+    /// whichever field is being typed into, and clicking back into the prompt moves that without
+    /// closing the row — so which of the two owns Return is a question about focus, not about
+    /// whether the row exists.
+    @Published var composerFocused = false
+
     /// Whether a first answer has ever arrived — an empty inbox and an unfetched one look
     /// identical otherwise, and only one of them is good news.
     @Published private(set) var loaded = false
@@ -140,6 +159,64 @@ final class HubStore: ObservableObject {
     var isConfigured: Bool { Firestore.isConfigured }
 
     // MARK: - Writing
+
+    /// The + on the TODO heading.
+    func compose() {
+        draft = ""
+        composing = true
+    }
+
+    /// Esc on the new-todo row, or the panel closing. Returns whether there was a row to close,
+    /// so an Esc with nothing open falls through to whatever else wants it.
+    @discardableResult
+    func stopComposing() -> Bool {
+        guard composing else { return false }
+        composing = false
+        composerFocused = false
+        draft = ""
+        return true
+    }
+
+    /// Return in the new-todo row. The row stays open and empty afterwards, so a list you have
+    /// in your head goes down in one sitting rather than a click per line.
+    func commitDraft() -> Bool {
+        guard composing, composerFocused else { return false }
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        guard !name.isEmpty else { return true }
+        add(name)
+        return true
+    }
+
+    /// A todo written from here, in the shape the phone writes them — `manual` and all, so a
+    /// line typed on this Mac is indistinguishable from one typed in the app.
+    ///
+    /// On screen before it is on the network, like the ✕: the panel is a glance, and a line you
+    /// just typed that is not there yet reads as a keystroke that missed. Newest last, which is
+    /// where the column's own oldest-first order puts it.
+    private func add(_ name: String) {
+        let pending = Todo(pending: name)
+        todos.append(pending)
+        Task {
+            do {
+                let written = try await Firestore.create(in: "todos", fields: [
+                    "name": ["stringValue": name],
+                    "state": ["stringValue": Todo.Pile.todo],
+                    "manual": ["booleanValue": true],
+                    "createdAt": Firestore.timestamp(pending.createdAt),
+                ])
+                // The real id, so a ✕ on the row it has just become lands on the document that
+                // exists rather than creating a second one under the stand-in id.
+                if let index = todos.firstIndex(where: { $0.id == pending.id }) {
+                    todos[index] = Todo(written)
+                }
+            } catch {
+                NSLog("Fleet: could not add todo — \(error.localizedDescription)")
+                todos.removeAll { $0.id == pending.id }
+                failure = "not saved"
+            }
+        }
+    }
 
     /// The ✕ on a todo. Finished, not deleted — the row leaves the column either way, and one
     /// of the two is undoable from the phone.

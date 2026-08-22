@@ -217,6 +217,7 @@ final class AppController: ObservableObject {
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
         // somebody who is not holding anything.
         commandHeld = false
+        hub.stopComposing()
         prompt.panelClosed()
         overlay?.hide()
         schedule(Config.idlePollActive)
@@ -226,6 +227,9 @@ final class AppController: ObservableObject {
     /// Return on an empty field falls through to whatever else wants it.
     func submitPrompt() -> Bool {
         guard isPanelVisible else { return false }
+        // The todo column's own field, when the caret is in it: Return belongs to whatever is
+        // being typed into, and only one of the two fields can be.
+        if hub.commitDraft() { return true }
         return prompt.submit()
     }
 
@@ -234,6 +238,13 @@ final class AppController: ObservableObject {
     /// also take the fleet off screen.
     func escape() {
         guard isPanelVisible else { return }
+        // The new-todo row first, and the keyboard goes back to the prompt as it closes — the
+        // panel's resting state is a caret in the prompt field, and Esc should land you there
+        // rather than in a panel nothing is listening on.
+        if hub.stopComposing() {
+            prompt.field.refocus()
+            return
+        }
         if prompt.escape() { return }
         hidePanel()
     }
