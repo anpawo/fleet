@@ -84,9 +84,7 @@ struct OverlayView: View {
             Color.black.opacity(Self.tintOpacity)
                 .ignoresSafeArea()
 
-            VStack(spacing: 22) {
-                header
-
+            Group {
                 if eagerLayout {
                     board(scrolling: false)
                 } else {
@@ -174,13 +172,72 @@ struct OverlayView: View {
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
         VStack(spacing: 18) {
-            grid
+            VStack(alignment: .leading, spacing: 8) {
+                fleetHeading
+                // The same gap the side columns leave under their own rule, plus the room the
+                // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
+                grid.padding(.top, 8)
+            }
+
+            // Sideways scrolling is not discoverable at all until you know there is something
+            // to scroll to, so it says so when there is, and says nothing the rest of the time.
+            if pages.count > 1 {
+                Text("scroll sideways for \(offscreenCount) more")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.32))
+            }
+
             HStack(spacing: 12) {
                 PromptBar(prompt: controller.prompt)
                 NewDesktopButton { controller.newDesktop() }
             }
         }
         .padding(.bottom, scrolling ? 44 : 20)
+    }
+
+    /// The fleet's own column heading, built like the two either side of it: a name, a rule the
+    /// width of what it heads, and the count on the right.
+    ///
+    /// This used to be a banner across the top of the panel — the name, then "1 of 4 needs your
+    /// input" at thirty points. Two things were wrong with it. It was a sentence where the
+    /// tiles underneath already say the same thing in colour, and it sat above all three
+    /// columns while naming only the middle one, so the panel read as one thing with a title
+    /// rather than three lists side by side.
+    ///
+    /// The states go in the middle of the rule rather than beside the name, because they
+    /// describe the tiles below rather than the heading itself — and centred on the line they
+    /// belong to nothing in particular, which is right: they are a key, not a count.
+    private var fleetHeading: some View {
+        ZStack {
+            HStack(spacing: 8) {
+                Text("CLAUDE CODE FLEET")
+                    .font(.system(size: 11, weight: .semibold))
+                    // Tighter than the two side headings, which are one short word each. At
+                    // their tracking this one runs into the legend beside it.
+                    .tracking(2.6)
+                    .foregroundStyle(.white.opacity(0.45))
+                Spacer(minLength: 4)
+                if !controller.sessions.isEmpty {
+                    Text("\(controller.sessions.count)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.32))
+                }
+            }
+
+            HStack(spacing: 12) {
+                legend(.awaitingAnswer)
+                legend(.ready)
+                legend(.running)
+                legend(.apiError)
+            }
+        }
+        .padding(.horizontal, 2)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.white.opacity(0.10))
+                .frame(height: 1)
+                .offset(y: 9)
+        }
     }
 
     /// One screenful of tiles: at most three rows, of two or three.
@@ -227,70 +284,17 @@ struct OverlayView: View {
         .background(dismissLayer)
     }
 
-    private var header: some View {
-        VStack(spacing: 8) {
-            Text("Claude Code Fleet")
-                .font(.system(size: 13, weight: .semibold))
-                .tracking(3.2)
-                .foregroundStyle(.white.opacity(0.45))
-
-            // The count and the legend, on a card of their own — the same near-black the tiles
-            // and the side columns are drawn on. Over a desktop the panel's scrim is the only
-            // thing behind them, and white text on a wash of whatever you happen to have open
-            // is the one place on this panel that has to be read at a glance and was hardest
-            // to. A ground of its own is what makes it a heading rather than a caption.
-            VStack(spacing: 8) {
-                Text(summary)
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                HStack(spacing: 18) {
-                    legend(.awaitingAnswer)
-                    legend(.ready)
-                    legend(.running)
-                    legend(.apiError)
-                }
-            }
-            .padding(.horizontal, 30)
-            .padding(.vertical, 16)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(.white.opacity(0.07), lineWidth: 1)
-            )
-
-            // Sideways scrolling is not discoverable at all until you know there is something
-            // to scroll to, so it says so when there is — and says nothing the rest of the
-            // time. What used to live here, that a tile can be clicked and Esc closes the
-            // panel, was a line of instructions on a panel you have opened a thousand times.
-            if pages.count > 1 {
-                Text("scroll sideways for \(offscreenCount) more")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.38))
-                    .padding(.top, 2)
-            }
-        }
-    }
-
     /// Sessions past the first screenful.
     private var offscreenCount: Int { max(0, controller.sessions.count - pageSize) }
 
-    private var summary: String {
-        let n = controller.sessions.count
-        let waiting = controller.sessions.filter { $0.state == .awaitingAnswer }.count
-        if waiting > 0 {
-            return "\(waiting) of \(n) need\(waiting == 1 ? "s" : "") your input"
-        }
-        return n == 1 ? "1 session running" : "\(n) sessions running"
-    }
-
+    /// Small: four of these sit centred on a heading that also carries a name and a count, and
+    /// they are a key rather than something to read.
     private func legend(_ state: SessionState) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(state.tint).frame(width: 7, height: 7)
+        HStack(spacing: 5) {
+            Circle().fill(state.tint).frame(width: 6, height: 6)
             Text(state.label)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(0.6)
+                .font(.system(size: 9.5, weight: .medium))
+                .tracking(0.4)
                 .foregroundStyle(.white.opacity(0.55))
         }
     }

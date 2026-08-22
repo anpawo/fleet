@@ -118,7 +118,10 @@ struct HubColumn<Content: View>: View {
                 .fill(.white.opacity(0.10))
                 .frame(height: 1)
 
+            // Matches the room the fleet leaves under its own rule, so the first mail, the
+            // first tile and the first todo all start on the same line.
             VStack(spacing: 8) { content }
+                .padding(.top, 8)
         }
     }
 }
