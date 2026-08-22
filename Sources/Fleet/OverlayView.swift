@@ -232,12 +232,24 @@ struct OverlayView: View {
                 }
             }
 
+            // On a ground of its own, like everything else on the panel that is a thing rather
+            // than a label. Four dots floating on the scrim read as specks; the same four on a
+            // card read as a key. Kept as small as the dots allow — it is furniture, not a
+            // control, and it sits on a line with a name and a count either side of it.
             HStack(spacing: 9) {
                 legend(.awaitingAnswer)
                 legend(.ready)
                 legend(.running)
                 legend(.apiError)
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+            )
         }
         .padding(.horizontal, 2)
         .overlay(alignment: .bottom) {
