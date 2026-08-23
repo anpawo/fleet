@@ -60,7 +60,7 @@ struct TodoColumn: View {
     /// under your hand must not.
     @State private var dragOffset: CGFloat = 0
 
-    private struct Dragging {
+    private struct Dragging: Equatable {
         let id: String
         let from: Int
         var to: Int
@@ -91,7 +91,8 @@ struct TodoColumn: View {
                     HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
                 }
             } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, todo in
+                ForEach(Array(hub.todos.prefix(Self.maxItems).enumerated()),
+                        id: \.element.id) { index, todo in
                     TodoCard(todo: todo,
                              commandHeld: commandHeld,
                              // Hovering opens a row only while ⌘ is down. Without that guard the
@@ -110,15 +111,18 @@ struct TodoColumn: View {
                                  }
                              },
                              onDismiss: onDismiss)
-                        .offset(y: lift(todo))
+                        // Two offsets, on two views, with two different animations — and they
+                        // have to stay two. The inner one is the pointer, and it is never
+                        // animated; the outer one is a row stepping aside, and it always is.
+                        // Written as one offset they share whichever animation the frame
+                        // happens to carry, and on every frame where both change the row under
+                        // your hand eases towards the pointer instead of being at it.
+                        .offset(y: dragging?.id == todo.id ? dragOffset : 0)
+                        .animation(nil, value: dragOffset)
+                        .offset(y: stepAside(index))
+                        .animation(Self.unroll, value: dragging)
                         // Over the rows it is passing, not under them.
                         .zIndex(dragging?.id == todo.id ? 1 : 0)
-                        // The row under your hand is not animated, in either of the two things
-                        // that move it: it follows the pointer exactly, and the slot it jumps
-                        // to when the list rearranges is cancelled out by the offset above in
-                        // the same frame. Animate either half and the two stop cancelling, and
-                        // the row swims away from the pointer and back.
-                        .transaction { if dragging?.id == todo.id { $0.animation = nil } }
                         // `.gesture` rather than `.highPriorityGesture`: the ✕ is a subview and
                         // subview gestures win, so a click on it still finishes the todo while
                         // a drag from anywhere — the ✕ included — reorders.
@@ -134,30 +138,30 @@ struct TodoColumn: View {
         .onChange(of: commandHeld) { if !commandHeld { drop() } }
     }
 
-    /// What the column draws: the list as stored, with the dragged row already moved to where
-    /// it would land. The rows it displaces slide out of its way, which is the whole feedback —
-    /// there is no insertion line to read, the gap *is* the answer.
-    private var rows: [Todo] {
-        let visible = Array(hub.todos.prefix(Self.maxItems))
-        guard let dragging, dragging.from != dragging.to,
-              dragging.from < visible.count else { return visible }
-        var list = visible
-        let moved = list.remove(at: dragging.from)
-        list.insert(moved, at: min(dragging.to, list.count))
-        return list
-    }
-
-    /// How far the dragged row is drawn from where the list has just put it: the pointer's
-    /// whole travel, less the slots it has already been moved through.
-    private func lift(_ todo: Todo) -> CGFloat {
-        guard let dragging, dragging.id == todo.id else { return 0 }
-        return dragOffset - CGFloat(dragging.to - dragging.from) * Self.pitch
+    /// How far a row that is *not* being dragged is drawn from its own slot: one row up if the
+    /// dragged one has been taken past it downwards, one row down if upwards.
+    ///
+    /// The list itself is never reordered while a drag is in flight — the column draws it in
+    /// exactly the order it is stored, and what moves is where each row is *drawn*. Reordering
+    /// it live instead moves the dragged row's own slot out from under it, and the offset that
+    /// has to cancel that out can only do so on the very frame the layout changes. It never
+    /// quite does, so the row lags, overshoots and swims back — which is what this used to do.
+    private func stepAside(_ index: Int) -> CGFloat {
+        guard let dragging, dragging.from != dragging.to else { return 0 }
+        if dragging.from < dragging.to {
+            return (dragging.from + 1 ... dragging.to).contains(index) ? -Self.pitch : 0
+        }
+        return (dragging.to ..< dragging.from).contains(index) ? Self.pitch : 0
     }
 
     /// ⌘ and a drag: the todo follows the pointer, and the slot it is over is worked out from
     /// how many rows it has travelled.
     private func reorder(_ todo: Todo) -> some Gesture {
-        DragGesture(minimumDistance: 6)
+        // Global, not local. The row is offset by this very gesture, so measuring in its own
+        // coordinate space feeds the offset back into the next reading: the translation is
+        // taken against a frame that has already moved by it, and the row jitters instead of
+        // tracking the pointer.
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in
                 let visible = hub.todos.prefix(Self.maxItems)
                 guard let from = dragging?.from
@@ -166,9 +170,10 @@ struct TodoColumn: View {
                 let travelled = Int((value.translation.height / Self.pitch).rounded())
                 let to = min(max(from + travelled, 0), visible.count - 1)
                 guard dragging?.to != to else { return }
-                withAnimation(Self.unroll) {
-                    dragging = Dragging(id: todo.id, from: from, to: to)
-                }
+                // No `withAnimation`: the rows stepping aside are animated by the modifier that
+                // watches `dragging`, and an explicit transaction here would reach the dragged
+                // row's own offset as well.
+                dragging = Dragging(id: todo.id, from: from, to: to)
             }
             .onEnded { _ in drop() }
     }
