@@ -428,7 +428,7 @@ final class TerminalWatch {
                                                     : Config.terminalReadInterval
             if now.timeIntervalSince(last.at) < interval { return last.verdict }
         }
-        let verdict = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty)
+        let verdict = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty, cwd: proc.cwd)
             .map(Self.read) ?? .unknown
         seen[proc.pid] = (now, verdict)
         if verdict != .unknown {
@@ -446,12 +446,19 @@ final class TerminalWatch {
     /// prompt — while the scrollback above is a conversation that may well be *about* API
     /// errors, in which case a whole-screen search finds the words and reports a session in
     /// perfect health as broken.
+    ///
+    /// Twelve rather than the eight this started at, because the spinner is not the last line:
+    /// under it come the prompt box with its two borders, the status line, the permission-mode
+    /// line, and whatever Claude Code has to say that day — "Update installed · Restart to
+    /// update", "new task? /clear to save 894.7k tokens". Eight was already the exact distance
+    /// to the spinner with nothing in between, so one hint line was enough to push it out of
+    /// sight and leave a working session looking like a question.
     static func read(_ screen: String) -> Verdict {
         let tail = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-            .suffix(8)
+            .suffix(12)
             .joined(separator: "\n")
             .lowercased()
 

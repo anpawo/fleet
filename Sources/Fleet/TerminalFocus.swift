@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import ScriptingBridge
 
 /// Thin wrapper so ProcessScanner can stay AppKit-agnostic.
@@ -75,7 +76,7 @@ enum TerminalFocus {
     ///
     /// Costs a Scripting Bridge round trip on the main thread, so the caller is expected to ask
     /// rarely and about few sessions — see `Config.terminalReadInterval`.
-    static func visibleText(pid: pid_t, tty: String) -> String? {
+    static func visibleText(pid: pid_t, tty: String, cwd: String) -> String? {
         guard let host = ProcessScanner.hostApplication(of: pid)?.app else { return nil }
         switch host.bundleIdentifier ?? "" {
         case "com.apple.Terminal":
@@ -83,7 +84,7 @@ enum TerminalFocus {
         case "com.googlecode.iterm2":
             return contents(tty: tty, iniTerm: host.processIdentifier)
         default:
-            return nil
+            return contents(cwd: cwd, viaAccessibility: host.processIdentifier)
         }
     }
 
@@ -122,6 +123,54 @@ enum TerminalFocus {
             }
         }
         return nil
+    }
+
+    /// Terminals with no scripting interface at all — Ghostty, and most of the newer ones —
+    /// through the Accessibility API instead. Without this a Ghostty session has no screen to
+    /// read, and a long turn that writes nothing is indistinguishable from a question waiting
+    /// for an answer: the tile turns blue on a session that is working.
+    ///
+    /// Two things Ghostty does differently. It publishes the screen as the `AXTextArea` inside
+    /// its window, which is exactly what we want — but it publishes no `AXWindows` at all: the
+    /// attribute comes back an empty array, and `AXFocusedWindow` is the only way in. That is
+    /// the app's own last-focused window, which does not require the app to be frontmost, so
+    /// one window per terminal is readable and the rest are invisible.
+    ///
+    /// Which makes identifying the session the whole problem, since there is no tty here to
+    /// match on. `AXDocument` is the surface's working directory, so it can be compared with
+    /// the one the session runs in — and a mismatch is answered with nil rather than a guess:
+    /// this is the second opinion that overrides "waiting for you", and another window's screen
+    /// would silence a question that really is on yours.
+    private static func contents(cwd: String, viaAccessibility pid: pid_t) -> String? {
+        guard Desktop.accessibilityTrusted(prompt: false),
+              let window = Desktop.focusedWindow(of: AXUIElementCreateApplication(pid)),
+              let document = string(window, kAXDocumentAttribute),
+              let surface = URL(string: document)?.standardizedFileURL.path,
+              surface == URL(fileURLWithPath: cwd).standardizedFileURL.path else { return nil }
+        return screenText(in: window)
+    }
+
+    /// The first text area in the window, which for a terminal is the screen itself.
+    private static func screenText(in element: AXUIElement, depth: Int = 0) -> String? {
+        if depth > 8 { return nil }
+        if string(element, kAXRoleAttribute) == "AXTextArea" {
+            return string(element, kAXValueAttribute)
+        }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString,
+                                            &value) == .success,
+              let children = value as? [AXUIElement] else { return nil }
+        for child in children {
+            if let text = screenText(in: child, depth: depth + 1) { return text }
+        }
+        return nil
+    }
+
+    private static func string(_ element: AXUIElement, _ attribute: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString,
+                                            &value) == .success else { return nil }
+        return value as? String
     }
 
     /// The scripting connection to one specific process.

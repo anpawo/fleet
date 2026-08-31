@@ -419,15 +419,15 @@ if let i = CommandLine.arguments.firstIndex(of: "--screen"),
             print("no session with pid \(pid)")
             exit(1)
         }
-        guard let text = TerminalFocus.visibleText(pid: pid, tty: session.proc.tty) else {
+        guard let text = TerminalFocus.visibleText(pid: pid, tty: session.proc.tty, cwd: session.proc.cwd) else {
             print("could not read the tab for \(session.dirName) (tty \(session.proc.tty))")
             exit(1)
         }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        print("--- last 8 lines on \(session.dirName) (tty \(session.proc.tty))")
-        for line in lines.suffix(8) { print("| \(line)") }
+        print("--- last 12 lines on \(session.dirName) (tty \(session.proc.tty))")
+        for line in lines.suffix(12) { print("| \(line)") }
         print("--- verdict: \(TerminalWatch.read(text))")
         exit(0)
     }

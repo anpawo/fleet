@@ -155,7 +155,7 @@ enum Desktop {
         focusedWindow(of: app) ?? windows(of: app).first
     }
 
-    private static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
+    static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString,
                                             &focused) == .success,
