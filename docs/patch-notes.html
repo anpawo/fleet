@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>4</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>5</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">b39469e</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">9cad47d</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,52 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TerminalFocus.visibleText</span>
+        <span class="chip chip-sha">9cad47d</span>
+      </div>
+      <h3>Le terminal qu'on ne savait pas lire</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <em>my-hub</em> en <span style="color: var(--open)">NEEDS YOU</span> pendant vingt
+          minutes sans rien demander, alors que la lecture d'écran existe précisément pour ça.
+          Sur son écran&nbsp;: <code>✳ Crafting… (21m 15s · ↓ 15.2k tokens)</code>.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Deux causes empilées, chacune suffisante. <code>visibleText</code> parle Scripting
+          Bridge, et seuls Terminal.app et iTerm2 répondent&nbsp;; my-hub tourne dans
+          <b>Ghostty</b>, qui n'a pas d'interface de script du tout — le verdict était
+          <code>unknown</code>, donc le bleu deviné restait.
+          <code>fleet --screen 83479</code> le disait&nbsp;:
+          <code>could not read the tab</code>. Et sous ça, les huit dernières lignes&nbsp;: le
+          spinner n'est pas la dernière ligne de l'écran, sous lui viennent les deux bordures du
+          champ de saisie, la ligne d'état, le mode de permission — huit était déjà la distance
+          exacte, et une ligne d'info de plus le sortait du champ.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'Accessibilité répond là où le script n'existe pas. Ghostty publie l'écran comme
+          l'<code>AXTextArea</code> de sa fenêtre&nbsp;; ce qu'il ne publie pas, c'est
+          <code>AXWindows</code> — le tableau revient vide, et <code>AXFocusedWindow</code> est
+          la seule porte. Il n'y a donc pas de tty pour reconnaître la session&nbsp;:
+          <code>AXDocument</code> porte le répertoire de la surface, et c'est lui qu'on compare
+          au dossier de la session. Si ça ne correspond pas, on ne répond rien plutôt que
+          l'écran d'une autre fenêtre — cet avis-là annule un bleu, et il annulerait une vraie
+          question. La queue lue passe de huit à douze lignes.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>my-hub  (Ghostty, posé sur son prompt)  →  écran lu, <b>unknown</b>   avant : could not read the tab
+fleet   (Ghostty, spinner à l'écran)     →  écran lu, <b>working</b>
+        AXDocument file:///Users/mr/self/my-hub/ = cwd du processus</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
