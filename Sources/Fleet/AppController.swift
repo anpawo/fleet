@@ -26,10 +26,6 @@ final class AppController: ObservableObject {
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
 
-    /// The prompt field and where what you write goes. Owned here rather than by the view so
-    /// a half-written prompt survives the panel's SwiftUI tree being rebuilt on every refresh.
-    let prompt = PromptController()
-
     /// The two side columns: the mail worth reading and the todo list, both from the phone's
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
@@ -49,10 +45,6 @@ final class AppController: ObservableObject {
     func start() {
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
-        // The classifier is told what projects exist so it can match what you write against
-        // them; both lists are read live, since the fleet changes under it.
-        prompt.knownProjects = { [weak self] in self?.projectNames() ?? [] }
-        prompt.liveDirectories = { [weak self] in self?.sessions.map(\.cwd) ?? [] }
         notifier.start()
         // A banner names a session; clicking it should land you in that session, which is the
         // same handoff a tile click does.
@@ -193,9 +185,6 @@ final class AppController: ObservableObject {
 
     private func showPanel() {
         isPanelVisible = true
-        // The field is the panel's resting state, not something to open: it comes up focused
-        // and empty so a dictation shortcut is the only key you have to touch.
-        prompt.panelOpened()
         // Two GETs, and only if the last pair is over a minute old. The columns draw whatever
         // they already have in the meantime rather than waiting on the network.
         hub.refreshIfStale()
@@ -218,51 +207,23 @@ final class AppController: ObservableObject {
         // somebody who is not holding anything.
         commandHeld = false
         hub.stopComposing()
-        prompt.panelClosed()
         overlay?.hide()
         schedule(Config.idlePollActive)
     }
 
-    /// Return in the prompt field: send it. Returns whether there was anything to send, so a
-    /// Return on an empty field falls through to whatever else wants it.
+    /// Return, while the panel is up: it belongs to the todo column's own field when the caret
+    /// is in it. Returns whether it was used.
     func submitPrompt() -> Bool {
         guard isPanelVisible else { return false }
-        // The todo column's own field, when the caret is in it: Return belongs to whatever is
-        // being typed into, and only one of the two fields can be.
-        if hub.commitDraft() { return true }
-        return prompt.submit()
+        return hub.commitDraft()
     }
 
-    /// Esc, while the panel is up. A half-written prompt is thrown away first — the panel only
-    /// closes on an Esc that has nothing else to undo, so backing out of a sentence does not
-    /// also take the fleet off screen.
+    /// Esc, while the panel is up. The new-todo row first — backing out of a half-written todo
+    /// should not also take the fleet off screen.
     func escape() {
         guard isPanelVisible else { return }
-        // The new-todo row first, and the keyboard goes back to the prompt as it closes — the
-        // panel's resting state is a caret in the prompt field, and Esc should land you there
-        // rather than in a panel nothing is listening on.
-        if hub.stopComposing() {
-            prompt.field.refocus()
-            return
-        }
-        if prompt.escape() { return }
+        if hub.stopComposing() { return }
         hidePanel()
-    }
-
-    /// Every project name the classifier may match against: the directories under the project
-    /// root, plus wherever sessions are actually running — a session outside the root is still
-    /// a project you can name out loud.
-    private func projectNames() -> [String] {
-        let listed = (try? FileManager.default.contentsOfDirectory(atPath: Config.projectRoot))
-            ?? []
-        var isDir: ObjCBool = false
-        let dirs = listed.filter { name in
-            guard !name.hasPrefix(".") else { return false }
-            let path = (Config.projectRoot as NSString).appendingPathComponent(name)
-            return FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
-                && isDir.boolValue
-        }
-        return Array(Set(dirs + sessions.map(\.dirName))).sorted()
     }
 
     /// ⌘ and a digit, while the panel is up: the same thing as clicking the tile wearing that
@@ -298,7 +259,6 @@ final class AppController: ObservableObject {
     private func dismissForHandoff() {
         guard isPanelVisible else { return }
         isPanelVisible = false
-        prompt.panelClosed()
         overlay?.dismissForHandoff()
         schedule(Config.idlePollActive)
     }

@@ -196,7 +196,6 @@ struct OverlayView: View {
             }
 
             HStack(spacing: 12) {
-                PromptBar(prompt: controller.prompt, eager: eagerLayout)
                 NewDesktopButton { controller.newDesktop() }
             }
         }
