@@ -103,6 +103,11 @@ struct OverlayView: View {
             }
             .padding(.top, 100)
         }
+        // The one thing in the panel that is not about Claude at all. It earns the space only
+        // when the machine is actually short of memory, and it is gone the rest of the time.
+        .overlay(alignment: .top) {
+            MemoryStrip(reaper: controller.reaper).padding(.top, 55)
+        }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
         .contentShape(Rectangle())
@@ -727,4 +732,79 @@ struct AnyInsettableShape: InsettableShape {
 
     func path(in rect: CGRect) -> Path { makePath(rect) }
     func inset(by amount: CGFloat) -> AnyInsettableShape { makeInset(amount) }
+}
+
+
+/// What is holding the memory, while the machine is short of it.
+///
+/// The counterpart to the reaper, and the reason the reaper can afford to be so conservative:
+/// everything it refuses to kill on its own — your browser, a build in progress, an app you
+/// happen to have open — shows up here instead, with a ✕ next to it. The machine picks off
+/// only what it can prove nobody is using; the judgement calls come to you, at the moment you
+/// were going to look at the panel anyway.
+struct MemoryStrip: View {
+    @ObservedObject var reaper: Reaper
+
+    private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
+
+    var body: some View {
+        if reaper.pressure.isTight && !reaper.hogs.isEmpty {
+            HStack(spacing: 14) {
+                Text(headline)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(amber)
+
+                ForEach(reaper.hogs) { hog in
+                    HogPill(hog: hog, tint: amber)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(
+                Capsule().fill(amber.opacity(0.10))
+                    .overlay(Capsule().stroke(amber.opacity(0.30), lineWidth: 1))
+            )
+        }
+    }
+
+    /// Swap, not free RAM: free RAM is near zero on every healthy Mac and would cry wolf
+    /// permanently. Swap in use is the number that tracks how slow the machine actually feels.
+    private var headline: String {
+        let used = Double(MemoryPressure.swap().used) / 1_073_741_824
+        let label = reaper.pressure == .critical ? "MEMORY CRITICAL" : "MEMORY PRESSURE"
+        return String(format: "%@ · %.1f GB SWAPPED", label, used)
+    }
+}
+
+private struct HogPill: View {
+    let hog: Hog
+    let tint: Color
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(hog.name)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(hog.sizeLabel)
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.45))
+
+            if hog.reapable {
+                // Already condemned: saying so is more useful than offering a ✕ for something
+                // that is about to go by itself.
+                Text("auto")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(tint.opacity(0.9))
+            } else {
+                Button { Reaper.dismiss(pid: hog.pid) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.35))
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+            }
+        }
+    }
 }
