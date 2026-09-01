@@ -17,7 +17,7 @@ final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
         didSet {
-            statusItem?.update(sessions: sessions)
+            statusItem?.update(sessions: sessions, muted: muteRemaining != nil)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
         }
     }
@@ -42,9 +42,15 @@ final class AppController: ObservableObject {
     /// the user has been active again.
     private var armed = true
 
+    /// While this is in the future, the panel never opens on its own. The chord, the menu bar
+    /// and `fleet` all still work — muting is about Fleet interrupting you, not about locking
+    /// it away.
+    private var mutedUntil: Date?
+
     func start() {
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
+        bindHotKeys()
         notifier.start()
         // A banner names a session; clicking it should land you in that session, which is the
         // same handoff a tile click does.
@@ -70,6 +76,41 @@ final class AppController: ObservableObject {
     /// next tick would replace it with the real fleet a second later.
     var pretendFleet: [Session]? {
         didSet { if let pretendFleet { sessions = pretendFleet } }
+    }
+
+    /// The two global chords, as currently set. Called again when the menu changes one, which
+    /// releases the old chord and claims the new one.
+    func bindHotKeys() {
+        // Deliberately *not* a toggle: "bring it to the front" should be idempotent, and Esc
+        // already dismisses.
+        HotKey.register(Settings.panelChord, id: 1) { [weak self] in
+            MainActor.assumeIsolated { self?.forceShow(announceEmpty: true) }
+        }
+        HotKey.register(Settings.muteChord, id: 2) { [weak self] in
+            MainActor.assumeIsolated { self?.toggleMute() }
+        }
+    }
+
+    // MARK: - Mute
+
+    /// How much longer Fleet stays quiet, or nil when it isn't muted.
+    var muteRemaining: TimeInterval? {
+        guard let mutedUntil else { return nil }
+        let left = mutedUntil.timeIntervalSinceNow
+        return left > 0 ? left : nil
+    }
+
+    /// The mute chord. Muting also puts the panel away if it happens to be up — you press this
+    /// because Fleet is in your way, and "in your way" usually means it is on screen right now.
+    /// Pressed again while muted, it unmutes: the same key gets you out of it.
+    func toggleMute() {
+        if muteRemaining != nil {
+            mutedUntil = nil
+        } else {
+            mutedUntil = Date().addingTimeInterval(Settings.muteDuration)
+            if isPanelVisible { hidePanel() }
+        }
+        statusItem?.update(sessions: sessions, muted: muteRemaining != nil)
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
@@ -153,11 +194,15 @@ final class AppController: ObservableObject {
         sessions = found
 
         let idle = IdleWatcher.idleSeconds()
-        if idle < Config.idleThreshold {
+        if idle < Settings.idleThreshold {
             armed = true            // user is active; allow the next idle period to show
             return
         }
         guard armed, !found.isEmpty else { return }
+
+        // Checked here rather than earlier so the refresh above still runs while muted: the
+        // panel you then open by hand has to be current.
+        guard muteRemaining == nil else { return }
 
         // Idle because you are watching something, not because you are done. Left armed on
         // purpose: when the video ends and the machine goes quiet for real, the next tick

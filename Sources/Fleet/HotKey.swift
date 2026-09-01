@@ -1,11 +1,11 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// What the hotkey does. A plain global, not a member of `HotKey`: the Carbon callback is a C
-/// function pointer and so may not capture anything — including an actor-isolated static.
-private nonisolated(unsafe) var hotKeyAction: (@Sendable () -> Void)?
+/// What each hotkey does, by id. A plain global, not a member of `HotKey`: the Carbon callback
+/// is a C function pointer and so may not capture anything — including an actor-isolated static.
+private nonisolated(unsafe) var hotKeyActions: [UInt32: @Sendable () -> Void] = [:]
 
-/// A single system-wide hotkey: ⌘⌥L brings the panel to the front.
+/// The system-wide chords: one raises the panel, one mutes the idle trigger.
 ///
 /// Carbon's `RegisterEventHotKey` rather than `NSEvent.addGlobalMonitorForEvents`, because the
 /// monitor API needs Accessibility permission — a TCC prompt for a background agent that has
@@ -14,34 +14,54 @@ private nonisolated(unsafe) var hotKeyAction: (@Sendable () -> Void)?
 @MainActor
 enum HotKey {
 
-    private static var ref: EventHotKeyRef?
+    private static var refs: [UInt32: EventHotKeyRef] = [:]
     private static var handler: EventHandlerRef?
 
-    /// Registers ⌘⌥L. Returns false when something else already owns the chord — the whole
-    /// point of a global hotkey is exclusivity, so the OS refuses a second claimant.
+    /// Binds a chord. Rebinding the same id releases the old chord first, so changing the
+    /// shortcut in the menu takes effect without a restart. Returns false when something else
+    /// already owns the chord — the whole point of a global hotkey is exclusivity, so the OS
+    /// refuses a second claimant.
     @discardableResult
-    static func register(_ block: @escaping @Sendable () -> Void) -> Bool {
-        guard ref == nil else { return true }
-        hotKeyAction = block
+    static func register(_ chord: Settings.Chord, id: UInt32,
+                         action: @escaping @Sendable () -> Void) -> Bool {
+        guard installHandler() else { return false }
+        unregister(id: id)
+        hotKeyActions[id] = action
 
+        var ref: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: OSType(0x464C_5421), id: id)   // 'FLT!'
+        let status = RegisterEventHotKey(UInt32(chord.keyCode), chord.modifiers, hotKeyID,
+                                         GetEventDispatcherTarget(), 0, &ref)
+        guard status == noErr, let ref else {
+            NSLog("Fleet: could not register \(chord.label) (\(status)) — another app likely "
+                  + "owns it")
+            return false
+        }
+        refs[id] = ref
+        return true
+    }
+
+    static func unregister(id: UInt32) {
+        if let ref = refs.removeValue(forKey: id) { UnregisterEventHotKey(ref) }
+        hotKeyActions[id] = nil
+    }
+
+    private static func installHandler() -> Bool {
+        guard handler == nil else { return true }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                  eventKind: UInt32(kEventHotKeyPressed))
-        let status = InstallEventHandler(GetEventDispatcherTarget(), { _, _, _ in
-            DispatchQueue.main.async { hotKeyAction?() }
+        let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, _ in
+            // Which chord fired: the handler is installed once for all of them.
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                              EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &id)
+            let fired = id.id
+            DispatchQueue.main.async { hotKeyActions[fired]?() }
             return noErr
         }, 1, &spec, nil, &handler)
         guard status == noErr else {
             NSLog("Fleet: hotkey handler failed (\(status))")
-            return false
-        }
-
-        let id = EventHotKeyID(signature: OSType(0x464C_5421), id: 1)   // 'FLT!'
-        let modifiers = UInt32(cmdKey | optionKey)
-        let registered = RegisterEventHotKey(UInt32(kVK_ANSI_L), modifiers,
-                                             id, GetEventDispatcherTarget(), 0, &ref)
-        guard registered == noErr else {
-            NSLog("Fleet: could not register ⌘⌥L (\(registered)) — another app likely owns it")
-            ref = nil
             return false
         }
         return true

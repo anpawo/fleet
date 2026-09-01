@@ -2,9 +2,6 @@ import Foundation
 
 /// Tunables. Kept in one place so the whole battery profile is auditable at a glance.
 enum Config {
-    /// How long the user must be idle before the panel appears.
-    static var idleThreshold: TimeInterval = 45
-
     /// Full-refresh cadence when at least one session is alive but the panel is hidden. Fleet
     /// keeps its picture current in the background so the panel is never a moment out of date
     /// when it appears — a stale first frame is worse than the wakeups cost.

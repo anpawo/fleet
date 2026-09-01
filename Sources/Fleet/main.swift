@@ -24,11 +24,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         controller.start()
 
-        // ⌘⌥L raises the panel, the same way ⌘⌥T is wired to Terminal. Deliberately *not* a
-        // toggle: "bring it to the front" should be idempotent, and Esc already dismisses.
-        HotKey.register { [weak controller] in
-            MainActor.assumeIsolated { controller?.forceShow(announceEmpty: true) }
-        }
 
         DistributedNotificationCenter.default().addObserver(
             forName: ShowRequest.name, object: nil, queue: .main
@@ -130,8 +125,9 @@ if CommandLine.arguments.contains("--scan") {
             }
             print("")
         }
-        print(String(format: "idle: %.0fs (threshold %.0fs)",
-                     IdleWatcher.idleSeconds(), Config.idleThreshold))
+        let threshold = Settings.idleThreshold
+        print(String(format: "idle: %.0fs (threshold %@)", IdleWatcher.idleSeconds(),
+                     threshold.isFinite ? "\(Int(threshold))s" : "never"))
         if Hooks.isOutdated {
             print("state hooks are from an older Fleet — sessions are still paired to their "
                   + "transcripts by guesswork. Run `fleet --install-hooks`.")
@@ -456,11 +452,12 @@ if let i = CommandLine.arguments.firstIndex(of: "--focus"),
     }
 }
 
-// Optional override: --idle <seconds>
+// Optional override: --idle <seconds>. Persisted, like the menu's own choice — the resident
+// copy reads it on every tick, so this reaches the agent already running.
 if let i = CommandLine.arguments.firstIndex(of: "--idle"),
    i + 1 < CommandLine.arguments.count,
    let seconds = TimeInterval(CommandLine.arguments[i + 1]) {
-    MainActor.assumeIsolated { Config.idleThreshold = max(5, seconds) }
+    Settings.idleThreshold = max(5, seconds)
 }
 
 // If a resident copy is already running — normally the LaunchAgent one — this process exists

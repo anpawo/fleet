@@ -16,13 +16,15 @@ final class StatusItemController {
     /// What the button currently displays. The refresh tick fires every few seconds and almost
     /// never changes the state, so this avoids redrawing the menu bar for nothing.
     private var shown: SessionState??
+    /// Same idea for the muted look, which swaps the whole glyph.
+    private var shownMuted: Bool?
 
     init(controller: AppController) {
         self.controller = controller
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = item.button {
-            button.image = Self.planeImage()
+            button.image = Self.planeImage(filled: true)
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(clicked)
@@ -65,7 +67,13 @@ final class StatusItemController {
 
     // MARK: - Appearance
 
-    func update(sessions: [Session]) {
+    func update(sessions: [Session], muted: Bool = false) {
+        // A hollow plane while muted: the chord is pressed with nothing on screen, so the menu
+        // bar is the only place that can acknowledge it.
+        if shownMuted != muted {
+            shownMuted = muted
+            item.button?.image = Self.planeImage(filled: !muted)
+        }
         // Urgency reuses `sortRank` — the same order the tiles use, and the right one here too:
         // "needs you" outranks "ready" (your turn) which outranks "working" (nothing to do yet).
         let top = sessions.min { $0.state.sortRank < $1.state.sortRank }?.state
@@ -81,9 +89,9 @@ final class StatusItemController {
     /// `paperplane.fill` rather than anything boat-shaped: at 15pt a hull and mast collapse into
     /// a smudge, while the plane stays a clean silhouette. Template mode hands the menu bar
     /// control of its colour, so it inverts correctly in light and dark.
-    private static func planeImage() -> NSImage? {
+    private static func planeImage(filled: Bool) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        let image = NSImage(systemSymbolName: "paperplane.fill",
+        let image = NSImage(systemSymbolName: filled ? "paperplane.fill" : "paperplane",
                             accessibilityDescription: "Fleet")?
             .withSymbolConfiguration(config)
         image?.isTemplate = true
@@ -119,6 +127,24 @@ final class StatusItemController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Show Panel", action: #selector(showPanel), keyEquivalent: "")
             .target = self
+        menu.addItem(muteItem())
+
+        menu.addItem(.separator())
+        menu.addItem(submenu(title: "Show By Itself After",
+                             items: Settings.idleChoices.map {
+                                 (Self.idleLabel($0), $0 == Settings.idleThreshold,
+                                  #selector(pickIdle(_:)), $0 as Any)
+                             }))
+        menu.addItem(submenu(title: "Panel Shortcut",
+                             items: Settings.panelChoices.map {
+                                 ($0.label, $0 == Settings.panelChord,
+                                  #selector(pickPanelChord(_:)), $0 as Any)
+                             }))
+        menu.addItem(submenu(title: "Mute Shortcut",
+                             items: Settings.muteChoices.map {
+                                 ($0.label, $0 == Settings.muteChord,
+                                  #selector(pickMuteChord(_:)), $0 as Any)
+                             }))
 
         // Only offered while it is missing. Installed, it has nothing to say and no reason to
         // sit in the menu — and without it the dot beside the plane is a guess, which is worth
@@ -139,6 +165,63 @@ final class StatusItemController {
         item.menu = menu
         item.button?.performClick(nil)
         item.menu = nil
+    }
+
+    /// The mute row, which is also the only place the countdown is written down — the hollow
+    /// plane says *that* Fleet is muted, not for how much longer.
+    private func muteItem() -> NSMenuItem {
+        let title: String
+        if let left = controller.muteRemaining {
+            title = "Unmute (\(max(1, Int(left / 60))) min left)"
+        } else {
+            title = "Mute for \(Int(Settings.muteDuration / 60)) Minutes"
+        }
+        let entry = NSMenuItem(title: title, action: #selector(toggleMute), keyEquivalent: "")
+        entry.target = self
+        return entry
+    }
+
+    /// One settings submenu: a radio list where the current value is ticked. The chosen value
+    /// rides on the item's `representedObject`, so all three lists share one shape.
+    private func submenu(title: String,
+                         items: [(String, Bool, Selector, Any)]) -> NSMenuItem {
+        let sub = NSMenu()
+        for (label, current, action, value) in items {
+            let entry = NSMenuItem(title: label, action: action, keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = value
+            entry.state = current ? .on : .off
+            sub.addItem(entry)
+        }
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        parent.submenu = sub
+        return parent
+    }
+
+    private static func idleLabel(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite else { return "Never — only when I ask" }
+        return seconds < 60 ? "\(Int(seconds)) seconds" : "\(Int(seconds / 60)) minutes"
+    }
+
+    @objc private func toggleMute() {
+        controller.toggleMute()
+    }
+
+    @objc private func pickIdle(_ sender: NSMenuItem) {
+        guard let seconds = sender.representedObject as? TimeInterval else { return }
+        Settings.idleThreshold = seconds
+    }
+
+    @objc private func pickPanelChord(_ sender: NSMenuItem) {
+        guard let chord = sender.representedObject as? Settings.Chord else { return }
+        Settings.panelChord = chord
+        controller.bindHotKeys()
+    }
+
+    @objc private func pickMuteChord(_ sender: NSMenuItem) {
+        guard let chord = sender.representedObject as? Settings.Chord else { return }
+        Settings.muteChord = chord
+        controller.bindHotKeys()
     }
 
     private func disabled(_ title: String) -> NSMenuItem {
