@@ -166,7 +166,8 @@ struct ControlCenterView: View {
                 .labelsHidden()
                 .frame(width: 170)
             }
-            Text("How long the machine has to sit untouched before the panel opens on its own.")
+            Text("How long the machine has to sit untouched before the panel opens on its own. "
+                 + "It stays away while a video is playing or a microphone is recording.")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.4))
         }

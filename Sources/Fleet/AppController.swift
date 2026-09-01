@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreAudio
 import IOKit.pwr_mgt
 
 /// Drives the whole app: watches for idle, decides when the panel appears, and keeps the
@@ -222,6 +223,13 @@ final class AppController: ObservableObject {
             return
         }
 
+        // Idle because you are talking — a dictation tool, a call. Same deal as the film:
+        // left armed, so the next quiet tick after you stop shows the panel as usual.
+        if let device = MicWatcher.recording() {
+            NSLog("Fleet: not showing — \(device) is recording")
+            return
+        }
+
         armed = false
         showPanel()
     }
@@ -389,5 +397,82 @@ enum IdleWatcher {
 
     static func idleSeconds() -> TimeInterval {
         CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: anyInput)
+    }
+}
+
+/// Whether a microphone is recording right now.
+///
+/// The other half of the "idle but busy" problem. `ScreenWatcher` covers being read to;
+/// this covers talking — dictating into Handy, or a call with the camera off. Neither
+/// touches the keyboard, so the idle timer counts them as an empty desk, and the panel
+/// would open in the middle of a sentence you are still speaking.
+///
+/// CoreAudio answers directly: every device carries `IsRunningSomewhere`, which is true while
+/// any process on the machine has IO running on it. Asked per device rather than of the
+/// default input alone, because a dictation tool may be pointed at the built-in mic while the
+/// default input is a headset — and asked on the *input* scope, so a combo device (AirPods, a
+/// USB interface) playing sound out does not read as recording.
+enum MicWatcher {
+
+    /// The name of a device that is recording, or nil when nothing is.
+    static func recording() -> String? {
+        for device in devices() where hasInput(device) && isRunning(device) {
+            return name(device) ?? "microphone"
+        }
+        return nil
+    }
+
+    private static func devices() -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address,
+                                             0, nil, &size) == noErr else { return [] }
+        var ids = [AudioDeviceID](repeating: 0,
+                                  count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0,
+                                         nil, &size, &ids) == noErr else { return [] }
+        return ids
+    }
+
+    /// Devices with no input channels are speakers, and speakers are never recording.
+    private static func hasInput(_ device: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr,
+              size > 0 else { return false }
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: 16)
+        defer { buffer.deallocate() }
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, buffer) == noErr
+        else { return false }
+        let list = buffer.assumingMemoryBound(to: AudioBufferList.self)
+        return UnsafeMutableAudioBufferListPointer(list).contains { $0.mNumberChannels > 0 }
+    }
+
+    private static func isRunning(_ device: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr
+        else { return false }
+        return value != 0
+    }
+
+    private static func name(_ device: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr
+        else { return nil }
+        return value?.takeRetainedValue() as String?
     }
 }
