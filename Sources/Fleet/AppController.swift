@@ -33,6 +33,7 @@ final class AppController: ObservableObject {
     private let registry = SessionRegistry()
     private let notifier = Notifier()
     private var overlay: OverlayWindowController?
+    private var controlCenter: ControlCenterController?
     private var statusItem: StatusItemController?
     private var timer: Timer?
     private var currentInterval: TimeInterval = 0
@@ -45,7 +46,7 @@ final class AppController: ObservableObject {
     /// While this is in the future, the panel never opens on its own. The chord, the menu bar
     /// and `fleet` all still work — muting is about Fleet interrupting you, not about locking
     /// it away.
-    private var mutedUntil: Date?
+    @Published private(set) var mutedUntil: Date?
 
     func start() {
         overlay = OverlayWindowController(controller: self)
@@ -76,6 +77,14 @@ final class AppController: ObservableObject {
     /// next tick would replace it with the real fleet a second later.
     var pretendFleet: [Session]? {
         didSet { if let pretendFleet { sessions = pretendFleet } }
+    }
+
+    /// The settings window, behind a right-click on the menu bar plane. Built on first use —
+    /// most launches never open it.
+    func showControlCenter() {
+        let center = controlCenter ?? ControlCenterController(controller: self)
+        controlCenter = center
+        center.show()
     }
 
     /// The two global chords, as currently set. Called again when the menu changes one, which

@@ -383,8 +383,12 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             }
         }
 
-        let view = OverlayView(controller: controller, eagerLayout: true)
-            .frame(width: size.width, height: size.height)
+        // `--settings` renders the control centre instead of the panel — same reason: seeing
+        // the layout without a window opening on whatever desktop you are working on.
+        let view = CommandLine.arguments.contains("--settings")
+            ? AnyView(ControlCenterView(controller: controller).frame(width: 420, height: 620))
+            : AnyView(OverlayView(controller: controller, eagerLayout: true)
+                .frame(width: size.width, height: size.height))
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
 

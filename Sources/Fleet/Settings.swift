@@ -7,7 +7,7 @@ enum Settings {
 
     /// A global chord. Carbon modifier mask plus a virtual key code — the two things
     /// `RegisterEventHotKey` wants, stored as they are so nothing has to be translated back.
-    struct Chord: Equatable {
+    struct Chord: Hashable {
         var keyCode: UInt16
         var modifiers: UInt32
 
