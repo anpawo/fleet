@@ -106,7 +106,7 @@ struct OverlayView: View {
         // The one thing in the panel that is not about Claude at all. It earns the space only
         // when the machine is actually short of memory, and it is gone the rest of the time.
         .overlay(alignment: .top) {
-            MemoryStrip(reaper: controller.reaper).padding(.top, 55)
+            MemoryStrip(reaper: controller.reaper).padding(.top, 65)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.

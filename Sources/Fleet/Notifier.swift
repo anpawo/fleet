@@ -62,6 +62,22 @@ final class Notifier: NSObject {
         }
     }
 
+    /// A one-off banner that is not about a session — currently only the reaper reporting what
+    /// it killed. Bypasses `announced`, which exists to stop a *standing* condition repeating
+    /// itself; this is an event, and it happens once.
+    func announce(title: String, body: String) {
+        guard available, authorized else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "fleet.notice.\(UUID().uuidString)",
+                                            content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { NSLog("Fleet: could not post notification — \(error)") }
+        }
+    }
+
     private func post(for session: Session) {
         let content = UNMutableNotificationContent()
         content.title = "\(session.dirName) needs you"

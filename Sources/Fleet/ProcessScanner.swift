@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Darwin
 
 /// Finds live `claude` processes using libproc directly.
@@ -32,7 +32,7 @@ enum ProcessScanner {
     ///
     /// Ordered cheapest-first: the TTY check is a single syscall and eliminates every GUI and
     /// daemon process, leaving only shells and CLI tools to pay for a path lookup.
-    private static func isClaudeSession(_ pid: pid_t) -> Bool {
+    static func isClaudeSession(_ pid: pid_t) -> Bool {
         guard controllingTTY(pid) != nil else { return false }
         let path = executablePath(pid)
         if isClaudeCodePath(path) { return true }
@@ -55,7 +55,7 @@ enum ProcessScanner {
         return "/dev/" + String(cString: d)
     }
 
-    private static func executablePath(_ pid: pid_t) -> String {
+    static func executablePath(_ pid: pid_t) -> String {
         var buf = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
         guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return "" }
         return String(cString: buf)
@@ -100,9 +100,45 @@ enum ProcessScanner {
         return out
     }
 
+
+    /// Resident size and cumulative CPU for any pid, in one syscall. Used by `Reaper`, which
+    /// needs both for every process on the machine and cannot afford a call each.
+    static func taskInfo(_ pid: pid_t) -> proc_taskinfo? {
+        var info = proc_taskinfo()
+        let size = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info,
+                                Int32(MemoryLayout<proc_taskinfo>.size))
+        return size > 0 ? info : nil
+    }
+
+    /// This pid's parent, or 0 when it cannot be read. Single process, unlike `parentMap`.
+    static func parent(_ pid: pid_t) -> pid_t {
+        var bsd = proc_bsdinfo()
+        let size = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd,
+                               Int32(MemoryLayout<proc_bsdinfo>.size))
+        return size > 0 ? pid_t(bsd.pbi_ppid) : 0
+    }
+
+    /// A name to show a human. Prefers the bundle name of a GUI app — "Firefox" reads better
+    /// than "plugin-container" — and falls back to the executable's own name.
+    static func displayName(_ pid: pid_t) -> String {
+        if let app = NSRunningApplication(processIdentifier: pid),
+           let name = app.localizedName {
+            return name
+        }
+        let path = executablePath(pid)
+        let base = (path as NSString).lastPathComponent
+        // A session's executable is a version file — "2.1.241" — because of the symlink layout
+        // described above, which names nothing a human recognises. The project it is working in
+        // does.
+        if isClaudeSession(pid), let cwd = workingDirectory(pid) {
+            return "claude · " + ((cwd as NSString).lastPathComponent)
+        }
+        return base.isEmpty ? "pid \(pid)" : base
+    }
+
     // MARK: - libproc wrappers
 
-    private static func allPIDs() -> [pid_t] {
+    static func allPIDs() -> [pid_t] {
         let byteCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
         guard byteCount > 0 else { return [] }
         let capacity = Int(byteCount) / MemoryLayout<pid_t>.size

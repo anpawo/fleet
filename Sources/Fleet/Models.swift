@@ -100,6 +100,29 @@ enum Config {
     /// a new desktop too.
     static let openInOwnDesktop = true
 
+    /// Below this CPU share, a daemon is doing nothing on anyone's behalf. Deliberately not
+    /// zero: an idle JVM still runs its own housekeeping.
+    static let reapIdleCPUPercent: Double = 2.0
+
+    /// How long a candidate must stay under that floor, without a break, before Fleet will
+    /// kill it — and how stale a Gradle daemon's log must be to corroborate it.
+    ///
+    /// Two minutes rather than ten seconds because the expensive mistake here is killing
+    /// something that was merely between two pieces of work. Nothing is lost by waiting: the
+    /// memory has been under pressure for days by the time any of this runs.
+    static let reapIdleWindow: TimeInterval = 120
+
+    /// Deadline for the one command the reaper shells out to (`docker ps`). A wedged daemon
+    /// must not hang a background app.
+    static let reapCommandTimeout: TimeInterval = 3
+
+    /// How much of a Gradle daemon log is read to find its last command execution.
+    static let reapLogTailBytes = 64 * 1024
+
+    /// Processes smaller than this are never worth naming in the panel, and how many it names.
+    static let hogFloorBytes: UInt64 = 200 * 1_048_576
+    static let hogCount = 4
+
     /// Your language, for the model prompts: it tells the router which language to write
     /// prompts and answers in.
     ///

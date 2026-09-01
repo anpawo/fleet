@@ -31,6 +31,10 @@ final class AppController: ObservableObject {
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
 
+    /// Frees memory before the machine starts swapping itself to a standstill, and names what
+    /// it will not touch. See `Reaper` for the rule it applies.
+    let reaper = Reaper()
+
     private let registry = SessionRegistry()
     private let notifier = Notifier()
     private var overlay: OverlayWindowController?
@@ -63,6 +67,12 @@ final class AppController: ObservableObject {
         // State left behind by sessions that ended without saying so — a killed terminal, a
         // crash. Once at launch is enough; nothing else creates them.
         Hooks.prune()
+        // A kill is silent by nature — you would otherwise find out that Docker had quit by
+        // discovering it was not there. One banner per reap, saying what went and how much
+        // that gave back.
+        reaper.onReaped = { [weak self] summary in
+            self?.notifier.announce(title: "Fleet freed some memory", body: summary)
+        }
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
@@ -180,6 +190,10 @@ final class AppController: ObservableObject {
 
     private func tick() {
         guard !suspended, pretendFleet == nil else { return }
+
+        // Ahead of the dormant gate below on purpose: memory fills up whether or not any
+        // session is running, and the machine this is protecting is the whole machine.
+        reaper.tick()
 
         if isPanelVisible {
             refreshVisible()

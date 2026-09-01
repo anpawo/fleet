@@ -85,6 +85,53 @@ if CommandLine.arguments.contains("--uninstall-hooks") {
     exit(0)
 }
 
+// `--memory` is the reaper, out loud and with its hands tied: it prints the pressure, every
+// candidate with the verdict of both gates, and the processes it would never touch on its own.
+// Nothing is killed. This is how the rule gets checked without waiting for a real squeeze — and
+// without the panel, which is the only other place any of it is visible.
+if CommandLine.arguments.contains("--memory") {
+    MainActor.assumeIsolated {
+        let swap = MemoryPressure.swap()
+        print("pressure: \(MemoryPressure.level())")
+        print("swap:     \(byteLabel(swap.used)) of \(byteLabel(swap.total))")
+
+        // Two samples: a CPU percentage is a difference between them, so one alone says
+        // nothing — the same reason a freshly launched Fleet reaps nothing for two minutes.
+        let reaper = Reaper()
+        reaper.tick()
+        Thread.sleep(forTimeInterval: 1.5)
+        reaper.tick()               // the second sample is the one that yields a percentage
+
+        print("\ncandidates:")
+        for candidate in Reaper.candidates() {
+            let gate = Reaper.isUnused(candidate) ? "unused" : "IN USE"
+            print("  \(candidate.name) [pid \(candidate.pid)] "
+                  + "\(byteLabel(candidate.rss)) — \(gate)")
+        }
+
+        // `--memory --reap` runs it for real. Same two gates, only the pressure trigger is
+        // bypassed — this is you deciding it is time rather than the kernel saying so.
+        if CommandLine.arguments.contains("--reap") {
+            print("")
+            for candidate in Reaper.candidates() where Reaper.isUnused(candidate) {
+                guard reaper.isIdle(candidate.pid, window: 0) else {
+                    print("  skipping \(candidate.name): using CPU right now")
+                    continue
+                }
+                let sent = candidate.terminate()
+                print("  \(sent ? "killed" : "could not kill") \(candidate.name) "
+                      + "[pid \(candidate.pid)] — \(candidate.reason)")
+            }
+        }
+
+        print("\nbiggest, hands off:")
+        for hog in Reaper.topHogs(reapable: []) {
+            print("  \(hog.name) [pid \(hog.pid)] \(hog.sizeLabel)")
+        }
+        exit(0)
+    }
+}
+
 // `--scan` prints what the app currently sees and exits: a headless way to check session
 // discovery, transcript binding and state colours without waiting to go idle.
 if CommandLine.arguments.contains("--scan") {
