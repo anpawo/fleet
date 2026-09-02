@@ -244,11 +244,14 @@ struct OverlayView: View {
             )
         }
         .padding(.horizontal, 2)
+        // The rule sits inside the heading's bounds rather than offset out of them, so the
+        // scroll view below starts under it and the tiles are clipped at the line instead of
+        // riding over it.
+        .padding(.bottom, 9)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(.white.opacity(0.10))
                 .frame(height: 1)
-                .offset(y: 9)
         }
     }
 
