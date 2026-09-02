@@ -163,7 +163,7 @@ struct OverlayView: View {
     /// sessions the screen bottom is half a metre of empty black away from anything you are
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             fleetHeading
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
@@ -179,16 +179,18 @@ struct OverlayView: View {
                 // pushed back in by the same amount, which leaves the tiles where they were
                 // and the clip out of reach.
                 ScrollView(.vertical) {
+                    // Real padding at the top rather than a negative inset on the container:
+                    // the heading has to clip what scrolls under it, so the glow's room is
+                    // taken inside the scroll view instead of over the rule above it.
                     grid.padding(.horizontal, Self.glowRoom)
-                        .padding(.top, Self.glowRoom + 8)
+                        .padding(.top, 18)
                         .padding(.bottom, 44)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                .padding(.top, -Self.glowRoom)
             } else {
-                grid.padding(.top, 8).padding(.bottom, 20)
+                grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
     }
