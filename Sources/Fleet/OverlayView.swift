@@ -63,6 +63,10 @@ struct OverlayView: View {
     /// word is read.
     private static let podiumDrop: CGFloat = 72
 
+    /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
+    /// 310pt card.
+    private static let glowRoom: CGFloat = 22
+
     var body: some View {
         ZStack {
             // Flat scrim rather than a live blur. Two reasons, and the second one is why the
@@ -168,9 +172,21 @@ struct OverlayView: View {
                 // while the whole board slid under them, which read as the panel coming apart.
                 // No indicator: a bar down the middle of the panel is furniture, and the
                 // tiles cut off at the bottom edge say there is more just as well.
-                ScrollView(.vertical) { grid.padding(.top, 8).padding(.bottom, 44) }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
+                // The negative padding is the room the hover glow needs. A ScrollView clips
+                // to its own bounds, and the grid is exactly as wide as the column, so the
+                // outer tiles had their glow — and the edge of the card itself, once scaled —
+                // sliced off. The container is widened past the column and the content is
+                // pushed back in by the same amount, which leaves the tiles where they were
+                // and the clip out of reach.
+                ScrollView(.vertical) {
+                    grid.padding(.horizontal, Self.glowRoom)
+                        .padding(.top, Self.glowRoom + 8)
+                        .padding(.bottom, 44)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .padding(.horizontal, -Self.glowRoom)
+                .padding(.top, -Self.glowRoom)
             } else {
                 grid.padding(.top, 8).padding(.bottom, 20)
             }
@@ -489,6 +505,9 @@ struct SessionTile: View {
             .scaleEffect(hovering ? 1.015 : 1.0)
             .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
                     radius: hovering ? 16 : 8)
+            // Without this the card snaps to its hovered size in one frame, which reads as a
+            // flicker rather than as a response to the pointer.
+            .animation(.easeOut(duration: 0.18), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
