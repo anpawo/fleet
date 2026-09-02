@@ -320,18 +320,6 @@ final class AppController: ObservableObject {
         TerminalFocus.focus(session: session)
     }
 
-    /// The panel's `+`: a terminal, on a desktop of its own, gone to. Same handoff as a tile
-    /// click — you end up on another desktop either way, so the panel goes first.
-    ///
-    /// The desktop is macOS's own doing: the window is sent fullscreen, and a fullscreen window
-    /// is given a desktop and taken to it. No Space is created behind the Dock's back and
-    /// nothing is clicked on its behalf — see `Spaces` for why that is the only route the
-    /// window server actually honours.
-    func newDesktop() {
-        dismissForHandoff()
-        TerminalLaunch.openTerminal(in: Config.projectRoot)
-    }
-
     private func dismissForHandoff() {
         guard isPanelVisible else { return }
         isPanelVisible = false

@@ -33,23 +33,8 @@ struct OverlayView: View {
     ///
     /// Two, and never three. A third column used to appear once a fleet outgrew six, and the
     /// width it took is now the mail and todo columns either side of it — the middle of the
-    /// panel is no longer the whole panel. Past six sessions the grid pages sideways instead.
+    /// panel is no longer the whole panel.
     private static let tilesPerRow = 2
-
-    /// Never more than this many rows on screen. Past that the grid pages sideways rather than
-    /// growing downwards: a fourth row is off the bottom of most screens, and a panel you have
-    /// to scroll to read has stopped being a glance.
-    private static let maxRows = 3
-
-    /// Tiles per screenful.
-    private var pageSize: Int { Self.tilesPerRow * Self.maxRows }
-
-    /// The fleet cut into screenfuls. More than one means the panel scrolls sideways.
-    private var pages: [[Session]] {
-        stride(from: 0, to: controller.sessions.count, by: pageSize).map {
-            Array(controller.sessions[$0 ..< min($0 + pageSize, controller.sessions.count)])
-        }
-    }
     /// How dark the panel sits over your desktop. Lower shows more of what's behind it.
     private static let tintOpacity: Double = 0.80
 
@@ -129,9 +114,9 @@ struct OverlayView: View {
             .onTapGesture { controller.hidePanel() }
     }
 
-    private func rows(of page: [Session]) -> [[Session]] {
-        stride(from: 0, to: page.count, by: Self.tilesPerRow).map {
-            Array(page[$0 ..< min($0 + Self.tilesPerRow, page.count)])
+    private func rows(of sessions: [Session]) -> [[Session]] {
+        stride(from: 0, to: sessions.count, by: Self.tilesPerRow).map {
+            Array(sessions[$0 ..< min($0 + Self.tilesPerRow, sessions.count)])
         }
     }
 
@@ -190,18 +175,6 @@ struct OverlayView: View {
                 // The same gap the side columns leave under their own rule, plus the room the
                 // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
                 grid.padding(.top, 8)
-            }
-
-            // Sideways scrolling is not discoverable at all until you know there is something
-            // to scroll to, so it says so when there is, and says nothing the rest of the time.
-            if pages.count > 1 {
-                Text("scroll sideways for \(offscreenCount) more")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.32))
-            }
-
-            HStack(spacing: 12) {
-                NewDesktopButton { controller.newDesktop() }
             }
         }
         .padding(.bottom, scrolling ? 44 : 20)
@@ -264,8 +237,7 @@ struct OverlayView: View {
         }
     }
 
-    /// One screenful of tiles: at most three rows, of two or three.
-    private func page(_ sessions: [Session]) -> some View {
+    private func tiles(_ sessions: [Session]) -> some View {
         VStack(spacing: tileSpacing) {
             ForEach(rows(of: sessions), id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: tileSpacing) {
@@ -281,35 +253,11 @@ struct OverlayView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// The tiles. A fleet that fits on one screenful is just that screenful; a bigger one pages
-    /// sideways, six at a time, rather than running off the bottom of the display.
-    @ViewBuilder private var grid: some View {
-        Group {
-            if pages.count <= 1 || eagerLayout {
-                // Offscreen rendering never materialises a ScrollView's content, and a
-                // screenshot should show what the panel shows anyway: the first screenful.
-                page(pages.first ?? [])
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 0) {
-                        ForEach(Array(pages.enumerated()), id: \.offset) { indexed in
-                            // A screenful is exactly that wide, so a swipe lands on the next
-                            // one squarely rather than halfway between two.
-                            page(indexed.element)
-                                .containerRelativeFrame(.horizontal)
-                        }
-                    }
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.viewAligned)
-                .scrollBounceBehavior(.basedOnSize)
-            }
-        }
-        .background(dismissLayer)
+    /// Every tile, in rows of two. However long the fleet gets, it grows downwards — the
+    /// panel's own vertical scroll carries it.
+    private var grid: some View {
+        tiles(controller.sessions).background(dismissLayer)
     }
-
-    /// Sessions past the first screenful.
-    private var offscreenCount: Int { max(0, controller.sessions.count - pageSize) }
 
     /// Four dots, and no words.
     ///
@@ -322,32 +270,6 @@ struct OverlayView: View {
         Circle()
             .fill(state.tint)
             .frame(width: 7, height: 7)
-    }
-}
-
-/// The `+` beside the prompt field: one more desktop, with a terminal open in it. The
-/// counterpart to typing — one is for work you can name, this one is for making room for work
-/// you cannot yet.
-struct NewDesktopButton: View {
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    private static let diameter: CGFloat = 36
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
-                .frame(width: Self.diameter, height: Self.diameter)
-                .background(Circle().fill(.white.opacity(hovering ? 0.13 : 0.05)))
-                .overlay(Circle().strokeBorder(.white.opacity(hovering ? 0.45 : 0.2),
-                                               lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("New desktop, with a terminal")
     }
 }
 
