@@ -74,19 +74,9 @@ struct OverlayView: View {
             Color.black.opacity(Self.tintOpacity)
                 .ignoresSafeArea()
 
-            Group {
-                if eagerLayout {
-                    board(scrolling: false)
-                } else {
-                    // Rows past the bottom of the screen scroll into view rather than being
-                    // squeezed; with a fleet that fits, `basedOnSize` keeps it from bouncing.
-                    ScrollView(.vertical) { board(scrolling: true) }
-                        .scrollBounceBehavior(.basedOnSize)
-                        .frame(maxHeight: .infinity)
-                        .background(dismissLayer)
-                }
-            }
-            .padding(.top, 100)
+            board(scrolling: !eagerLayout)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 100)
         }
         // The one thing in the panel that is not about Claude at all. It earns the space only
         // when the machine is actually short of memory, and it is gone the rest of the time.
@@ -169,15 +159,22 @@ struct OverlayView: View {
     /// sessions the screen bottom is half a metre of empty black away from anything you are
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
-        VStack(spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                fleetHeading
-                // The same gap the side columns leave under their own rule, plus the room the
-                // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
-                grid.padding(.top, 8)
+        VStack(alignment: .leading, spacing: 8) {
+            fleetHeading
+            // The same gap the side columns leave under their own rule, plus the room the
+            // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
+            if scrolling {
+                // Only the tiles scroll. The mail and todo columns either side stayed put
+                // while the whole board slid under them, which read as the panel coming apart.
+                // No indicator: a bar down the middle of the panel is furniture, and the
+                // tiles cut off at the bottom edge say there is more just as well.
+                ScrollView(.vertical) { grid.padding(.top, 8).padding(.bottom, 44) }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+            } else {
+                grid.padding(.top, 8).padding(.bottom, 20)
             }
         }
-        .padding(.bottom, scrolling ? 44 : 20)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
