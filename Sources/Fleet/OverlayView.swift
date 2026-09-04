@@ -718,7 +718,7 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            HStack(spacing: 14) {
+            HStack(spacing: 8) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
                         HogPill(hog: hog, tint: amber)
@@ -728,7 +728,9 @@ struct MemoryStrip: View {
                     Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))")
                     Reading("CACHED", byteLabel(ram.cached))
                     Reading("COMPRESSED", byteLabel(ram.compressed))
-                    Reading("SWAP", byteLabel(ram.swap))
+                    Reading("SWAP", ram.swapTotal > 0
+                            ? "\(byteLabel(ram.swap)) / \(byteLabel(ram.swapTotal))"
+                            : byteLabel(ram.swap))
                 }
                 Spacer(minLength: 0)
             }
@@ -767,11 +769,19 @@ private struct Reading: View {
         HStack(spacing: 5) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(.white.opacity(0.45))
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.70))
+                .foregroundStyle(.white.opacity(0.85))
         }
+        // The same capsule the hog pills wear, for the same reason: on the panel's black these
+        // numbers were text floating in a void, and a ground is what makes them a readout.
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(.white.opacity(0.07))
+                .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+        )
     }
 }
 

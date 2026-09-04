@@ -47,6 +47,11 @@ enum MemoryPressure {
         var cached: UInt64 = 0
         var compressed: UInt64 = 0
         var swap: UInt64 = 0
+        /// The swap file macOS has actually made, which is the only ceiling of the four that
+        /// exists: cached and compressed are both parts of the RAM total, with no cap of their
+        /// own, while swap is a file that is grown on demand — and is absent until it is
+        /// needed, hence the zero on a machine that has never had to swap.
+        var swapTotal: UInt64 = 0
         var total: UInt64 = ProcessInfo.processInfo.physicalMemory
     }
 
@@ -59,7 +64,8 @@ enum MemoryPressure {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
-        var out = Footprint(swap: swap().used)
+        let paged = swap()
+        var out = Footprint(swap: paged.used, swapTotal: paged.total)
         guard ok == KERN_SUCCESS else { return out }
 
         let page = UInt64(vm_kernel_page_size)
