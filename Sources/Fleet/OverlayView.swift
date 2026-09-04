@@ -85,7 +85,9 @@ struct OverlayView: View {
         // The one thing in the panel that is not about Claude at all. It earns the space only
         // when the machine is actually short of memory, and it is gone the rest of the time.
         .overlay(alignment: .top) {
-            MemoryStrip(reaper: controller.reaper).padding(.top, 65)
+            MemoryStrip(reaper: controller.reaper)
+                .frame(width: centerWidth)
+                .padding(.top, 46)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
@@ -691,29 +693,47 @@ struct MemoryStrip: View {
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
     var body: some View {
-        if reaper.pressure.isTight && !reaper.hogs.isEmpty {
-            HStack(spacing: 10) {
-                Text(headline)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(amber)
-                    .padding(.trailing, 2)
+        let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
+        let tint = tight ? amber : Color.white
 
-                ForEach(reaper.hogs) { hog in
-                    HogPill(hog: hog, tint: amber)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("MEMORY")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(3.2)
+                    .foregroundStyle(tint.opacity(tight ? 0.9 : 0.45))
+                if tight {
+                    Text(headline)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(amber.opacity(0.9))
                 }
+                Spacer(minLength: 4)
+                Text(percentLabel)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.32))
             }
-            .strip(tint: amber)
-        } else {
-            // The same place, the same shape, in a register that does not ask for anything: what
-            // the machine is doing, so that the amber version arriving means something.
-            HStack(spacing: 16) {
-                let ram = reaper.footprint
-                Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))")
-                Reading("CACHED", byteLabel(ram.cached))
-                Reading("COMPRESSED", byteLabel(ram.compressed))
-                Reading("SWAP", byteLabel(ram.swap))
+            .padding(.horizontal, 2)
+
+            Rectangle()
+                .fill(tint.opacity(tight ? 0.30 : 0.10))
+                .frame(height: 1)
+
+            HStack(spacing: 14) {
+                if tight {
+                    ForEach(reaper.hogs) { hog in
+                        HogPill(hog: hog, tint: amber)
+                    }
+                } else {
+                    let ram = reaper.footprint
+                    Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))")
+                    Reading("CACHED", byteLabel(ram.cached))
+                    Reading("COMPRESSED", byteLabel(ram.compressed))
+                    Reading("SWAP", byteLabel(ram.swap))
+                }
+                Spacer(minLength: 0)
             }
-            .strip(tint: .white.opacity(0.5))
+            .padding(.horizontal, 2)
+            .padding(.top, 1)
         }
     }
 
@@ -721,8 +741,15 @@ struct MemoryStrip: View {
     /// permanently. Swap in use is the number that tracks how slow the machine actually feels.
     private var headline: String {
         let used = Double(MemoryPressure.swap().used) / 1_073_741_824
-        let label = reaper.pressure == .critical ? "MEMORY CRITICAL" : "MEMORY PRESSURE"
-        return String(format: "%@ · %.1f GB SWAPPED", label, used)
+        let label = reaper.pressure == .critical ? "CRITICAL" : "UNDER PRESSURE"
+        return String(format: "%@ \u{b7} %.1f GB SWAPPED", label, used)
+    }
+
+    /// The count in the same place the other three columns put theirs — here, how full it is.
+    private var percentLabel: String {
+        let ram = reaper.footprint
+        guard ram.total > 0 else { return "" }
+        return "\(Int((Double(ram.used) / Double(ram.total) * 100).rounded()))%"
     }
 }
 
@@ -745,21 +772,6 @@ private struct Reading: View {
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.70))
         }
-    }
-}
-
-private extension View {
-    /// The capsule both halves of the strip sit in — one amber and loud, one white and not.
-    func strip(tint: Color) -> some View {
-        padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                // A dark ground of its own under the tint: the tiles scroll behind the strip,
-                // and a capsule that is only tint lets them read straight through the numbers.
-                Capsule().fill(.black.opacity(0.30))
-                    .overlay(Capsule().fill(tint.opacity(0.10)))
-                    .overlay(Capsule().stroke(tint.opacity(0.30), lineWidth: 1))
-            )
     }
 }
 
