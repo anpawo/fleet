@@ -255,8 +255,15 @@ struct Session: Identifiable {
     /// live value, so prefer it and fall back to the process for a session too new to have one.
     var cwd: String { transcript?.cwd ?? proc.cwd }
 
-    /// Last path component of the working directory, e.g. "portfolio".
+    /// Last path component of the working directory, e.g. "portfolio" — except under ~/self,
+    /// where the project is what identifies a session: one working in ~/self/finance/backend
+    /// is still "finance", not "backend".
     var dirName: String {
+        let projects = NSHomeDirectory() + "/self/"
+        if cwd.hasPrefix(projects),
+           let project = cwd.dropFirst(projects.count).split(separator: "/").first {
+            return String(project)
+        }
         let n = (cwd as NSString).lastPathComponent
         return n.isEmpty ? cwd : n
     }

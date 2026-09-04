@@ -692,17 +692,18 @@ struct MemoryStrip: View {
 
     var body: some View {
         if reaper.pressure.isTight && !reaper.hogs.isEmpty {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 Text(headline)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(amber)
+                    .padding(.trailing, 2)
 
                 ForEach(reaper.hogs) { hog in
                     HogPill(hog: hog, tint: amber)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
             .background(
                 Capsule().fill(amber.opacity(0.10))
                     .overlay(Capsule().stroke(amber.opacity(0.30), lineWidth: 1))
@@ -749,5 +750,13 @@ private struct HogPill: View {
                 .onHover { hovering = $0 }
             }
         }
+        // Its own capsule: side by side on one amber line, four processes read as one string
+        // of words. The border is what says where one ends and the next begins.
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(.white.opacity(0.06))
+                .overlay(Capsule().stroke(tint.opacity(0.25), lineWidth: 1))
+        )
     }
 }
