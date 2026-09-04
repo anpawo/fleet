@@ -699,6 +699,9 @@ struct MemoryStrip: View {
 
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
+    /// How much of the RAM has to be on disk before swap is worth a pill of its own.
+    private static let swapWorthSaying = 0.10
+
     var body: some View {
         let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
@@ -740,10 +743,17 @@ struct MemoryStrip: View {
                     let ram = reaper.footprint
                     Reading("RAM", percent(share(ram.used)), trailing: gigabytes(ram.total),
                             accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                    // Only when there is some. A swap file that has never been written to is
-                    // not news, and the line is worth more to the RAM figure than to a zero.
-                    if ram.swap > 0 {
-                        Reading("SWAP", byteLabel(ram.swap))
+                    // Not "when there is any". Swap used never comes back down — a page that
+                    // has been written to disk stays counted until the machine reboots — so
+                    // "> 0" meant "from the first time it ever paged until you restart", which
+                    // is to say always. A Mac pages a few hundred megabytes in ordinary work
+                    // and feels perfectly fine doing it; what is worth a pill is swap deep
+                    // enough to be somewhere you are living, hence a share of the RAM rather
+                    // than a byte count that means something different on every machine.
+                    if share(ram.swap) >= Self.swapWorthSaying {
+                        Reading("SWAP", byteLabel(ram.swap),
+                                accent: share(ram.swap) < 0.25 ? SessionState.apiError.tint
+                                                               : SessionState.running.tint)
                     }
                 }
             }
