@@ -61,7 +61,9 @@ struct OverlayView: View {
     /// How far below the fleet the two side columns start. A podium: the sessions are what the
     /// panel is for, and standing them a step above what is merely waiting says so before a
     /// word is read.
-    private static let podiumDrop: CGFloat = 72
+    /// Deep enough to hold the memory block that now stands in it, with air under it before
+    /// the mail starts. Both side columns take it, so their headings stay on one line.
+    private static let podiumDrop: CGFloat = 96
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -81,13 +83,6 @@ struct OverlayView: View {
             board(scrolling: !eagerLayout)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 100)
-        }
-        // The one thing in the panel that is not about Claude at all. It earns the space only
-        // when the machine is actually short of memory, and it is gone the rest of the time.
-        .overlay(alignment: .top) {
-            MemoryStrip(reaper: controller.reaper)
-                .frame(width: centerWidth)
-                .padding(.top, 46)
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
@@ -137,9 +132,17 @@ struct OverlayView: View {
         HStack(alignment: .top, spacing: 0) {
             gap(Self.edgeWeight)
             if controller.hub.isConfigured {
-                MailColumn(hub: controller.hub)
-                    .frame(width: sideWidth)
-                    .padding(.top, Self.podiumDrop)
+                // The step the podium leaves above the mail is exactly where the machine's own
+                // state belongs: the one thing on the panel that is not about Claude at all,
+                // in the corner, at the width of the column it sits over. A minimum rather
+                // than a height — under pressure the hogs need more rows, and an alert that
+                // shoves the column down is an alert doing its job.
+                VStack(alignment: .leading, spacing: 0) {
+                    MemoryStrip(reaper: controller.reaper)
+                        .frame(minHeight: Self.podiumDrop, alignment: .top)
+                    MailColumn(hub: controller.hub)
+                }
+                .frame(width: sideWidth)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
@@ -696,18 +699,18 @@ struct MemoryStrip: View {
         let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("MEMORY")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(tint.opacity(tight ? 0.9 : 0.45))
+                Spacer(minLength: 4)
                 if tight {
                     Text(headline)
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(amber.opacity(0.9))
                 }
-                Spacer(minLength: 4)
             }
             .padding(.horizontal, 2)
 
@@ -715,24 +718,29 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            HStack(spacing: 8) {
+            // Two to a line rather than four across: the column is 250pt wide, and the same
+            // width as the mail under it is worth more than one unbroken row.
+            VStack(alignment: .leading, spacing: 4) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
                         HogPill(hog: hog, tint: amber)
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", percentLabel, trailing: "of \(byteLabel(ram.total))")
-                    Reading("CACHED", byteLabel(ram.cached))
-                    Reading("COMPRESSED", byteLabel(ram.compressed))
-                    Reading("SWAP", ram.swapTotal > 0
-                            ? "\(byteLabel(ram.swap)) / \(byteLabel(ram.swapTotal))"
-                            : byteLabel(ram.swap))
+                    HStack(spacing: 4) {
+                        Reading("RAM", percentLabel, trailing: "\u{b7} \(byteLabel(ram.total))",
+                                accent: Self.load(ram))
+                        Reading("CACHED", byteLabel(ram.cached))
+                    }
+                    HStack(spacing: 4) {
+                        Reading("COMPRESSED", byteLabel(ram.compressed))
+                        Reading("SWAP", ram.swapTotal > 0
+                                ? "\(byteLabel(ram.swap)) / \(byteLabel(ram.swapTotal))"
+                                : byteLabel(ram.swap))
+                    }
                 }
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 2)
-            .padding(.top, 1)
         }
     }
 
@@ -740,8 +748,8 @@ struct MemoryStrip: View {
     /// permanently. Swap in use is the number that tracks how slow the machine actually feels.
     private var headline: String {
         let used = Double(MemoryPressure.swap().used) / 1_073_741_824
-        let label = reaper.pressure == .critical ? "CRITICAL" : "UNDER PRESSURE"
-        return String(format: "%@ \u{b7} %.1f GB SWAPPED", label, used)
+        let label = reaper.pressure == .critical ? "CRITICAL" : "PRESSURE"
+        return String(format: "%@ \u{b7} %.1f GB", label, used)
     }
 
     /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
@@ -751,6 +759,20 @@ struct MemoryStrip: View {
         guard ram.total > 0 else { return "" }
         return "\(Int((Double(ram.used) / Double(ram.total) * 100).rounded()))%"
     }
+
+    /// The colour of that figure, on the panel's own four: green while there is room, then the
+    /// blue and the amber the tiles use for "someone is waiting", then the red they use for
+    /// trouble. Steps rather than a gradient — a colour you can name is a colour you can read
+    /// out of the corner of your eye, and a continuous ramp is neither.
+    private static func load(_ ram: MemoryPressure.Footprint) -> Color {
+        guard ram.total > 0 else { return .white }
+        switch Double(ram.used) / Double(ram.total) {
+        case ..<0.60: return SessionState.ready.tint
+        case ..<0.75: return SessionState.awaitingAnswer.tint
+        case ..<0.88: return SessionState.apiError.tint
+        default: return SessionState.running.tint
+        }
+    }
 }
 
 /// One number and what it is, on the quiet strip.
@@ -759,11 +781,14 @@ private struct Reading: View {
     let value: String
     /// A second, dimmer figure after the value — the share of the total, where there is one.
     var trailing: String?
+    /// What the value is worth saying in colour. White on everything but the RAM share.
+    var accent: Color = .white
 
-    init(_ label: String, _ value: String, trailing: String? = nil) {
+    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color = .white) {
         self.label = label
         self.value = value
         self.trailing = trailing
+        self.accent = accent
     }
 
     var body: some View {
@@ -773,7 +798,7 @@ private struct Reading: View {
                 .foregroundStyle(.white.opacity(0.45))
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(accent.opacity(0.9))
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
