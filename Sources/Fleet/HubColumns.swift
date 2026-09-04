@@ -43,9 +43,14 @@ struct TodoColumn: View {
     let onDismiss: () -> Void
 
     /// Many more than the mail column holds, because a todo is one line and a mail is two.
-    /// Enough, in practice, that the list is never truncated at all — which is the point of a
-    /// list whose whole job is to be the thing you have not done.
-    private static let maxItems = 12
+    /// As many as the panel is tall enough to draw, because the point of a list whose whole
+    /// job is to be the thing you have not done is that all of it is on screen.
+    ///
+    /// It was twelve, on the reasoning that the list never got that long. It did, and a todo
+    /// typed into the panel sorts to the bottom — so the line you had just written was the one
+    /// the cap hid, and it read as the ✛ being broken. Hence the count below it too: when this
+    /// list is ever cut short again, it says so instead of swallowing the tail.
+    private static let maxItems = 20
 
     /// The row under the pointer, which is the only one that opens. Held here rather than on
     /// the row, because a row is rebuilt from scratch every time the fleet refreshes — once a
@@ -127,6 +132,11 @@ struct TodoColumn: View {
                         // subview gestures win, so a click on it still finishes the todo while
                         // a drag from anywhere — the ✕ included — reorders.
                         .gesture(reorder(todo), including: commandHeld ? .all : .subviews)
+                }
+                // Never silently. A list that is cut short and does not say so is how a todo
+                // typed into the panel went missing in the first place.
+                if hub.todos.count > Self.maxItems {
+                    HubEmptyLine(text: "+\(hub.todos.count - Self.maxItems) more")
                 }
             }
         }
