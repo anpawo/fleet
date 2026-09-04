@@ -139,6 +139,9 @@ struct OverlayView: View {
                 // shoves the column down is an alert doing its job.
                 VStack(alignment: .leading, spacing: 0) {
                     MemoryStrip(reaper: controller.reaper)
+                        // Air under it in the state where it outgrows the step and pushes the
+                        // mail down itself, rather than landing on the MAIL heading.
+                        .padding(.bottom, 14)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
                 }
