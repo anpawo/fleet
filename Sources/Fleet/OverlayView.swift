@@ -61,9 +61,13 @@ struct OverlayView: View {
     /// How far below the fleet the two side columns start. A podium: the sessions are what the
     /// panel is for, and standing them a step above what is merely waiting says so before a
     /// word is read.
-    /// Deep enough to hold the memory block that now stands in it, with air under it before
-    /// the mail starts. Both side columns take it, so their headings stay on one line.
+    /// Deep enough to hold the memory block that stands in it, with air under it before the
+    /// mail starts.
     private static let podiumDrop: CGFloat = 200
+    /// The todo column has nothing standing over it, so it keeps the shallow step the sides
+    /// both had before the memory block arrived. The two headings no longer line up, and that
+    /// is the honest shape: one column carries something above it and the other does not.
+    private static let todoDrop: CGFloat = 96
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -155,7 +159,7 @@ struct OverlayView: View {
                            commandHeld: controller.commandHeld,
                            onDismiss: { controller.hidePanel() })
                     .frame(width: sideWidth)
-                    .padding(.top, Self.podiumDrop)
+                    .padding(.top, Self.todoDrop)
             }
             gap(Self.edgeWeight)
         }
@@ -731,28 +735,24 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            // Two to a line, each half the column. They fit abreast again now that a pill is
-            // a name and a share — it was the size beside them that pushed COMPRESSED out.
-            VStack(alignment: .leading, spacing: 4) {
+            // Two of the four. Cached is never a problem and compressed is a leading
+            // indicator; neither is something you act on. What is worth a glance is how full
+            // the RAM is and whether the machine has started paying disk latency for it —
+            // and the amber state below, which is the kernel's own verdict, covers the rest.
+            HStack(spacing: 4) {
                 if tight {
-                    ForEach(reaper.hogs) { hog in
-                        HogPill(hog: hog, tint: amber)
+                    // Under pressure the pills are the processes holding the memory, which is
+                    // the only thing to do about it.
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(reaper.hogs) { hog in
+                            HogPill(hog: hog, tint: amber)
+                        }
                     }
                 } else {
                     let ram = reaper.footprint
-                    HStack(spacing: 4) {
-                        Reading("RAM", percent(share(ram.used)),
-                                accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                        Reading("CACHED", percent(share(ram.cached)))
-                    }
-                    // Neither of these gets a colour. They are the *why* under the RAM figure
-                    // — what is holding it and what it has started paying for — and a row of
-                    // four graded lights makes you compare four things when only one of them
-                    // is the verdict.
-                    HStack(spacing: 4) {
-                        Reading("COMPRESSED", percent(share(ram.compressed)))
-                        Reading("SWAP", percent(share(ram.swap)))
-                    }
+                    Reading("RAM", percent(share(ram.used)),
+                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                    Reading("SWAP", percent(share(ram.swap)))
                 }
             }
             .padding(.horizontal, 2)
