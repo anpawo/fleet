@@ -63,7 +63,7 @@ struct OverlayView: View {
     /// word is read.
     /// Deep enough to hold the memory block that now stands in it, with air under it before
     /// the mail starts. Both side columns take it, so their headings stay on one line.
-    private static let podiumDrop: CGFloat = 158
+    private static let podiumDrop: CGFloat = 200
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -141,7 +141,7 @@ struct OverlayView: View {
                     MemoryStrip(reaper: controller.reaper)
                         // Air under it in the state where it outgrows the step and pushes the
                         // mail down itself, rather than landing on the MAIL heading.
-                        .padding(.bottom, 30)
+                        .padding(.bottom, 62)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
                 }
@@ -734,16 +734,15 @@ struct MemoryStrip: View {
                     let ram = reaper.footprint
                     Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.total),
                             accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                    // Deliberately never coloured. Cached memory is the machine working well —
-                    // Apple's own line is that free RAM buys you nothing — so a warning scale
-                    // on it would be a scale that lies.
                     Reading("CACHED", percent(share(ram.cached)),
                             trailing: byteLabel(ram.total))
+                    // Neither of these gets a colour. They are the *why* under the RAM figure
+                    // — what is holding it and what it has started paying for — and a row of
+                    // four graded lights makes you compare four things when only one of them
+                    // is the verdict.
                     Reading("COMPRESSED", percent(share(ram.compressed)),
-                            trailing: byteLabel(ram.total),
-                            accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
-                    Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total),
-                            accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
+                            trailing: byteLabel(ram.total))
+                    Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total))
                 }
             }
             .padding(.horizontal, 2)
