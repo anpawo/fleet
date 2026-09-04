@@ -699,6 +699,11 @@ struct MemoryStrip: View {
 
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
+    /// The right-hand pills hold CACHED and SWAP; the left hold RAM and COMPRESSED. Capping
+    /// the short names hands the slack to the long one, which is the only one that was ever
+    /// short of room. Whatever the column gains in width goes to the left pair too.
+    private static let shortPill: CGFloat = 138
+
     var body: some View {
         let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
@@ -738,14 +743,15 @@ struct MemoryStrip: View {
                         // well — Apple's own line is that free RAM buys you nothing — so a
                         // warning scale on it would be a scale that lies.
                         Reading("CACHED", percent(share(ram.cached)),
-                                trailing: byteLabel(ram.cached))
+                                trailing: byteLabel(ram.cached), cap: Self.shortPill)
                     }
                     HStack(spacing: 4) {
                         Reading("COMPRESSED", percent(share(ram.compressed)),
                                 trailing: byteLabel(ram.compressed),
                                 accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
                         Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.swap),
-                                accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
+                                accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25),
+                                cap: Self.shortPill)
                     }
                 }
             }
@@ -819,12 +825,16 @@ private struct Reading: View {
     /// What the whole pill is worth saying in colour — the number and the ground under it.
     /// Nil on everything but the RAM share, which is the only one with a scale to be on.
     var accent: Color?
+    /// A ceiling on the width, for a pill whose name is short enough not to need its half.
+    var cap: CGFloat?
 
-    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil) {
+    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil,
+         cap: CGFloat? = nil) {
         self.label = label
         self.value = value
         self.trailing = trailing
         self.accent = accent
+        self.cap = cap
     }
 
     var body: some View {
@@ -858,7 +868,7 @@ private struct Reading: View {
         // numbers were text floating in a void, and a ground is what makes them a readout.
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: cap ?? .infinity)
         .background(
             // Opaque, on the same near-black the mail and todo rows sit on. A translucent pill
             // over the scrim lets the desktop through, and a wallpaper is not a background you
@@ -905,7 +915,7 @@ private struct HogPill: View {
         // of words. The border is what says where one ends and the next begins.
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Capsule().fill(.white.opacity(0.06))
                 .overlay(Capsule().stroke(tint.opacity(0.25), lineWidth: 1))

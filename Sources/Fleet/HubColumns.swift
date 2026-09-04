@@ -214,6 +214,9 @@ struct HubColumn<Content: View>: View {
                         .font(.system(size: 9.5))
                         .foregroundStyle(.white.opacity(0.3))
                         .lineLimit(1)
+                        // The chip behind the name bleeds 7pt past the text on either side,
+                        // which ate the gap the HStack was leaving here.
+                        .padding(.leading, 8)
                 }
                 Spacer(minLength: 4)
                 if let onAdd {
