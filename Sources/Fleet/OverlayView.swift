@@ -699,11 +699,6 @@ struct MemoryStrip: View {
 
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
-    /// The right-hand pills hold CACHED and SWAP; the left hold RAM and COMPRESSED. Capping
-    /// the short names hands the slack to the long one, which is the only one that was ever
-    /// short of room. Whatever the column gains in width goes to the left pair too.
-    private static let shortPill: CGFloat = 150
-
     var body: some View {
         let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
@@ -728,9 +723,8 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            // Two to a line, each half the column: the four values line up in two columns of
-            // right-aligned figures, which is the whole reason to show a share rather than a
-            // size — 32% under 19% compares at a glance, 5.1 GB under 3.1 GB does not.
+            // One to a line. Two abreast meant COMPRESSED had to shrink to fit its half, and a
+            // row of names in four different sizes is a row you read one word at a time.
             VStack(alignment: .leading, spacing: 4) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
@@ -738,23 +732,18 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    HStack(spacing: 4) {
-                        Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.total),
-                                accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                        // Deliberately never coloured. Cached memory is the machine working
-                        // well — Apple's own line is that free RAM buys you nothing — so a
-                        // warning scale on it would be a scale that lies.
-                        Reading("CACHED", percent(share(ram.cached)),
-                                trailing: byteLabel(ram.total), cap: Self.shortPill)
-                    }
-                    HStack(spacing: 4) {
-                        Reading("COMPRESSED", percent(share(ram.compressed)),
-                                trailing: byteLabel(ram.total),
-                                accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
-                        Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total),
-                                accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25),
-                                cap: Self.shortPill)
-                    }
+                    Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.total),
+                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                    // Deliberately never coloured. Cached memory is the machine working well —
+                    // Apple's own line is that free RAM buys you nothing — so a warning scale
+                    // on it would be a scale that lies.
+                    Reading("CACHED", percent(share(ram.cached)),
+                            trailing: byteLabel(ram.total))
+                    Reading("COMPRESSED", percent(share(ram.compressed)),
+                            trailing: byteLabel(ram.total),
+                            accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
+                    Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total),
+                            accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
                 }
             }
             .padding(.horizontal, 2)
@@ -827,16 +816,11 @@ private struct Reading: View {
     /// What the whole pill is worth saying in colour — the number and the ground under it.
     /// Nil on everything but the RAM share, which is the only one with a scale to be on.
     var accent: Color?
-    /// A ceiling on the width, for a pill whose name is short enough not to need its half.
-    var cap: CGFloat?
-
-    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil,
-         cap: CGFloat? = nil) {
+    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil) {
         self.label = label
         self.value = value
         self.trailing = trailing
         self.accent = accent
-        self.cap = cap
     }
 
     var body: some View {
@@ -847,10 +831,6 @@ private struct Reading: View {
                 // COMPRESSED is one point wider than half a 250pt column allows, and a label
                 // that wraps costs the row its second line for the sake of two characters.
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                // Above the figures beside it: they are on fixed widths, and without this the
-                // name is the thing SwiftUI shortens to pay for them.
-                .layoutPriority(1)
             Spacer(minLength: 3)
             // Both figures on fixed widths: the point of a share is comparing it with the one
             // in the next pill, and a column of numbers that shuffles sideways with the length
@@ -870,7 +850,7 @@ private struct Reading: View {
         // numbers were text floating in a void, and a ground is what makes them a readout.
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .frame(maxWidth: cap ?? .infinity)
+        .frame(maxWidth: .infinity)
         .background(
             // Opaque, on the same near-black the mail and todo rows sit on. A translucent pill
             // over the scrim lets the desktop through, and a wallpaper is not a background you
