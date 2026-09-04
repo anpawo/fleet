@@ -722,8 +722,7 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))",
-                            trailing: percentLabel)
+                    Reading("RAM", percentLabel, trailing: "of \(byteLabel(ram.total))")
                     Reading("CACHED", byteLabel(ram.cached))
                     Reading("COMPRESSED", byteLabel(ram.compressed))
                     Reading("SWAP", ram.swapTotal > 0
@@ -745,8 +744,8 @@ struct MemoryStrip: View {
         return String(format: "%@ \u{b7} %.1f GB SWAPPED", label, used)
     }
 
-    /// How full the RAM is. Beside the two numbers it is drawn from rather than off in the
-    /// heading's corner, where it was a percentage of nothing in particular.
+    /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
+    /// glance than the share does.
     private var percentLabel: String {
         let ram = reaper.footprint
         guard ram.total > 0 else { return "" }
