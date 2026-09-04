@@ -61,13 +61,9 @@ struct OverlayView: View {
     /// How far below the fleet the two side columns start. A podium: the sessions are what the
     /// panel is for, and standing them a step above what is merely waiting says so before a
     /// word is read.
-    /// Deep enough to hold the memory block that stands in it, with air under it before the
-    /// mail starts.
-    private static let podiumDrop: CGFloat = 200
-    /// The todo column has nothing standing over it, so it keeps the shallow step the sides
-    /// both had before the memory block arrived. The two headings no longer line up, and that
-    /// is the honest shape: one column carries something above it and the other does not.
-    private static let todoDrop: CGFloat = 96
+    /// Deep enough to hold the memory block that stands over the mail, with air under it —
+    /// and taken by both side columns, so MAIL and TODO come back onto one line.
+    private static let podiumDrop: CGFloat = 104
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -145,7 +141,7 @@ struct OverlayView: View {
                     MemoryStrip(reaper: controller.reaper)
                         // Air under it in the state where it outgrows the step and pushes the
                         // mail down itself, rather than landing on the MAIL heading.
-                        .padding(.bottom, 62)
+                        .padding(.bottom, 34)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
                 }
@@ -159,7 +155,7 @@ struct OverlayView: View {
                            commandHeld: controller.commandHeld,
                            onDismiss: { controller.hidePanel() })
                     .frame(width: sideWidth)
-                    .padding(.top, Self.todoDrop)
+                    .padding(.top, Self.podiumDrop)
             }
             gap(Self.edgeWeight)
         }
