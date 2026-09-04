@@ -63,7 +63,7 @@ struct OverlayView: View {
     /// word is read.
     /// Deep enough to hold the memory block that now stands in it, with air under it before
     /// the mail starts. Both side columns take it, so their headings stay on one line.
-    private static let podiumDrop: CGFloat = 96
+    private static let podiumDrop: CGFloat = 112
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -141,7 +141,7 @@ struct OverlayView: View {
                     MemoryStrip(reaper: controller.reaper)
                         // Air under it in the state where it outgrows the step and pushes the
                         // mail down itself, rather than landing on the MAIL heading.
-                        .padding(.bottom, 14)
+                        .padding(.bottom, 26)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
                 }
