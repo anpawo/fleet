@@ -824,14 +824,16 @@ private struct Reading: View {
     }
 
     var body: some View {
-        HStack(spacing: 3) {
+        // Even space between the three, and each on a fixed width: the gaps only come out
+        // equal on every row if the name they start from ends in the same place. Sized for the
+        // longest of each — COMPRESSED, 100%, 16.0 GB.
+        HStack(spacing: 0) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
-                // COMPRESSED is one point wider than half a 250pt column allows, and a label
-                // that wraps costs the row its second line for the sake of two characters.
                 .lineLimit(1)
-            Spacer(minLength: 3)
+                .frame(width: 66, alignment: .leading)
+            Spacer(minLength: 0)
             // Both figures on fixed widths: the point of a share is comparing it with the one
             // in the next pill, and a column of numbers that shuffles sideways with the length
             // of the size beside it is not a column.
@@ -839,6 +841,7 @@ private struct Reading: View {
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
                 .frame(width: 28, alignment: .trailing)
+            Spacer(minLength: 0)
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
