@@ -702,12 +702,18 @@ struct MemoryStrip: View {
                     HogPill(hog: hog, tint: amber)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                Capsule().fill(amber.opacity(0.10))
-                    .overlay(Capsule().stroke(amber.opacity(0.30), lineWidth: 1))
-            )
+            .strip(tint: amber)
+        } else {
+            // The same place, the same shape, in a register that does not ask for anything: what
+            // the machine is doing, so that the amber version arriving means something.
+            HStack(spacing: 16) {
+                let ram = reaper.footprint
+                Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))")
+                Reading("CACHED", byteLabel(ram.cached))
+                Reading("COMPRESSED", byteLabel(ram.compressed))
+                Reading("SWAP", byteLabel(ram.swap))
+            }
+            .strip(tint: .white.opacity(0.5))
         }
     }
 
@@ -717,6 +723,40 @@ struct MemoryStrip: View {
         let used = Double(MemoryPressure.swap().used) / 1_073_741_824
         let label = reaper.pressure == .critical ? "MEMORY CRITICAL" : "MEMORY PRESSURE"
         return String(format: "%@ · %.1f GB SWAPPED", label, used)
+    }
+}
+
+/// One number and what it is, on the quiet strip.
+private struct Reading: View {
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.35))
+            Text(value)
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.70))
+        }
+    }
+}
+
+private extension View {
+    /// The capsule both halves of the strip sit in — one amber and loud, one white and not.
+    func strip(tint: Color) -> some View {
+        padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                Capsule().fill(tint.opacity(0.10))
+                    .overlay(Capsule().stroke(tint.opacity(0.30), lineWidth: 1))
+            )
     }
 }
 

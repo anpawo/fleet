@@ -35,6 +35,42 @@ enum MemoryPressure {
         guard sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0 else { return (0, 0) }
         return (usage.xsu_used, usage.xsu_total)
     }
+
+    /// What the RAM is doing right now, split the way Activity Monitor splits it — which is the
+    /// only split worth showing, since it is the one whose numbers you can go and check.
+    struct Footprint {
+        /// App memory, wired and compressed together: the part that is genuinely spoken for.
+        var used: UInt64 = 0
+        /// File-backed pages the kernel is keeping around and will drop the moment anything
+        /// needs the space. Counted as "used" by every naive reading of free RAM, and the
+        /// reason a healthy Mac always looks full.
+        var cached: UInt64 = 0
+        var compressed: UInt64 = 0
+        var swap: UInt64 = 0
+        var total: UInt64 = ProcessInfo.processInfo.physicalMemory
+    }
+
+    static func footprint() -> Footprint {
+        var stats = vm_statistics64_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size
+                                           / MemoryLayout<integer_t>.size)
+        let ok = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        var out = Footprint(swap: swap().used)
+        guard ok == KERN_SUCCESS else { return out }
+
+        let page = UInt64(vm_kernel_page_size)
+        // `internal` is anonymous memory — an app's own pages. Purgeable is the part of it the
+        // app has already said it can lose, so it belongs with the cache, not with the total.
+        let app = UInt64(stats.internal_page_count) - UInt64(stats.purgeable_count)
+        out.compressed = UInt64(stats.compressor_page_count) * page
+        out.used = (app + UInt64(stats.wire_count)) * page + out.compressed
+        out.cached = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * page
+        return out
+    }
 }
 
 /// Bytes, rounded to whatever unit reads as a size rather than a number.
@@ -76,6 +112,10 @@ final class Reaper: ObservableObject {
     /// What the panel draws: the pressure right now, and who is holding the memory.
     @Published private(set) var pressure: MemoryPressure.Level = .normal
     @Published private(set) var hogs: [Hog] = []
+    /// Drawn whenever the panel is open and nothing is wrong — the quiet half of the strip.
+    /// Read once here as well as on every tick, so the first panel of a session shows the
+    /// machine rather than a row of zeroes.
+    @Published private(set) var footprint = MemoryPressure.footprint()
 
     /// Called with a one-line summary after something was actually killed.
     var onReaped: ((String) -> Void)?
@@ -97,6 +137,7 @@ final class Reaper: ObservableObject {
     /// problem that took two weeks to build up does not need sub-second reflexes.
     func tick() {
         pressure = MemoryPressure.level()
+        footprint = MemoryPressure.footprint()
 
         let candidates = Reaper.candidates()
         sampleIdleness(candidates)
