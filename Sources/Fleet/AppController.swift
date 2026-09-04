@@ -18,7 +18,7 @@ final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
         didSet {
-            statusItem?.update(sessions: sessions, muted: muteRemaining != nil)
+            statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
         }
     }
@@ -137,7 +137,7 @@ final class AppController: ObservableObject {
             mutedUntil = Date().addingTimeInterval(Settings.muteDuration)
             if isPanelVisible { hidePanel() }
         }
-        statusItem?.update(sessions: sessions, muted: muteRemaining != nil)
+        statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
@@ -208,6 +208,9 @@ final class AppController: ObservableObject {
         if Date().timeIntervalSince(lastReap) >= Config.reapInterval {
             lastReap = Date()
             reaper.tick()
+            // The dot in the menu bar is this number, and a session list that never changes —
+            // a dormant machine — would otherwise leave it on whatever it was at launch.
+            statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
         }
 
         if isPanelVisible {

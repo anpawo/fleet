@@ -50,7 +50,7 @@ struct OverlayView: View {
         + tileSpacing * CGFloat(Self.tilesPerRow - 1) }
     /// Narrow on purpose. These two are what is on your plate, not what you are working on —
     /// they earn a glance each, and anything wider starts competing with the fleet.
-    private let sideWidth: CGFloat = 320
+    private let sideWidth: CGFloat = 288
 
     /// How the leftover width is shared out: 2 : 3 : 3 : 2, edges to insides. Ratios rather
     /// than points, so the balance holds on a laptop screen and on a 34-inch one — a fixed
@@ -789,6 +789,14 @@ struct MemoryStrip: View {
     ///
     /// Steps rather than a gradient: a colour you can name is a colour you can read out of the
     /// corner of your eye, and a continuous ramp is neither.
+    /// The RAM's own colour, for anything outside this view that wants the same verdict —
+    /// the menu bar dot, which is the one place Fleet shows while the panel is down.
+    static func loadTint(_ ram: MemoryPressure.Footprint) -> Color {
+        guard ram.total > 0 else { return SessionState.ready.tint }
+        return scale(Double(ram.used) / Double(ram.total), 0.60, 0.75, 0.88)
+            ?? SessionState.ready.tint
+    }
+
     private static func scale(_ share: Double, _ ok: Double, _ watch: Double,
                               _ bad: Double) -> Color? {
         switch share {
@@ -835,30 +843,30 @@ private struct Reading: View {
     }
 
     var body: some View {
+        // Evenly spaced, edges included: a Spacer on each end as well as between the parts,
+        // and they are all the same Spacer, so the gap either side of the figure is the gap
+        // before the name and after the total. Nothing is on a fixed width — one pill holds
+        // the line, so there is no column of numbers to keep straight.
         HStack(spacing: 0) {
+            Spacer(minLength: 8)
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
-            Spacer(minLength: 6)
-            // Both figures on fixed widths: the point of a share is comparing it with the one
-            // in the next pill, and a column of numbers that shuffles sideways with the length
-            // of the size beside it is not a column.
+            Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
-                .frame(width: 28, alignment: .trailing)
-            if trailing != nil { Spacer(minLength: 6) }
+            Spacer(minLength: 8)
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.45))
-                    .frame(width: 48, alignment: .trailing)
+                Spacer(minLength: 8)
             }
         }
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
-        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(

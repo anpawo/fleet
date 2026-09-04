@@ -2,8 +2,13 @@ import AppKit
 import SwiftUI
 
 /// The menu bar presence: a plain paper plane with a single coloured dot in its bottom-right
-/// corner, showing whichever session most wants your attention. This is the only place Fleet is
-/// visible when the panel is down, so it doubles as the "yes, it is running" indicator.
+/// corner, carrying how full the machine's memory is. This is the only place Fleet is visible
+/// when the panel is down, so it doubles as the "yes, it is running" indicator.
+///
+/// The dot used to name whichever session most wanted your attention. Memory won the spot for
+/// a simple reason: a session that needs you already has a notification and a panel that comes
+/// up by itself, while a machine filling up has nothing at all — and it is the thing you want
+/// to have noticed *before* it matters.
 @MainActor
 final class StatusItemController {
 
@@ -13,9 +18,9 @@ final class StatusItemController {
 
     private static let dotSize: CGFloat = 4
 
-    /// What the button currently displays. The refresh tick fires every few seconds and almost
-    /// never changes the state, so this avoids redrawing the menu bar for nothing.
-    private var shown: SessionState??
+    /// What colour the dot currently is. The refresh tick fires every few seconds and the
+    /// colour almost never changes, so this avoids redrawing the menu bar for nothing.
+    private var shown: NSColor?
     /// Same idea for the muted look, which swaps the whole glyph.
     private var shownMuted: Bool?
 
@@ -32,7 +37,7 @@ final class StatusItemController {
             button.toolTip = "Fleet — click for the panel, right-click for settings"
             install(dot: dot, on: button)
         }
-        update(sessions: [])
+        update(ram: MemoryPressure.footprint())
     }
 
     /// The dot is a sibling view rather than part of the image on purpose: the plane is a
@@ -67,23 +72,17 @@ final class StatusItemController {
 
     // MARK: - Appearance
 
-    func update(sessions: [Session], muted: Bool = false) {
+    func update(ram: MemoryPressure.Footprint, muted: Bool = false) {
         // A hollow plane while muted: the chord is pressed with nothing on screen, so the menu
         // bar is the only place that can acknowledge it.
         if shownMuted != muted {
             shownMuted = muted
             item.button?.image = Self.planeImage(filled: !muted)
         }
-        // Urgency reuses `sortRank` — the same order the tiles use, and the right one here too:
-        // "needs you" outranks "ready" (your turn) which outranks "working" (nothing to do yet).
-        let top = sessions.min { $0.state.sortRank < $1.state.sortRank }?.state
-        guard shown != .some(top) else { return }
-        shown = .some(top)
-
-        // Nothing running means no dot at all, leaving a bare plane — the quietest thing the
-        // menu bar can show while still saying Fleet is there.
-        dot.isHidden = top == nil
-        dot.layer?.backgroundColor = top.map { NSColor($0.tint).cgColor }
+        let colour = NSColor(MemoryStrip.loadTint(ram))
+        guard shown != colour else { return }
+        shown = colour
+        dot.layer?.backgroundColor = colour.cgColor
     }
 
     /// `paperplane.fill` rather than anything boat-shaped: at 15pt a hull and mast collapse into
