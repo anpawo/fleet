@@ -18,6 +18,7 @@ final class SessionRegistry {
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
         let now = Date()
+        screens.startPass()
 
         // Drop bookkeeping for processes that exited.
         let live = Set(procs.map(\.pid))
@@ -421,13 +422,26 @@ final class TerminalWatch {
     }
 
     private var seen: [pid_t: (at: Date, verdict: Verdict)] = [:]
+    /// Whether a screen has already been read on this pass — see `startPass`.
+    private var readThisPass = false
+
+    /// Called once per refresh. Reading a terminal is a synchronous round trip into another
+    /// app: 20 ms for a small window, 60 for a busy one, on the main thread. One session's
+    /// worth of that is a frame; seven sessions all coming due on the same tick is a stall you
+    /// can feel. So a pass reads at most one screen and the rest keep the verdict they had —
+    /// they come due again a second later, and the answer changes on the scale of seconds.
+    func startPass() { readThisPass = false }
 
     func verdict(_ proc: ClaudeProcess, now: Date) -> Verdict {
         if let last = seen[proc.pid] {
             let interval = last.verdict == .unknown ? Config.terminalRecheckInterval
                                                     : Config.terminalReadInterval
             if now.timeIntervalSince(last.at) < interval { return last.verdict }
+            if readThisPass { return last.verdict }
+        } else if readThisPass {
+            return .unknown
         }
+        readThisPass = true
         let verdict = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty, cwd: proc.cwd)
             .map(Self.read) ?? .unknown
         seen[proc.pid] = (now, verdict)

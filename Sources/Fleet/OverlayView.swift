@@ -712,10 +712,18 @@ struct MemoryStrip: View {
                     .titleGround()
                 Spacer(minLength: 3)
                 // The total, once. All four shares are taken from it, so a pill that repeats
-                // it says nothing the pill above did not.
-                Text(tight ? headline : byteLabel(reaper.footprint.total))
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(tight ? amber.opacity(0.9) : .white.opacity(0.40))
+                // it says nothing the pill above did not. Set like the count on the other three
+                // headings, because it is the same kind of thing: what the column is out of.
+                if tight {
+                    Text(headline)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(amber.opacity(0.9))
+                } else {
+                    Text(String(format: "%.0f GB",
+                                Double(reaper.footprint.total) / 1_073_741_824))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.32))
+                }
             }
             .padding(.horizontal, 2)
 
@@ -723,8 +731,8 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            // One to a line. Two abreast meant COMPRESSED had to shrink to fit its half, and a
-            // row of names in four different sizes is a row you read one word at a time.
+            // Two to a line, each half the column. They fit abreast again now that a pill is
+            // a name and a share — it was the size beside them that pushed COMPRESSED out.
             VStack(alignment: .leading, spacing: 4) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
@@ -732,15 +740,19 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", percent(share(ram.used)),
-                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                    Reading("CACHED", percent(share(ram.cached)))
+                    HStack(spacing: 4) {
+                        Reading("RAM", percent(share(ram.used)),
+                                accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                        Reading("CACHED", percent(share(ram.cached)))
+                    }
                     // Neither of these gets a colour. They are the *why* under the RAM figure
                     // — what is holding it and what it has started paying for — and a row of
                     // four graded lights makes you compare four things when only one of them
                     // is the verdict.
-                    Reading("COMPRESSED", percent(share(ram.compressed)))
-                    Reading("SWAP", percent(share(ram.swap)))
+                    HStack(spacing: 4) {
+                        Reading("COMPRESSED", percent(share(ram.compressed)))
+                        Reading("SWAP", percent(share(ram.swap)))
+                    }
                 }
             }
             .padding(.horizontal, 2)

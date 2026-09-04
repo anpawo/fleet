@@ -278,7 +278,37 @@ final class Reaper: ObservableObject {
         return total
     }
 
+    /// What each pid turned out to be, against the moment it started.
+    ///
+    /// Same reasoning as `ProcessScanner.isClaudeSession`: an executable path and a command
+    /// line are fixed at exec, and looking them up for every process on the machine once a
+    /// second was the single most expensive thing Fleet did — 80 ms of `proc_pidpath` on the
+    /// main thread, which is ten dropped frames of whatever you were scrolling.
+    ///
+    /// The one thing re-checked on a hit is a session that was *not* an orphan: it becomes one
+    /// when its shell dies, without the process itself changing. The reverse never happens —
+    /// nothing gets its parent back — so an orphan verdict, once taken, holds.
+    private nonisolated(unsafe) static var kinds: [pid_t: (started: UInt64, kind: Reapable.Kind?)] = [:]
+
     private static func classify(_ pid: pid_t) -> Reapable.Kind? {
+        guard let bsd = ProcessScanner.bsdInfo(pid) else { return nil }
+        let started = UInt64(bsd.pbi_start_tvsec)
+        if let known = kinds[pid], known.started == started {
+            // A live session that has since lost its shell still has to be caught, so the one
+            // verdict that depends on something other than the process itself is re-taken.
+            guard known.kind == nil, ProcessScanner.isClaudeSession(pid) else { return known.kind }
+            return bsd.pbi_ppid == 1 ? .orphanSession : nil
+        }
+        let kind = classifyUncached(pid, ppid: pid_t(bsd.pbi_ppid))
+        kinds[pid] = (started, kind)
+        if kinds.count > 2048 {
+            let live = Set(ProcessScanner.allPIDs())
+            kinds = kinds.filter { live.contains($0.key) }
+        }
+        return kind
+    }
+
+    private static func classifyUncached(_ pid: pid_t, ppid: pid_t) -> Reapable.Kind? {
         let path = ProcessScanner.executablePath(pid)
         guard !path.isEmpty else { return nil }
 
@@ -308,7 +338,7 @@ final class Reaper: ObservableObject {
         // A Claude Code session whose shell died — a terminal window closed on it, a crash —
         // gets reparented to launchd. A live session always has its shell in between, so this
         // is a session that is talking to nobody and can never be answered.
-        if ProcessScanner.isClaudeSession(pid), ProcessScanner.parent(pid) == 1 {
+        if ProcessScanner.isClaudeSession(pid), ppid == 1 {
             return .orphanSession
         }
         return nil

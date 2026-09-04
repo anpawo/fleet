@@ -41,6 +41,8 @@ final class AppController: ObservableObject {
     private var controlCenter: ControlCenterController?
     private var statusItem: StatusItemController?
     private var timer: Timer?
+    /// When the reaper last walked the process table — see `tick`.
+    private var lastReap = Date.distantPast
     private var currentInterval: TimeInterval = 0
     private var suspended = false
 
@@ -198,7 +200,15 @@ final class AppController: ObservableObject {
 
         // Ahead of the dormant gate below on purpose: memory fills up whether or not any
         // session is running, and the machine this is protecting is the whole machine.
-        reaper.tick()
+        //
+        // Not on every tick, though. A visible panel ticks once a second and the reaper walks
+        // the whole process table, which is 24 ms of main thread it does not need to spend on
+        // a problem that takes days to build up — and 24 ms once a second is a stutter in
+        // whatever you are scrolling.
+        if Date().timeIntervalSince(lastReap) >= Config.reapInterval {
+            lastReap = Date()
+            reaper.tick()
+        }
 
         if isPanelVisible {
             refreshVisible()

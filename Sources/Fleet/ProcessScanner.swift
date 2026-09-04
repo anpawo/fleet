@@ -28,19 +28,49 @@ enum ProcessScanner {
         return base == "claude" || base == "claude.exe"
     }
 
+    /// What a pid was found to be, and when that pid started.
+    ///
+    /// The answer cannot change under a running process — a path and an argv[0] are fixed at
+    /// exec — so it is worth exactly one lookup per process per boot. The start time is the
+    /// guard against pid reuse: the kernel hands the same number out again within the hour on
+    /// a busy machine, and a recycled pid must not inherit the last tenant's verdict.
+    private nonisolated(unsafe) static var claudeVerdicts: [pid_t: (started: UInt64, is: Bool)] = [:]
+
     /// True when this pid is a Claude Code session.
     ///
     /// Ordered cheapest-first: the TTY check is a single syscall and eliminates every GUI and
-    /// daemon process, leaving only shells and CLI tools to pay for a path lookup.
+    /// daemon process, leaving only shells and CLI tools to pay for a path lookup — and the
+    /// cache above means each of those pays it once rather than once a second.
     static func isClaudeSession(_ pid: pid_t) -> Bool {
-        guard controllingTTY(pid) != nil else { return false }
+        guard let bsd = bsdInfo(pid), bsd.e_tdev != UInt32.max else { return false }
+        let started = UInt64(bsd.pbi_start_tvsec)
+        if let known = claudeVerdicts[pid], known.started == started { return known.is }
+
         let path = executablePath(pid)
-        if isClaudeCodePath(path) { return true }
-        // Last resort: argv[0] keeps the name "claude" even when the exec path is a version
-        // file, covering install layouts we do not know about yet.
-        guard let a0 = arguments(pid).first else { return false }
-        let base = (a0 as NSString).lastPathComponent
-        return base == "claude" || base == "claude.exe"
+        var verdict = isClaudeCodePath(path)
+        if !verdict {
+            // Last resort: argv[0] keeps the name "claude" even when the exec path is a version
+            // file, covering install layouts we do not know about yet.
+            let base = (arguments(pid).first as NSString?)?.lastPathComponent
+            verdict = base == "claude" || base == "claude.exe"
+        }
+        claudeVerdicts[pid] = (started, verdict)
+        // Bounded by the process table: a machine that has churned through thousands of shells
+        // would otherwise keep a row for every one of them.
+        if claudeVerdicts.count > 2048 {
+            let live = Set(allPIDs())
+            claudeVerdicts = claudeVerdicts.filter { live.contains($0.key) }
+        }
+        return verdict
+    }
+
+    /// One `proc_pidinfo`, shared by everything that needs the tty, the parent or the start
+    /// time — which is most of a scan.
+    static func bsdInfo(_ pid: pid_t) -> proc_bsdinfo? {
+        var bsd = proc_bsdinfo()
+        let size = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd,
+                                Int32(MemoryLayout<proc_bsdinfo>.size))
+        return size > 0 ? bsd : nil
     }
 
     /// A Claude Code session is always attached to a terminal. Electron helpers never are,

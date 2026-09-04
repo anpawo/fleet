@@ -134,6 +134,36 @@ if CommandLine.arguments.contains("--memory") {
 
 // `--scan` prints what the app currently sees and exits: a headless way to check session
 // discovery, transcript binding and state colours without waiting to go idle.
+// `--bench` times the work a visible panel repeats every second, which is the only work that
+// can stutter a scroll: everything below runs on the main actor while SwiftUI wants the frame.
+if CommandLine.arguments.contains("--bench") {
+    MainActor.assumeIsolated {
+        func time(_ name: String, _ body: () -> Void) {
+            let start = Date()
+            body()
+            print(String(format: "  %-28s %6.1f ms", (name as NSString).utf8String!,
+                         Date().timeIntervalSince(start) * 1000))
+        }
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        var sessions: [Session] = []
+        print("registry:")
+        for i in 1 ... 5 { time("refresh #\(i)") { sessions = registry.refresh() } }
+        print("\nparts (\(sessions.count) sessions):")
+        time("ProcessScanner.scan") { _ = ProcessScanner.scan() }
+        time("Reaper.candidates") { _ = Reaper.candidates() }
+        time("Reaper.topHogs") { _ = Reaper.topHogs(reapable: []) }
+        time("MemoryPressure.footprint") { _ = MemoryPressure.footprint() }
+        for session in sessions {
+            time("AX read #\(session.number) \(session.dirName)") {
+                _ = TerminalFocus.visibleText(pid: session.proc.pid, tty: session.proc.tty,
+                                              cwd: session.proc.cwd)
+            }
+        }
+        exit(0)
+    }
+}
+
 if CommandLine.arguments.contains("--scan") {
     MainActor.assumeIsolated {
         let registry = SessionRegistry()

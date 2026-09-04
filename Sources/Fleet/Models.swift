@@ -5,6 +5,11 @@ enum Config {
     /// Full-refresh cadence when at least one session is alive but the panel is hidden. Fleet
     /// keeps its picture current in the background so the panel is never a moment out of date
     /// when it appears — a stale first frame is worse than the wakeups cost.
+    /// How often the reaper looks at the machine. Its own windows are minutes long and its
+    /// subject is a problem that takes days, so this is about the panel rather than about
+    /// memory: it is the longest interval that still keeps the strip's numbers alive.
+    static let reapInterval: TimeInterval = 5
+
     static let idlePollActive: TimeInterval = 5
     /// Poll cadence when no session is alive (pure "is anything running yet" check).
     static let idlePollDormant: TimeInterval = 60
