@@ -63,7 +63,7 @@ struct OverlayView: View {
     /// word is read.
     /// Deep enough to hold the memory block that now stands in it, with air under it before
     /// the mail starts. Both side columns take it, so their headings stay on one line.
-    private static let podiumDrop: CGFloat = 112
+    private static let podiumDrop: CGFloat = 158
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -141,7 +141,7 @@ struct OverlayView: View {
                     MemoryStrip(reaper: controller.reaper)
                         // Air under it in the state where it outgrows the step and pushes the
                         // mail down itself, rather than landing on the MAIL heading.
-                        .padding(.bottom, 26)
+                        .padding(.bottom, 30)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
                 }
@@ -224,6 +224,7 @@ struct OverlayView: View {
                     // their tracking this one runs into the legend beside it.
                     .tracking(2.6)
                     .foregroundStyle(.white.opacity(0.45))
+                    .titleGround()
                 Spacer(minLength: 4)
                 if !controller.sessions.isEmpty {
                     Text("\(controller.sessions.count)")
@@ -708,6 +709,7 @@ struct MemoryStrip: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(tint.opacity(tight ? 0.9 : 0.45))
+                    .titleGround()
                 Spacer(minLength: 4)
                 if tight {
                     Text(headline)
@@ -721,8 +723,8 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            // Two to a line rather than four across: the column is 250pt wide, and the same
-            // width as the mail under it is worth more than one unbroken row.
+            // One to a line, each the width of the column: a share and a size do not fit two
+            // abreast in 250pt, and a stack of four reads faster than a grid of four anyway.
             VStack(alignment: .leading, spacing: 4) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
@@ -730,22 +732,31 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    HStack(spacing: 4) {
-                        Reading("RAM", percentLabel, trailing: "\u{b7} \(byteLabel(ram.total))",
-                                accent: Self.load(ram))
-                        Reading("CACHED", byteLabel(ram.cached))
-                    }
-                    HStack(spacing: 4) {
-                        Reading("COMPRESSED", byteLabel(ram.compressed))
-                        Reading("SWAP", ram.swapTotal > 0
-                                ? "\(byteLabel(ram.swap)) / \(byteLabel(ram.swapTotal))"
-                                : byteLabel(ram.swap))
-                    }
+                    Reading("RAM", percentLabel, trailing: "\u{b7} \(byteLabel(ram.total))",
+                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                    // Deliberately never coloured. Cached memory is the machine working well —
+                    // Apple's own line is that free RAM buys you nothing — so a warning scale
+                    // on it would be a scale that lies.
+                    Reading("CACHED", byteLabel(ram.cached),
+                            trailing: "\u{b7} \(percent(share(ram.cached)))")
+                    Reading("COMPRESSED", byteLabel(ram.compressed),
+                            trailing: "\u{b7} \(percent(share(ram.compressed)))",
+                            accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
+                    Reading("SWAP", byteLabel(ram.swap),
+                            trailing: "\u{b7} \(percent(share(ram.swap)))",
+                            accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
                 }
             }
             .padding(.horizontal, 2)
         }
     }
+
+    private func share(_ bytes: UInt64) -> Double {
+        let total = reaper.footprint.total
+        return total > 0 ? Double(bytes) / Double(total) : 0
+    }
+
+    private func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
 
     /// Swap, not free RAM: free RAM is near zero on every healthy Mac and would cry wolf
     /// permanently. Swap in use is the number that tracks how slow the machine actually feels.
@@ -757,24 +768,42 @@ struct MemoryStrip: View {
 
     /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
     /// glance than the share does.
-    private var percentLabel: String {
-        let ram = reaper.footprint
-        guard ram.total > 0 else { return "" }
-        return "\(Int((Double(ram.used) / Double(ram.total) * 100).rounded()))%"
-    }
+    private var percentLabel: String { percent(share(reaper.footprint.used)) }
 
-    /// The colour of that figure, on the panel's own four: green while there is room, then the
-    /// blue and the amber the tiles use for "someone is waiting", then the red they use for
-    /// trouble. Steps rather than a gradient — a colour you can name is a colour you can read
-    /// out of the corner of your eye, and a continuous ramp is neither.
-    private static func load(_ ram: MemoryPressure.Footprint) -> Color {
-        guard ram.total > 0 else { return .white }
-        switch Double(ram.used) / Double(ram.total) {
-        case ..<0.60: return SessionState.ready.tint
-        case ..<0.75: return SessionState.awaitingAnswer.tint
-        case ..<0.88: return SessionState.apiError.tint
+    /// A share on the panel's own four colours: green while there is room, then the blue and
+    /// the amber the tiles use for "someone is waiting", then the red they use for trouble.
+    ///
+    /// The thresholds are this app's, not Apple's — Apple publishes no number for any of these.
+    /// The one verdict it does publish is the pressure level, and that is already what turns
+    /// this whole block amber. These three only say which of the four is filling up first.
+    ///
+    /// Steps rather than a gradient: a colour you can name is a colour you can read out of the
+    /// corner of your eye, and a continuous ramp is neither.
+    private static func scale(_ share: Double, _ ok: Double, _ watch: Double,
+                              _ bad: Double) -> Color {
+        switch share {
+        case ..<ok: return SessionState.ready.tint
+        case ..<watch: return SessionState.awaitingAnswer.tint
+        case ..<bad: return SessionState.apiError.tint
         default: return SessionState.running.tint
         }
+    }
+}
+
+extension View {
+    /// A dark chip behind a column's name. The panel is a wash over your desktop, and a
+    /// heading standing on a bright wallpaper is a heading you have to hunt for.
+    ///
+    /// Not a material: macOS's blur has a fixed radius, and the panel already turned frosted
+    /// glass down for that reason. The negative padding puts the chip outside the text's own
+    /// bounds, so nothing on the heading line moves.
+    func titleGround() -> some View {
+        padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.88)))
+            .padding(.horizontal, -7)
+            .padding(.vertical, -3)
     }
 }
 
@@ -800,6 +829,7 @@ private struct Reading: View {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
+            Spacer(minLength: 6)
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
@@ -811,8 +841,9 @@ private struct Reading: View {
         }
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .background(
             // Opaque, on the same near-black the mail and todo rows sit on. A translucent pill
             // over the scrim lets the desktop through, and a wallpaper is not a background you
@@ -857,8 +888,9 @@ private struct HogPill: View {
         }
         // Its own capsule: side by side on one amber line, four processes read as one string
         // of words. The border is what says where one ends and the next begins.
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .background(
             Capsule().fill(.white.opacity(0.06))
                 .overlay(Capsule().stroke(tint.opacity(0.25), lineWidth: 1))

@@ -101,10 +101,15 @@ final class AppController: ObservableObject {
     /// The two global chords, as currently set. Called again when the menu changes one, which
     /// releases the old chord and claims the new one.
     func bindHotKeys() {
-        // Deliberately *not* a toggle: "bring it to the front" should be idempotent, and Esc
-        // already dismisses.
+        // A toggle, because Esc is not always yours to spend: the panel goes up over a
+        // terminal, and Esc there belongs to whatever is running in it. The chord that raised
+        // the panel is the one hand already knows, so it is also the one that puts it away.
         HotKey.register(Settings.panelChord, id: 1) { [weak self] in
-            MainActor.assumeIsolated { self?.forceShow(announceEmpty: true) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.isPanelVisible { self.hidePanel() }
+                else { self.forceShow(announceEmpty: true) }
+            }
         }
         HotKey.register(Settings.muteChord, id: 2) { [weak self] in
             MainActor.assumeIsolated { self?.toggleMute() }
