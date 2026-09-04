@@ -207,7 +207,7 @@ struct HubColumn<Content: View>: View {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.white.opacity(0.92))
                     .titleGround()
                 if let note {
                     Text(note)

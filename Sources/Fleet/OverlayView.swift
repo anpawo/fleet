@@ -223,7 +223,7 @@ struct OverlayView: View {
                     // Tighter than the two side headings, which are one short word each. At
                     // their tracking this one runs into the legend beside it.
                     .tracking(2.6)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.white.opacity(0.92))
                     .titleGround()
                 Spacer(minLength: 4)
                 if !controller.sessions.isEmpty {
@@ -708,14 +708,12 @@ struct MemoryStrip: View {
                 Text("MEMORY")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
-                    .foregroundStyle(tint.opacity(tight ? 0.9 : 0.45))
+                    .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround()
                 Spacer(minLength: 4)
-                if tight {
-                    Text(headline)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(amber.opacity(0.9))
-                }
+                Text(tight ? headline : byteLabel(reaper.footprint.total))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(tight ? amber.opacity(0.9) : .white.opacity(0.32))
             }
             .padding(.horizontal, 2)
 
@@ -723,8 +721,9 @@ struct MemoryStrip: View {
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
 
-            // One to a line, each the width of the column: a share and a size do not fit two
-            // abreast in 250pt, and a stack of four reads faster than a grid of four anyway.
+            // Two to a line, each half the column: the four values line up in two columns of
+            // right-aligned figures, which is the whole reason to show a share rather than a
+            // size — 32% under 19% compares at a glance, 5.1 GB under 3.1 GB does not.
             VStack(alignment: .leading, spacing: 4) {
                 if tight {
                     ForEach(reaper.hogs) { hog in
@@ -732,19 +731,20 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", percentLabel, trailing: "\u{b7} \(byteLabel(ram.total))",
-                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                    // Deliberately never coloured. Cached memory is the machine working well —
-                    // Apple's own line is that free RAM buys you nothing — so a warning scale
-                    // on it would be a scale that lies.
-                    Reading("CACHED", byteLabel(ram.cached),
-                            trailing: "\u{b7} \(percent(share(ram.cached)))")
-                    Reading("COMPRESSED", byteLabel(ram.compressed),
-                            trailing: "\u{b7} \(percent(share(ram.compressed)))",
-                            accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
-                    Reading("SWAP", byteLabel(ram.swap),
-                            trailing: "\u{b7} \(percent(share(ram.swap)))",
-                            accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
+                    HStack(spacing: 4) {
+                        Reading("RAM", percent(share(ram.used)),
+                                accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                        // Deliberately never coloured. Cached memory is the machine working
+                        // well — Apple's own line is that free RAM buys you nothing — so a
+                        // warning scale on it would be a scale that lies.
+                        Reading("CACHED", percent(share(ram.cached)))
+                    }
+                    HStack(spacing: 4) {
+                        Reading("COMPRESSED", percent(share(ram.compressed)),
+                                accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
+                        Reading("SWAP", percent(share(ram.swap)),
+                                accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
+                    }
                 }
             }
             .padding(.horizontal, 2)
@@ -780,8 +780,9 @@ struct MemoryStrip: View {
     /// Steps rather than a gradient: a colour you can name is a colour you can read out of the
     /// corner of your eye, and a continuous ramp is neither.
     private static func scale(_ share: Double, _ ok: Double, _ watch: Double,
-                              _ bad: Double) -> Color {
+                              _ bad: Double) -> Color? {
         switch share {
+        case 0: return nil                      // grey: nothing there to have an opinion about
         case ..<ok: return SessionState.ready.tint
         case ..<watch: return SessionState.awaitingAnswer.tint
         case ..<bad: return SessionState.apiError.tint
@@ -801,7 +802,7 @@ extension View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.88)))
+                .fill(Color(white: 0.24)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
     }
@@ -829,7 +830,11 @@ private struct Reading: View {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
-            Spacer(minLength: 6)
+                // COMPRESSED is one point wider than half a 250pt column allows, and a label
+                // that wraps costs the row its second line for the sake of two characters.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 4)
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
@@ -841,7 +846,7 @@ private struct Reading: View {
         }
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(
@@ -888,7 +893,7 @@ private struct HogPill: View {
         }
         // Its own capsule: side by side on one amber line, four processes read as one string
         // of words. The border is what says where one ends and the next begins.
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(
