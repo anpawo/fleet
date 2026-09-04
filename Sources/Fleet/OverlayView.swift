@@ -50,7 +50,7 @@ struct OverlayView: View {
         + tileSpacing * CGFloat(Self.tilesPerRow - 1) }
     /// Narrow on purpose. These two are what is on your plate, not what you are working on —
     /// they earn a glance each, and anything wider starts competing with the fleet.
-    private let sideWidth: CGFloat = 250
+    private let sideWidth: CGFloat = 320
 
     /// How the leftover width is shared out: 2 : 3 : 3 : 2, edges to insides. Ratios rather
     /// than points, so the balance holds on a laptop screen and on a 34-inch one — a fixed
@@ -225,7 +225,7 @@ struct OverlayView: View {
                     .tracking(2.6)
                     .foregroundStyle(.white.opacity(0.92))
                     .titleGround()
-                Spacer(minLength: 4)
+                Spacer(minLength: 3)
                 if !controller.sessions.isEmpty {
                     Text("\(controller.sessions.count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -710,7 +710,7 @@ struct MemoryStrip: View {
                     .tracking(3.2)
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround()
-                Spacer(minLength: 4)
+                Spacer(minLength: 3)
                 Text(tight ? headline : byteLabel(reaper.footprint.total))
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(tight ? amber.opacity(0.9) : .white.opacity(0.32))
@@ -732,17 +732,19 @@ struct MemoryStrip: View {
                 } else {
                     let ram = reaper.footprint
                     HStack(spacing: 4) {
-                        Reading("RAM", percent(share(ram.used)),
+                        Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.used),
                                 accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
                         // Deliberately never coloured. Cached memory is the machine working
                         // well — Apple's own line is that free RAM buys you nothing — so a
                         // warning scale on it would be a scale that lies.
-                        Reading("CACHED", percent(share(ram.cached)))
+                        Reading("CACHED", percent(share(ram.cached)),
+                                trailing: byteLabel(ram.cached))
                     }
                     HStack(spacing: 4) {
                         Reading("COMPRESSED", percent(share(ram.compressed)),
+                                trailing: byteLabel(ram.compressed),
                                 accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
-                        Reading("SWAP", percent(share(ram.swap)),
+                        Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.swap),
                                 accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25))
                     }
                 }
@@ -826,22 +828,30 @@ private struct Reading: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
                 // COMPRESSED is one point wider than half a 250pt column allows, and a label
                 // that wraps costs the row its second line for the sake of two characters.
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Spacer(minLength: 4)
+                .minimumScaleFactor(0.75)
+                // Above the figures beside it: they are on fixed widths, and without this the
+                // name is the thing SwiftUI shortens to pay for them.
+                .layoutPriority(1)
+            Spacer(minLength: 3)
+            // Both figures on fixed widths: the point of a share is comparing it with the one
+            // in the next pill, and a column of numbers that shuffles sideways with the length
+            // of the size beside it is not a column.
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
+                .frame(width: 28, alignment: .trailing)
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.45))
+                    .frame(width: 48, alignment: .trailing)
             }
         }
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
