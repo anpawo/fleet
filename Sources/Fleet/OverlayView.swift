@@ -702,7 +702,7 @@ struct MemoryStrip: View {
     /// The right-hand pills hold CACHED and SWAP; the left hold RAM and COMPRESSED. Capping
     /// the short names hands the slack to the long one, which is the only one that was ever
     /// short of room. Whatever the column gains in width goes to the left pair too.
-    private static let shortPill: CGFloat = 138
+    private static let shortPill: CGFloat = 150
 
     var body: some View {
         let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
@@ -716,9 +716,11 @@ struct MemoryStrip: View {
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround()
                 Spacer(minLength: 3)
-                Text(tight ? headline : byteLabel(reaper.footprint.total))
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(tight ? amber.opacity(0.9) : .white.opacity(0.32))
+                if tight {
+                    Text(headline)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(amber.opacity(0.9))
+                }
             }
             .padding(.horizontal, 2)
 
@@ -737,19 +739,19 @@ struct MemoryStrip: View {
                 } else {
                     let ram = reaper.footprint
                     HStack(spacing: 4) {
-                        Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.used),
+                        Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.total),
                                 accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
                         // Deliberately never coloured. Cached memory is the machine working
                         // well — Apple's own line is that free RAM buys you nothing — so a
                         // warning scale on it would be a scale that lies.
                         Reading("CACHED", percent(share(ram.cached)),
-                                trailing: byteLabel(ram.cached), cap: Self.shortPill)
+                                trailing: byteLabel(ram.total), cap: Self.shortPill)
                     }
                     HStack(spacing: 4) {
                         Reading("COMPRESSED", percent(share(ram.compressed)),
-                                trailing: byteLabel(ram.compressed),
+                                trailing: byteLabel(ram.total),
                                 accent: Self.scale(share(ram.compressed), 0.10, 0.20, 0.35))
-                        Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.swap),
+                        Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total),
                                 accent: Self.scale(share(ram.swap), 0.001, 0.10, 0.25),
                                 cap: Self.shortPill)
                     }

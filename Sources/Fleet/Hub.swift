@@ -123,6 +123,30 @@ struct Todo: Identifiable {
     /// nothing is ever in it — so this is everything not yet finished.
     var open: Bool { state != Pile.done && state != Pile.past }
 
+    /// When this is due, read off the front of the line: todos here are written "07/09 23h42
+    /// — ATP v1" or "14/09 \u{2192} 21/10 — Part-Time", and the first date is the one the row
+    /// is judged on. Nil for a line that names no day, which is most of a todo list.
+    ///
+    /// Parsed rather than stored because the phone writes these, and a field the phone does not
+    /// know about would be a field that is empty on everything typed away from this Mac.
+    var due: Date? {
+        guard let token = title.split(separator: " ").first(where: { $0.contains("/") }),
+              case let parts = token.split(separator: "/"), parts.count == 2,
+              let day = Int(parts[0]), let month = Int(parts[1]),
+              (1 ... 31).contains(day), (1 ... 12).contains(month) else { return nil }
+
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year], from: Date())
+        components.day = day
+        components.month = month
+        guard let candidate = calendar.date(from: components) else { return nil }
+        // A day three months gone is next year's: "01/03" written in September is the March
+        // coming, not the one that has been and gone.
+        guard candidate.timeIntervalSinceNow < -90 * 86_400 else { return candidate }
+        components.year = (components.year ?? 0) + 1
+        return calendar.date(from: components)
+    }
+
     /// The first line only, for a row one line tall. Some todos are a whole page — a pasted
     /// receipt, a list of refunds to chase — and rendered raw one of them fills the column.
     /// The rest is one ⌘-click away.

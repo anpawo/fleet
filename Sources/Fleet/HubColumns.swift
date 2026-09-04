@@ -349,6 +349,22 @@ struct TodoCard: View {
     /// column needs to know to work out where a dragged row has been taken.
     static let verticalPadding: CGFloat = 7
 
+    /// How soon, in the panel's own four colours: red for today or already past, amber for
+    /// this week, blue for next week, green beyond. Grey for a line with no day in it — most
+    /// of the list, and the point of the colour is that the dated ones stand out of it.
+    private var dueTint: Color {
+        guard let due = todo.due else { return .white.opacity(0.32) }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: calendar.startOfDay(for: due)).day ?? 0
+        switch days {
+        case ..<1: return SessionState.running.tint
+        case ..<8: return SessionState.apiError.tint
+        case ..<15: return SessionState.awaitingAnswer.tint
+        default: return SessionState.ready.tint
+        }
+    }
+
     private var metrics: FirstLine.Metrics {
         FirstLine.metrics(todo.name, width: textWidth, size: Self.fontSize)
     }
@@ -358,7 +374,7 @@ struct TodoCard: View {
             // A dot, not a ring. A ring is a checkbox — it invites a click that does nothing,
             // since finishing a todo here is the ✕ on the other side of the row.
             Circle()
-                .fill(.white.opacity(0.32))
+                .fill(dueTint)
                 .frame(width: 3.5, height: 3.5)
                 .padding(.top, 6)
 
