@@ -708,9 +708,6 @@ struct MemoryStrip: View {
                         .foregroundStyle(amber.opacity(0.9))
                 }
                 Spacer(minLength: 4)
-                Text(percentLabel)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.32))
             }
             .padding(.horizontal, 2)
 
@@ -725,7 +722,8 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))")
+                    Reading("RAM", "\(byteLabel(ram.used)) / \(byteLabel(ram.total))",
+                            trailing: percentLabel)
                     Reading("CACHED", byteLabel(ram.cached))
                     Reading("COMPRESSED", byteLabel(ram.compressed))
                     Reading("SWAP", ram.swapTotal > 0
@@ -747,7 +745,8 @@ struct MemoryStrip: View {
         return String(format: "%@ \u{b7} %.1f GB SWAPPED", label, used)
     }
 
-    /// The count in the same place the other three columns put theirs — here, how full it is.
+    /// How full the RAM is. Beside the two numbers it is drawn from rather than off in the
+    /// heading's corner, where it was a percentage of nothing in particular.
     private var percentLabel: String {
         let ram = reaper.footprint
         guard ram.total > 0 else { return "" }
@@ -759,10 +758,13 @@ struct MemoryStrip: View {
 private struct Reading: View {
     let label: String
     let value: String
+    /// A second, dimmer figure after the value — the share of the total, where there is one.
+    var trailing: String?
 
-    init(_ label: String, _ value: String) {
+    init(_ label: String, _ value: String, trailing: String? = nil) {
         self.label = label
         self.value = value
+        self.trailing = trailing
     }
 
     var body: some View {
@@ -773,6 +775,11 @@ private struct Reading: View {
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.85))
+            if let trailing {
+                Text(trailing)
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.45))
+            }
         }
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
