@@ -754,7 +754,10 @@ private extension View {
         padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(
-                Capsule().fill(tint.opacity(0.10))
+                // A dark ground of its own under the tint: the tiles scroll behind the strip,
+                // and a capsule that is only tint lets them read straight through the numbers.
+                Capsule().fill(.black.opacity(0.30))
+                    .overlay(Capsule().fill(tint.opacity(0.10)))
                     .overlay(Capsule().stroke(tint.opacity(0.30), lineWidth: 1))
             )
     }
