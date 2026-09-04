@@ -711,11 +711,11 @@ struct MemoryStrip: View {
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround()
                 Spacer(minLength: 3)
-                if tight {
-                    Text(headline)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(amber.opacity(0.9))
-                }
+                // The total, once. All four shares are taken from it, so a pill that repeats
+                // it says nothing the pill above did not.
+                Text(tight ? headline : byteLabel(reaper.footprint.total))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(tight ? amber.opacity(0.9) : .white.opacity(0.40))
             }
             .padding(.horizontal, 2)
 
@@ -732,17 +732,15 @@ struct MemoryStrip: View {
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", percent(share(ram.used)), trailing: byteLabel(ram.total),
+                    Reading("RAM", percent(share(ram.used)),
                             accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
-                    Reading("CACHED", percent(share(ram.cached)),
-                            trailing: byteLabel(ram.total))
+                    Reading("CACHED", percent(share(ram.cached)))
                     // Neither of these gets a colour. They are the *why* under the RAM figure
                     // — what is holding it and what it has started paying for — and a row of
                     // four graded lights makes you compare four things when only one of them
                     // is the verdict.
-                    Reading("COMPRESSED", percent(share(ram.compressed)),
-                            trailing: byteLabel(ram.total))
-                    Reading("SWAP", percent(share(ram.swap)), trailing: byteLabel(ram.total))
+                    Reading("COMPRESSED", percent(share(ram.compressed)))
+                    Reading("SWAP", percent(share(ram.swap)))
                 }
             }
             .padding(.horizontal, 2)
