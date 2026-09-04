@@ -784,10 +784,11 @@ private struct Reading: View {
     let value: String
     /// A second, dimmer figure after the value — the share of the total, where there is one.
     var trailing: String?
-    /// What the value is worth saying in colour. White on everything but the RAM share.
-    var accent: Color = .white
+    /// What the whole pill is worth saying in colour — the number and the ground under it.
+    /// Nil on everything but the RAM share, which is the only one with a scale to be on.
+    var accent: Color?
 
-    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color = .white) {
+    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil) {
         self.label = label
         self.value = value
         self.trailing = trailing
@@ -801,7 +802,7 @@ private struct Reading: View {
                 .foregroundStyle(.white.opacity(0.45))
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(accent.opacity(0.9))
+                .foregroundStyle(accent ?? .white.opacity(0.85))
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -813,8 +814,9 @@ private struct Reading: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(
-            Capsule().fill(.white.opacity(0.07))
-                .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+            Capsule().fill(accent?.opacity(0.16) ?? .white.opacity(0.07))
+                .overlay(Capsule().stroke(accent?.opacity(0.40) ?? .white.opacity(0.12),
+                                          lineWidth: 1))
         )
     }
 }
