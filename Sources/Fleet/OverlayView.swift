@@ -799,10 +799,10 @@ private struct Reading: View {
         HStack(spacing: 5) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(.white.opacity(0.55))
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(accent ?? .white.opacity(0.85))
+                .foregroundStyle(accent ?? .white.opacity(0.95))
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -814,8 +814,12 @@ private struct Reading: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(
-            Capsule().fill(accent?.opacity(0.16) ?? .white.opacity(0.07))
-                .overlay(Capsule().stroke(accent?.opacity(0.40) ?? .white.opacity(0.12),
+            // Opaque, on the same near-black the mail and todo rows sit on. A translucent pill
+            // over the scrim lets the desktop through, and a wallpaper is not a background you
+            // can read a number off.
+            Capsule().fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .overlay(Capsule().fill(accent?.opacity(0.22) ?? .white.opacity(0.05)))
+                .overlay(Capsule().stroke(accent?.opacity(0.55) ?? .white.opacity(0.14),
                                           lineWidth: 1))
         )
     }
