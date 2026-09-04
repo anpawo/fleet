@@ -839,12 +839,10 @@ private struct Reading: View {
     }
 
     var body: some View {
-        // Evenly spaced, edges included: a Spacer on each end as well as between the parts,
-        // and they are all the same Spacer, so the gap either side of the figure is the gap
-        // before the name and after the total. Nothing is on a fixed width — one pill holds
-        // the line, so there is no column of numbers to keep straight.
+        // Space between, not around: the name sits on the left edge and the total on the
+        // right, with the slack split between them. The figure lands in the middle because
+        // the two gaps either side of it are the same, not because anything centres it.
         HStack(spacing: 0) {
-            Spacer(minLength: 8)
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
@@ -853,14 +851,14 @@ private struct Reading: View {
             Text(value)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(accent ?? .white.opacity(0.95))
-            Spacer(minLength: 8)
             if let trailing {
+                Spacer(minLength: 8)
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.45))
-                Spacer(minLength: 8)
             }
         }
+        .padding(.horizontal, 10)
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
         .padding(.vertical, 4)
