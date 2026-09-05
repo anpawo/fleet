@@ -176,7 +176,7 @@ final class Reaper: ObservableObject {
         // Everything below only matters when memory is actually tight; when it is not, the
         // samples above are all we keep doing, so that the idle streaks are already there when
         // pressure arrives instead of starting from zero at the worst moment.
-        guard pressure.isTight || struggling else {
+        guard struggling else {
             if !hogs.isEmpty { hogs = [] }
             return
         }
@@ -208,7 +208,9 @@ final class Reaper: ObservableObject {
             lateStreak = 0
         }
         let stalling = lateStreak >= Config.stallStreak
-        let now = pressure.isTight || stalling
+        let full = footprint.total > 0
+            && Double(footprint.used) / Double(footprint.total) >= Config.strainedRAM
+        let now = stalling || full
         guard now != struggling else { return }
 
         struggling = now
@@ -219,7 +221,8 @@ final class Reaper: ObservableObject {
         }
         struggleReason = stalling
             ? String(format: "Fleet's own tick is %.1fs late", lateness)
-            : "the kernel reports memory \(pressure == .critical ? "critical" : "pressure")"
+            : "\(Int((Double(footprint.used) / Double(footprint.total) * 100).rounded()))% of "
+              + "the RAM is spoken for"
         // The hogs are what the alert is for, and the last scan may be seconds old.
         hogs = Reaper.topHogs(reapable: [])
         onFluidity?(true, struggleReason)

@@ -703,7 +703,7 @@ struct MemoryStrip: View {
     private static let swapWorthSaying = 0.10
 
     var body: some View {
-        let tight = reaper.pressure.isTight && !reaper.hogs.isEmpty
+        let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
 
         VStack(alignment: .leading, spacing: 6) {
@@ -715,9 +715,8 @@ struct MemoryStrip: View {
                     .titleGround()
                 Spacer(minLength: 3)
                 if tight {
-                    Text(headline)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(amber.opacity(0.9))
+                    Spacer(minLength: 6)
+                    StopAgentsButton(tint: amber)
                 }
             }
             .padding(.horizontal, 2)
@@ -725,6 +724,15 @@ struct MemoryStrip: View {
             Rectangle()
                 .fill(tint.opacity(tight ? 0.30 : 0.10))
                 .frame(height: 1)
+
+            // Under the rule rather than beside the name: the sentence is a sentence, and the
+            // heading line is a name, a button and no room for a third thing.
+            if tight {
+                Text(headline)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(amber.opacity(0.9))
+                    .padding(.horizontal, 2)
+            }
 
             // Two of the four. Cached is never a problem and compressed is a leading
             // indicator; neither is something you act on. What is worth a glance is how full
@@ -774,13 +782,9 @@ struct MemoryStrip: View {
         String(format: "%.0f GB", Double(bytes) / 1_073_741_824)
     }
 
-    /// Swap, not free RAM: free RAM is near zero on every healthy Mac and would cry wolf
-    /// permanently. Swap in use is the number that tracks how slow the machine actually feels.
-    private var headline: String {
-        let used = Double(MemoryPressure.swap().used) / 1_073_741_824
-        let label = reaper.pressure == .critical ? "CRITICAL" : "PRESSURE"
-        return String(format: "%@ \u{b7} %.1f GB", label, used)
-    }
+    /// Why the block is amber, in the few words the heading has room for. The long version of
+    /// the same sentence is what the sessions are told — see `Hooks.machinePath`.
+    private var headline: String { reaper.struggleReason.uppercased() }
 
     /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
     /// glance than the share does.
@@ -829,6 +833,38 @@ extension View {
                 .fill(Color(white: 0.24)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
+    }
+}
+
+/// The one thing on this panel that reaches into the sessions rather than reporting on them.
+///
+/// Pressed, every Claude Code session on the machine is told to stop at its next tool call —
+/// through the same hooks that tell Fleet what they are doing, answering `continue: false`.
+/// Turns end; nothing is killed, nothing is lost, and each session says why it stopped.
+private struct StopAgentsButton: View {
+    let tint: Color
+    @State private var hovering = false
+    @State private var pressed = false
+
+    var body: some View {
+        Button {
+            Hooks.requestAgentStop()
+            pressed = true
+        } label: {
+            Text(pressed ? "STOPPING\u{2026}" : "STOP AGENTS")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(pressed ? tint.opacity(0.6) : tint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(tint.opacity(hovering ? 0.22 : 0.12))
+                        .overlay(Capsule().stroke(tint.opacity(0.55), lineWidth: 1))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(pressed)
+        .onHover { hovering = $0 }
     }
 }
 

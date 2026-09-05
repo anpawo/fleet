@@ -94,19 +94,48 @@ enum Hooks {
     /// hook is a short-lived shell script that must not block a session, and `cat` is the
     /// whole protocol. It carries a timestamp because a Fleet that dies while the machine is
     /// thrashing would otherwise leave every session nagged forever by a file nobody updates.
+    /// The button on the panel: every Claude Code session on this machine is asked to stop
+    /// what it is doing, at its next tool call.
+    ///
+    /// Not a signal. A `SIGINT` to a session would be read by its terminal as a keystroke or
+    /// kill it outright, and the whole point is to end a *turn*, not a process. The hooks
+    /// already run inside every session and can answer `continue: false`, which is the
+    /// supported way to say stop — Claude Code halts the turn and shows the reason.
+    static func requestAgentStop() {
+        var json = (machineState() ?? [:])
+        json["stop"] = Int(Date().timeIntervalSince1970)
+        write(json)
+        NSLog("Fleet: asked every session to stop")
+    }
+
+    private static func machineState() -> [String: Any]? {
+        guard let data = FileManager.default.contents(atPath: machinePath) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    private static func write(_ json: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        try? FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
+        try? data.write(to: URL(fileURLWithPath: machinePath), options: .atomic)
+    }
+
     static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog]) {
         let names = hogs.prefix(4)
             .map { "\($0.name) \($0.sizeLabel)" }
             .joined(separator: ", ")
-        let json: [String: Any] = [
+        var json: [String: Any] = [
             "struggling": struggling,
             "reason": reason,
             "hogs": names,
             "at": Int(Date().timeIntervalSince1970),
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
-        try? FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
-        try? data.write(to: URL(fileURLWithPath: machinePath), options: .atomic)
+        // A stop pressed a moment ago outlives the verdict that prompted it: the machine
+        // recovering one second later must not cancel a stop the sessions have not yet read.
+        if let stop = machineState()?["stop"] as? Int,
+           Date().timeIntervalSince1970 - Double(stop) < 300 {
+            json["stop"] = stop
+        }
+        write(json)
     }
 
     /// Bumped whenever the script starts recording something Fleet relies on. An older script
@@ -276,7 +305,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 3
+    # fleet-hook-version: 4
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -292,7 +321,7 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped"
         exit 0
     fi
 
@@ -315,10 +344,26 @@ enum Hooks {
         case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
 
         now=$(date +%s)
+        reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
         # A verdict nobody has refreshed in five minutes is from a Fleet that is no longer
         # running. Stale advice about a machine is worse than none.
         at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
         [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
+
+        # The panel's stop button. One per session per press: the stamp records which stop
+        # this session has already honoured, so a run started after it is not cut down by a
+        # press from ten minutes ago.
+        stop=$(printf '%s' "$payload" | sed -n 's/.*"stop":\\([0-9]*\\).*/\\1/p' | head -1)
+        if [ -n "${stop:-}" ] && [ $((now - stop)) -lt 300 ]; then
+            honoured=0
+            [ -f "$dir/$sid.stopped" ] && honoured=$(cat "$dir/$sid.stopped" 2>/dev/null || echo 0)
+            if [ "$stop" != "$honoured" ]; then
+                mkdir -p "$dir" && echo "$stop" > "$dir/$sid.stopped"
+                printf '{"continue":false,"stopReason":"Fleet stopped this session: %s. '
+                printf 'Nothing is lost — say go when the machine has room again."}\\n' "$reason"
+                return 0
+            fi
+        fi
 
         stamp="$dir/$sid.nudge"
         if [ -f "$stamp" ]; then
@@ -327,7 +372,6 @@ enum Hooks {
         fi
         mkdir -p "$dir" && echo "$now" > "$stamp"
 
-        reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
         hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
         note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now: \\
     ${hogs:-unknown}. Wind down what you can until it recovers: no new subagents, no new \\

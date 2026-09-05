@@ -5,6 +5,13 @@ enum Config {
     /// Full-refresh cadence when at least one session is alive but the panel is hidden. Fleet
     /// keeps its picture current in the background so the panel is never a moment out of date
     /// when it appears — a stale first frame is worse than the wakeups cost.
+    /// How full the RAM has to be before any of this is worth a word.
+    ///
+    /// The kernel calls "warning" long before you would: it fired at 0.6 GB of swap on a
+    /// machine that was perfectly usable. Its verdict still licenses a reap, because that is
+    /// about what is safe to kill; this is about what is worth interrupting you for.
+    static let strainedRAM = 0.92
+
     /// How late a tick has to be before it counts as the machine failing to keep up, on top
     /// of the slack the timer was scheduled with. Fleet's tick is a few milliseconds of work;
     /// when the scheduler cannot find a place for it within a second of its due time, nothing
