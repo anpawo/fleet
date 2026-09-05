@@ -84,6 +84,31 @@ enum Hooks {
                       pids: pids, transcriptPath: transcript)
     }
 
+    /// Where Fleet tells the hooks — and through them every Claude Code session on the
+    /// machine — how the machine itself is doing.
+    static var machinePath: String { (home as NSString).appendingPathComponent("machine.json") }
+
+    /// The one thing that travels the other way: Fleet writing, the sessions reading.
+    ///
+    /// A file rather than anything cleverer for the same reason the state files are files: a
+    /// hook is a short-lived shell script that must not block a session, and `cat` is the
+    /// whole protocol. It carries a timestamp because a Fleet that dies while the machine is
+    /// thrashing would otherwise leave every session nagged forever by a file nobody updates.
+    static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog]) {
+        let names = hogs.prefix(4)
+            .map { "\($0.name) \($0.sizeLabel)" }
+            .joined(separator: ", ")
+        let json: [String: Any] = [
+            "struggling": struggling,
+            "reason": reason,
+            "hogs": names,
+            "at": Int(Date().timeIntervalSince1970),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        try? FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
+        try? data.write(to: URL(fileURLWithPath: machinePath), options: .atomic)
+    }
+
     /// Bumped whenever the script starts recording something Fleet relies on. An older script
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
@@ -251,7 +276,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 2
+    # fleet-hook-version: 3
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -267,9 +292,54 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge"
         exit 0
     fi
+
+    # The one message that travels towards the session rather than away from it: when Fleet
+    # has decided the machine has stopped keeping up, the agent is told so in its own context,
+    # at the next tool result or prompt. It is told, not stopped — a run that is halfway
+    # through something expensive is the agent's call, not this script's.
+    #
+    # Rate-limited per session, because PostToolUse fires on every single tool call and an
+    # instruction repeated forty times in a row is an instruction that crowds out the work.
+    advise() {
+        machine="$HOME/.claude/fleet/machine.json"
+        [ -f "$machine" ] || return 0
+        payload=$(cat "$machine" 2>/dev/null) || return 0
+        case "$payload" in *'"struggling":true'*) ;; *) return 0 ;; esac
+
+        # Only the two events whose stdout Claude Code feeds back to the model.
+        event=$(printf '%s' "$input" | sed -n \\
+            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
+        case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
+
+        now=$(date +%s)
+        # A verdict nobody has refreshed in five minutes is from a Fleet that is no longer
+        # running. Stale advice about a machine is worse than none.
+        at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+        [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
+
+        stamp="$dir/$sid.nudge"
+        if [ -f "$stamp" ]; then
+            last=$(cat "$stamp" 2>/dev/null || echo 0)
+            [ $((now - last)) -ge 300 ] || return 0
+        fi
+        mkdir -p "$dir" && echo "$now" > "$stamp"
+
+        reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
+        hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
+        note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now: \\
+    ${hogs:-unknown}. Wind down what you can until it recovers: no new subagents, no new \\
+    builds, servers or watchers, finish or checkpoint what is already in flight, and read one \\
+    file at a time rather than fanning out. If the heavy thing is the task the user asked for, \\
+    say so in one line and let them decide."
+        note=$(printf '%s' "$note" | tr -s ' \\n' ' ')
+        printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' \\
+            "$event" "$note"
+        printf '"systemMessage":"Fleet: machine under strain - %s"}\\n' "$reason"
+    }
+    advise
 
     # Which transcript this session is writing, and which process is writing it.
     #

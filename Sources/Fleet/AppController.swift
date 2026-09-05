@@ -41,8 +41,13 @@ final class AppController: ObservableObject {
     private var controlCenter: ControlCenterController?
     private var statusItem: StatusItemController?
     private var timer: Timer?
-    /// When the reaper last walked the process table — see `tick`.
-    private var lastReap = Date.distantPast
+    /// When the last tick actually ran, and the interval it was due after. How far apart those
+    /// two are is Fleet's own punctuality, which is the machine's — see `Reaper.tick`.
+    private var lastTickAt = Date()
+    private var lastTickInterval: TimeInterval = 0
+    /// When the machine last dropped a panel in front of you for being slow. An alert that can
+    /// fire every tick is an alert you learn to dismiss without reading.
+    private var lastStallAlert = Date.distantPast
     private var currentInterval: TimeInterval = 0
     private var suspended = false
 
@@ -75,6 +80,14 @@ final class AppController: ObservableObject {
         reaper.onReaped = { [weak self] summary in
             self?.notifier.announce(title: "Fleet freed some memory", body: summary)
         }
+        // The machine has stopped keeping up. Two things happen, in this order: every Claude
+        // Code session on the machine is told, and then the panel comes up in front of you
+        // with what is holding the memory and a ✕ on each line.
+        reaper.onFluidity = { [weak self] struggling, reason in
+            MainActor.assumeIsolated { self?.fluidityChanged(struggling, reason) }
+        }
+        // Whatever the last run left behind is not evidence about this one.
+        Hooks.writeMachineState(struggling: false, reason: "", hogs: [])
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
@@ -200,18 +213,14 @@ final class AppController: ObservableObject {
 
         // Ahead of the dormant gate below on purpose: memory fills up whether or not any
         // session is running, and the machine this is protecting is the whole machine.
-        //
-        // Not on every tick, though. A visible panel ticks once a second and the reaper walks
-        // the whole process table, which is 24 ms of main thread it does not need to spend on
-        // a problem that takes days to build up — and 24 ms once a second is a stutter in
-        // whatever you are scrolling.
-        if Date().timeIntervalSince(lastReap) >= Config.reapInterval {
-            lastReap = Date()
-            reaper.tick()
-            // The dot in the menu bar is this number, and a session list that never changes —
-            // a dormant machine — would otherwise leave it on whatever it was at launch.
-            statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
-        }
+        let now = Date()
+        let lateness = now.timeIntervalSince(lastTickAt) - lastTickInterval
+        lastTickAt = now
+        lastTickInterval = currentInterval
+        reaper.tick(lateness: lateness, allowed: currentInterval * Config.timerTolerance)
+        // The dot in the menu bar is this number, and a session list that never changes — a
+        // dormant machine — would otherwise leave it on whatever it was at launch.
+        statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
 
         if isPanelVisible {
             refreshVisible()
@@ -303,6 +312,25 @@ final class AppController: ObservableObject {
         hub.stopComposing()
         overlay?.hide()
         schedule(Config.idlePollActive)
+    }
+
+    // MARK: - Not keeping up
+
+    /// What Fleet does when the machine stops being fluid.
+    ///
+    /// The agents are told first and unconditionally — that write is what reaches a session
+    /// running unattended in another Space, and it costs nothing. The panel is the part with
+    /// manners: it does not appear while you have muted Fleet, it does not appear twice in ten
+    /// minutes, and it does not appear if it is already up.
+    private func fluidityChanged(_ struggling: Bool, _ reason: String) {
+        Hooks.writeMachineState(struggling: struggling, reason: reason, hogs: reaper.hogs)
+        NSLog("Fleet: machine \(struggling ? "struggling — \(reason)" : "keeping up again")")
+        guard struggling else { return }
+
+        guard muteRemaining == nil, !isPanelVisible,
+              Date().timeIntervalSince(lastStallAlert) > Config.stallAlertCooldown else { return }
+        lastStallAlert = Date()
+        forceShow(announceEmpty: true)
     }
 
     /// Return, while the panel is up: it belongs to the todo column's own field when the caret

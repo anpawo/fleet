@@ -123,6 +123,20 @@ final class Reaper: ObservableObject {
     /// machine rather than a row of zeroes.
     @Published private(set) var footprint = MemoryPressure.footprint()
 
+    /// Whether the machine has stopped keeping up — see `sampleFluidity`.
+    @Published private(set) var struggling = false
+    /// One line saying which signal said so, for the strip and for the agents.
+    @Published private(set) var struggleReason = ""
+
+    /// Fired when the machine crosses either way, with that line. On the crossing only: an
+    /// alert that repeats every tick is an alert you learn to close without reading.
+    var onFluidity: ((Bool, String) -> Void)?
+
+    /// Consecutive ticks that arrived late. See `Config.stallStreak`.
+    private var lateStreak = 0
+    /// When the expensive half of a tick last ran.
+    private var lastScan = Date.distantPast
+
     /// Called with a one-line summary after something was actually killed.
     var onReaped: ((String) -> Void)?
 
@@ -141,9 +155,20 @@ final class Reaper: ObservableObject {
     /// Called from `AppController.tick`. Deliberately reuses the timer that is already running
     /// rather than adding a source of its own — the pressure read is one `sysctl`, and a
     /// problem that took two weeks to build up does not need sub-second reflexes.
-    func tick() {
+    /// Called from `AppController.tick`, with how late this tick was against the interval it
+    /// was scheduled at and how much slack that interval allowed.
+    ///
+    /// Two halves. The cheap one — two syscalls and a scheduling verdict — runs every tick, so
+    /// the strip and the menu bar dot are never stale. The expensive one walks the process
+    /// table and runs every few seconds, because it is 24 ms of main thread and it is looking
+    /// for a problem that takes days to build up.
+    func tick(lateness: TimeInterval = 0, allowed: TimeInterval = 0) {
         pressure = MemoryPressure.level()
         footprint = MemoryPressure.footprint()
+        sampleFluidity(lateness: lateness, allowed: allowed)
+
+        guard Date().timeIntervalSince(lastScan) >= Config.reapInterval else { return }
+        lastScan = Date()
 
         let candidates = Reaper.candidates()
         sampleIdleness(candidates)
@@ -151,14 +176,53 @@ final class Reaper: ObservableObject {
         // Everything below only matters when memory is actually tight; when it is not, the
         // samples above are all we keep doing, so that the idle streaks are already there when
         // pressure arrives instead of starting from zero at the worst moment.
-        guard pressure.isTight else {
+        guard pressure.isTight || struggling else {
             if !hogs.isEmpty { hogs = [] }
             return
         }
 
         let ripe = candidates.filter { isIdle($0.pid) }
         hogs = Reaper.topHogs(reapable: Set(ripe.map(\.pid)))
-        reap(ripe)
+        // Only the kernel's own verdict licenses killing anything. A machine that is merely
+        // late might be late for a reason that has nothing to do with memory — a build, a
+        // backup, a video export — and none of those are Fleet's to end.
+        if pressure.isTight { reap(ripe) }
+    }
+
+    // MARK: - Fluidity
+
+    /// Whether the machine is still keeping up, from the two things Fleet can see for free.
+    ///
+    /// The first is the kernel's own memory pressure. The second is Fleet's own punctuality:
+    /// its tick is a few milliseconds of work on a timer, so a tick that arrives a second past
+    /// its due time means the scheduler could not place a few milliseconds — and by then it is
+    /// not placing anything else on time either. That is the measure this exists for: by the
+    /// time you notice the machine is slow, this has been true for a while.
+    ///
+    /// A streak rather than a sample, because one late tick is a Spotlight index or an app
+    /// launching, and because the alert this feeds opens a window in front of you.
+    private func sampleFluidity(lateness: TimeInterval, allowed: TimeInterval) {
+        if lateness > allowed + Config.stallLateness, lateness < Config.stallImplausible {
+            lateStreak += 1
+        } else {
+            lateStreak = 0
+        }
+        let stalling = lateStreak >= Config.stallStreak
+        let now = pressure.isTight || stalling
+        guard now != struggling else { return }
+
+        struggling = now
+        guard now else {
+            struggleReason = ""
+            onFluidity?(false, "")
+            return
+        }
+        struggleReason = stalling
+            ? String(format: "Fleet's own tick is %.1fs late", lateness)
+            : "the kernel reports memory \(pressure == .critical ? "critical" : "pressure")"
+        // The hogs are what the alert is for, and the last scan may be seconds old.
+        hogs = Reaper.topHogs(reapable: [])
+        onFluidity?(true, struggleReason)
     }
 
     // MARK: - Idleness
