@@ -31,20 +31,7 @@ enum Firestore {
            !env.isEmpty {
             return env
         }
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        task.arguments = ["find-generic-password", "-s", "com.mr.fleet",
-                          "-a", "firebase-api-key", "-w"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        guard (try? task.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return nil }
-        let key = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !key.isEmpty else {
+        guard let key = keychain("firebase-api-key") else {
             // Said out loud, because the failure is otherwise invisible: no key means no side
             // columns, and a panel with no side columns looks like a panel that never had them.
             NSLog("Fleet: no firebase-api-key in the Keychain — the side columns stay hidden")
@@ -52,6 +39,38 @@ enum Firestore {
         }
         return key
     }()
+
+    /// The owner account this Mac signs in as, when there is one.
+    ///
+    /// A Firebase web API key is not a secret — Google ships it in every web and mobile client
+    /// and says so — so rules that only ask for *somebody* signed in are rules that let anyone
+    /// who has seen the key read everything. The account is what makes them mean "him".
+    ///
+    /// Nil until the credentials are in the Keychain, and the sign-in falls back to anonymous
+    /// then, so this Mac keeps working through the half of the migration where the rules have
+    /// not been tightened yet.
+    static var owner: (email: String, password: String)? {
+        guard let email = keychain("firebase-owner-email"),
+              let password = keychain("firebase-owner") else { return nil }
+        return (email, password)
+    }
+
+    /// One login-Keychain item, by account name under the `com.mr.fleet` service.
+    static func keychain(_ account: String) -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        task.arguments = ["find-generic-password", "-s", "com.mr.fleet", "-a", account, "-w"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else { return nil }
+        let value = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
 
     /// Whether the side columns have any chance of filling — a machine without the key gets no
     /// columns at all rather than two empty ones apologising for themselves.
@@ -208,6 +227,7 @@ actor FirestoreAuth {
     private var expiresAt = Date.distantPast
 
     private static let refreshKey = "firestore.refreshToken"
+    private static let ownerKey = "firestore.refreshTokenIsOwner"
 
     private struct Session {
         let id: String
@@ -221,11 +241,20 @@ actor FirestoreAuth {
         if let token = idToken, expiresAt.timeIntervalSinceNow > 60 { return token }
 
         if let stored = UserDefaults.standard.string(forKey: Self.refreshKey),
+           storedIsOwner == (Firestore.owner != nil),
            let session = try? await refresh(stored) {
             keep(session)
             return session.id
         }
-        let session = try await signUpAnonymously()
+        // The owner account if this Mac has its credentials, an anonymous one otherwise. The
+        // fallback is what lets the migration happen in two steps: every client can be moved
+        // to the account while the rules still accept anybody, and the rules tightened after.
+        let session: Session
+        if let owner = Firestore.owner {
+            session = try await signIn(owner)
+        } else {
+            session = try await signUpAnonymously()
+        }
         keep(session)
         return session.id
     }
@@ -234,7 +263,13 @@ actor FirestoreAuth {
         idToken = session.id
         expiresAt = Date().addingTimeInterval(session.lifetime)
         UserDefaults.standard.set(session.refresh, forKey: Self.refreshKey)
+        UserDefaults.standard.set(Firestore.owner != nil, forKey: Self.ownerKey)
     }
+
+    /// Whether the token we are holding belongs to the owner account or to an anonymous one.
+    /// Kept because the two are indistinguishable from the refresh token alone, and a Mac that
+    /// has just been given credentials must stop resuming the anonymous session it had.
+    private var storedIsOwner: Bool { UserDefaults.standard.bool(forKey: Self.ownerKey) }
 
     private func key() throws -> String {
         guard let key = Firestore.apiKey else { throw Firestore.Failure.noKey }
@@ -245,6 +280,23 @@ actor FirestoreAuth {
         let idToken: String
         let refreshToken: String
         let expiresIn: String
+    }
+
+    /// Signing in as the one account the rules name. Same endpoint shape as the anonymous
+    /// sign-up, one verb along.
+    private func signIn(_ owner: (email: String, password: String)) async throws -> Session {
+        var request = URLRequest(url: URL(string:
+            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="
+            + (try key()))!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "email": owner.email, "password": owner.password, "returnSecureToken": true,
+        ])
+        let body = try await Firestore.send(request, decoding: SignUpResponse.self)
+        return Session(id: body.idToken,
+                       refresh: body.refreshToken,
+                       lifetime: TimeInterval(body.expiresIn) ?? 3600)
     }
 
     private func signUpAnonymously() async throws -> Session {
