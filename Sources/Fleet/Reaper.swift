@@ -28,6 +28,22 @@ enum MemoryPressure {
         return Level(rawValue: value) ?? .normal
     }
 
+    /// How many threads are queued for each core, averaged over the last minute.
+    ///
+    /// One per core means every core is busy and the next thread waits. Nothing else Fleet
+    /// reads says that: memory can be fine, the kernel's pressure normal, Fleet's own tick
+    /// perfectly on time — a five-millisecond block still gets placed — while every window on
+    /// the machine stutters because the run queue is full.
+    static func loadPerCore() -> Double {
+        var load = loadavg()
+        var size = MemoryLayout<loadavg>.size
+        guard sysctlbyname("vm.loadavg", &load, &size, nil, 0) == 0, load.fscale > 0 else {
+            return 0
+        }
+        let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
+        return cores > 0 ? Double(load.ldavg.0) / Double(load.fscale) / cores : 0
+    }
+
     /// Bytes of swap in use, and the size of the swap file backing it.
     static func swap() -> (used: UInt64, total: UInt64) {
         var usage = xsw_usage()
@@ -134,6 +150,8 @@ final class Reaper: ObservableObject {
 
     /// Consecutive ticks that arrived late. See `Config.stallStreak`.
     private var lateStreak = 0
+    /// Consecutive samples with every core spoken for. See `Config.strainedLoadStreak`.
+    private var loadStreak = 0
     /// When the expensive half of a tick last ran.
     private var lastScan = Date.distantPast
 
@@ -208,9 +226,14 @@ final class Reaper: ObservableObject {
             lateStreak = 0
         }
         let stalling = lateStreak >= Config.stallStreak
+
+        let load = MemoryPressure.loadPerCore()
+        loadStreak = load >= Config.strainedLoad ? loadStreak + 1 : 0
+        let saturated = loadStreak >= Config.strainedLoadStreak
+
         let full = footprint.total > 0
             && Double(footprint.used) / Double(footprint.total) >= Config.strainedRAM
-        let now = stalling || full
+        let now = stalling || saturated || full
         guard now != struggling else { return }
 
         struggling = now
@@ -219,10 +242,16 @@ final class Reaper: ObservableObject {
             onFluidity?(false, "")
             return
         }
-        struggleReason = stalling
-            ? String(format: "Fleet's own tick is %.1fs late", lateness)
-            : "\(Int((Double(footprint.used) / Double(footprint.total) * 100).rounded()))% of "
-              + "the RAM is spoken for"
+        // Named in the order they arrive, so the line says the earliest true thing rather
+        // than the worst one: a full run queue precedes a late tick, which precedes the RAM.
+        if saturated {
+            struggleReason = String(format: "every core is busy (load %.1f per core)", load)
+        } else if stalling {
+            struggleReason = String(format: "Fleet's own tick is %.1fs late", lateness)
+        } else {
+            let percent = Int((Double(footprint.used) / Double(footprint.total) * 100).rounded())
+            struggleReason = "\(percent)% of the RAM is spoken for"
+        }
         // The hogs are what the alert is for, and the last scan may be seconds old.
         hogs = Reaper.topHogs(reapable: [])
         onFluidity?(true, struggleReason)
