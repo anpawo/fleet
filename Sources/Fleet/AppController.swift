@@ -309,6 +309,7 @@ final class AppController: ObservableObject {
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
         // somebody who is not holding anything.
         commandHeld = false
+        hub.stopEditing()
         hub.stopComposing()
         overlay?.hide()
         schedule(Config.idlePollActive)
@@ -337,13 +338,16 @@ final class AppController: ObservableObject {
     /// is in it. Returns whether it was used.
     func submitPrompt() -> Bool {
         guard isPanelVisible else { return false }
-        return hub.commitDraft()
+        // A row open for editing owns Return before the new-todo row does: only one of the two
+        // can have the caret, and the edit is the one you are looking at.
+        return hub.commitEdit() || hub.commitDraft()
     }
 
     /// Esc, while the panel is up. The new-todo row first — backing out of a half-written todo
     /// should not also take the fleet off screen.
     func escape() {
         guard isPanelVisible else { return }
+        if hub.stopEditing() { return }
         if hub.stopComposing() { return }
         hidePanel()
     }

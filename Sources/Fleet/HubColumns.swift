@@ -98,7 +98,8 @@ struct TodoColumn: View {
             } else {
                 ForEach(Array(hub.todos.prefix(Self.maxItems).enumerated()),
                         id: \.element.id) { index, todo in
-                    TodoCard(todo: todo,
+                    TodoCard(hub: hub,
+                             todo: todo,
                              commandHeld: commandHeld,
                              // Hovering opens a row only while ⌘ is down. Without that guard the
                              // column would rearrange itself under a pointer merely crossing it
@@ -336,6 +337,7 @@ struct MailCard: View {
 /// hit by accident. Hold ⌘ and every row grows a ✕ where its age was, so clearing three things
 /// off the list is three clicks without the row ever moving under the pointer.
 struct TodoCard: View {
+    @ObservedObject var hub: HubStore
     let todo: Todo
     let commandHeld: Bool
     let expanded: Bool
@@ -349,11 +351,16 @@ struct TodoCard: View {
     let onDismiss: () -> Void
 
     @State private var hoveringFinish = false
+    @State private var hoveringEdit = false
+    @FocusState private var typing: Bool
+
+    private var editing: Bool { hub.editingID == todo.id }
     /// The room the text has to wrap in. Seeded with roughly the right number, so the first
     /// frame is not laid out against a width of zero.
     @State private var textWidth: CGFloat = 190
 
     private static let finishTint = Color(red: 1.00, green: 0.35, blue: 0.32)
+    private static let editTint = Color(red: 0.27, green: 0.62, blue: 1.00)
     static let fontSize: CGFloat = 11.5
     /// Above and below the text, on each side. Part of what makes a row's height, which the
     /// column needs to know to work out where a dragged row has been taken.
@@ -396,6 +403,20 @@ struct TodoCard: View {
             // Which is why the height has to be a number on both sides. `nil` and "one line"
             // are not two values with anything in between, so there would be nothing to
             // animate; measuring the text gives the two ends of a real interpolation.
+            if editing {
+                // The same type at the same place, so the row does not jump when it opens.
+                // Vertical axis like the new-todo row: a todo is occasionally a paragraph and
+                // it should wrap rather than scroll off the side.
+                TextField("", text: $hub.editDraft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Self.fontSize))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .tint(.white.opacity(0.8))
+                    .lineLimit(1 ... 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focused($typing)
+                    .onAppear { typing = true }
+            } else {
             Text(todo.name)
                 .font(.system(size: Self.fontSize))
                 .foregroundStyle(.white.opacity(0.85))
@@ -423,6 +444,7 @@ struct TodoCard: View {
                 // A zero is what an offscreen pass reports before it has laid anything out, and
                 // it would throw away a perfectly good seed and collapse every todo to one line.
                 .onPreferenceChange(TextWidth.self) { if $0 > 24 { textWidth = $0 } }
+            }
 
             // The ✕ takes the age's place rather than sitting beside it, so nothing shifts
             // sideways the moment ⌘ goes down and the thing you were aiming at stays there.
@@ -432,6 +454,13 @@ struct TodoCard: View {
             // grow by a couple of points the instant ⌘ went down. The age keeps its place in
             // the layout with the lights off, the ✕ is drawn over it, and the pixels it spills
             // past the fixed height land in the row's own padding.
+            // The pencil sits to the left of the ✕ and outside the stack that holds the age's
+            // place, because it has no place to take: nothing was there before ⌘ went down.
+            if commandHeld, !editing {
+                edit
+                    .frame(height: 12, alignment: .trailing)
+                    .padding(.top, 1)
+            }
             ZStack(alignment: .trailing) {
                 Text(shortAge(since: todo.createdAt))
                     .font(.system(size: 9, design: .monospaced))
@@ -461,8 +490,23 @@ struct TodoCard: View {
         .contentShape(Rectangle())
         // Every click puts the panel away, ⌘ or no ⌘. Opening a row is the pointer's job and
         // nothing else's, so there is nothing here a click could mean instead.
-        .onTapGesture { onDismiss() }
+        .onTapGesture { if editing { typing = true } else { onDismiss() } }
         .onHover { onHover($0) }
+    }
+
+    /// Sized and shaded like the ✕ beside it, in the panel's own blue rather than its red:
+    /// the two do opposite things to a row, and one of them is not undoable from here.
+    private var edit: some View {
+        Button { hub.edit(todo) } label: {
+            Image(systemName: "pencil")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Self.editTint.opacity(hoveringEdit ? 1 : 0.75))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Self.editTint.opacity(hoveringEdit ? 0.22 : 0.10)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveringEdit = $0 }
+        .help("Edit")
     }
 
     private var finish: some View {

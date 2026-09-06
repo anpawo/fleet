@@ -304,6 +304,58 @@ final class HubStore: ObservableObject {
     /// Applied here before it is applied there, and not reconciled afterwards: the panel is
     /// about to be looked away from, and a row that hangs about for the length of a round trip
     /// reads as a click that missed.
+    // MARK: - Editing
+
+    /// The todo whose text is open for editing, and what has been typed into it. One at a
+    /// time: the panel has one caret, and Return has to belong to something.
+    @Published private(set) var editingID: String?
+    @Published var editDraft = ""
+
+    /// The pencil on a row, ⌘ held. Opens the whole text, not the first line — a todo is
+    /// occasionally a paragraph, and editing the title of one would silently drop the rest.
+    func edit(_ todo: Todo) {
+        stopComposing()
+        editingID = todo.id
+        editDraft = todo.name
+    }
+
+    /// Esc, or the panel closing. Returns whether there was an edit to abandon.
+    @discardableResult
+    func stopEditing() -> Bool {
+        guard editingID != nil else { return false }
+        editingID = nil
+        editDraft = ""
+        return true
+    }
+
+    /// Return in an open row. Writes the one field and closes; an empty line is a cancel
+    /// rather than a todo with no name.
+    func commitEdit() -> Bool {
+        guard let id = editingID else { return false }
+        let name = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        stopEditing()
+        guard !name.isEmpty, let index = todos.firstIndex(where: { $0.id == id }),
+              todos[index].name != name else { return true }
+
+        // On screen before it is on the network, like every other write here: the panel is a
+        // glance, and a line you just corrected that snaps back reads as a keystroke that
+        // missed.
+        let previous = todos[index].name
+        todos[index].name = name
+        Task {
+            do {
+                try await Firestore.patch("todos/\(id)",
+                                          fields: ["name": ["stringValue": name]])
+            } catch {
+                NSLog("Fleet: could not rename todo \(id) — \(error.localizedDescription)")
+                if let back = todos.firstIndex(where: { $0.id == id }) {
+                    todos[back].name = previous
+                }
+            }
+        }
+        return true
+    }
+
     func markDone(_ todo: Todo) {
         todos.removeAll { $0.id == todo.id }
         Task {
