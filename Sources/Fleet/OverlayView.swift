@@ -86,8 +86,12 @@ struct OverlayView: View {
         }
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
+        //
+        // Except when the panel let itself in: an alert that a stray click can take away is an
+        // alert you will lose without noticing, and the click that loses it is the one you were
+        // already making when it appeared.
         .contentShape(Rectangle())
-        .onTapGesture { controller.hidePanel() }
+        .onTapGesture { if !controller.alerting { controller.hidePanel() } }
     }
 
     /// Flexible space of a given weight. Adjacent `Spacer`s in an HStack split the slack
@@ -102,7 +106,7 @@ struct OverlayView: View {
     private var dismissLayer: some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture { controller.hidePanel() }
+            .onTapGesture { if !controller.alerting { controller.hidePanel() } }
     }
 
     private func rows(of sessions: [Session]) -> [[Session]] {
@@ -153,7 +157,7 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
-                           onDismiss: { controller.hidePanel() })
+                           onDismiss: { if !controller.alerting { controller.hidePanel() } })
                     .frame(width: sideWidth)
                     .padding(.top, Self.podiumDrop)
             }

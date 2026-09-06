@@ -23,6 +23,13 @@ final class AppController: ObservableObject {
         }
     }
     @Published private(set) var isPanelVisible = false
+    /// Whether this panel came up by itself, because the machine stopped keeping up.
+    ///
+    /// A panel you opened is dismissed by a click anywhere — that is its whole contract, you
+    /// get out of it without aiming. One that arrived on its own is not the same object: you
+    /// were typing when it appeared, and the first stray click would take it away along with
+    /// the only thing on screen that said why. This one waits for Esc.
+    @Published private(set) var alerting = false
     /// Whether ⌘ is down right now. The todo column grows a ✕ on every row while it is, so a
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
@@ -306,6 +313,7 @@ final class AppController: ObservableObject {
     func hidePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
+        alerting = false
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
         // somebody who is not holding anything.
         commandHeld = false
@@ -332,6 +340,7 @@ final class AppController: ObservableObject {
               Date().timeIntervalSince(lastStallAlert) > Config.stallAlertCooldown else { return }
         lastStallAlert = Date()
         forceShow(announceEmpty: true)
+        alerting = isPanelVisible
     }
 
     /// Return, while the panel is up: it belongs to the todo column's own field when the caret
@@ -373,6 +382,7 @@ final class AppController: ObservableObject {
     private func dismissForHandoff() {
         guard isPanelVisible else { return }
         isPanelVisible = false
+        alerting = false
         overlay?.dismissForHandoff()
         schedule(Config.idlePollActive)
     }
