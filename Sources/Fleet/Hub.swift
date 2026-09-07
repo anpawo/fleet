@@ -178,7 +178,7 @@ struct Todo: Identifiable {
 
     /// The sub-folder the column files this under. The phone's word when it wrote one; for
     /// everything older, a guess from the words school todos tend to carry, and `self` for
-    /// the rest.
+    /// the rest — written back once so the phone files it the same way, see `backfill`.
     // ponytail: keyword guess, retire it once every open todo carries `project`.
     var folder: String {
         if let project { return project }
@@ -303,6 +303,7 @@ final class HubStore: ObservableObject {
                     "manual": ["booleanValue": true],
                     "createdAt": Firestore.timestamp(pending.createdAt),
                     "order": ["doubleValue": pending.rank],
+                    "project": ["stringValue": pending.folder],
                 ]
                 if let due = pending.dueAt {
                     fields["dueAt"] = Firestore.timestamp(due)
@@ -494,6 +495,28 @@ final class HubStore: ObservableObject {
         return a.rank != b.rank ? a.rank < b.rank : a.id < b.id
     }
 
+    /// What this Mac guessed, written down so the phone stops guessing differently. The folder
+    /// from the keywords and the date from the front of the line are each written once, on
+    /// the first read that finds the field missing, and never revisited: a field that exists
+    /// is the phone's to change.
+    private func backfill(_ todo: Todo) {
+        var fields: [String: Any] = [:]
+        if todo.project == nil { fields["project"] = ["stringValue": todo.folder] }
+        if todo.dueAt == nil, let parsed = todo.parsedDueParts {
+            fields["dueAt"] = Firestore.timestamp(parsed.date)
+            fields["dueAllDay"] = ["booleanValue": parsed.allDay]
+        }
+        guard !fields.isEmpty else { return }
+        Task {
+            do {
+                try await Firestore.patch("todos/\(todo.id)", fields: fields)
+                NSLog("Fleet: filled in \(fields.keys.sorted().joined(separator: ", ")) on todo \(todo.id)")
+            } catch {
+                NSLog("Fleet: could not fill in todo \(todo.id) — \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func load() async {
         do {
             // All three at once: they are independent collections and the panel is already
@@ -529,6 +552,7 @@ final class HubStore: ObservableObject {
             showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
             todos = all.filter(\.open).sorted(by: Self.before)
+            todos.forEach(backfill)
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
