@@ -164,6 +164,26 @@ if CommandLine.arguments.contains("--bench") {
     }
 }
 
+// The todo column as the panel would draw it, without the panel: folder, due day, first line.
+if CommandLine.arguments.contains("--todos") {
+    Task { @MainActor in
+        let hub = HubStore()
+        hub.refresh()
+        while !hub.loaded, hub.failure == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        if let failure = hub.failure { print(failure); exit(1) }
+        let day = DateFormatter()
+        day.dateFormat = "dd/MM HH:mm"
+        var folder = ""
+        for todo in hub.todos {
+            if todo.folder != folder { folder = todo.folder; print(folder.uppercased()) }
+            let due = todo.due.map { day.string(from: $0) } ?? "    —    "
+            print("  \(due)  \(todo.title)")
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 if CommandLine.arguments.contains("--scan") {
     MainActor.assumeIsolated {
         let registry = SessionRegistry()

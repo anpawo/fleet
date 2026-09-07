@@ -96,8 +96,20 @@ struct TodoColumn: View {
                     HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
                 }
             } else {
-                ForEach(Array(hub.todos.prefix(Self.maxItems).enumerated()),
-                        id: \.element.id) { index, todo in
+                let visible = Array(hub.todos.prefix(Self.maxItems))
+                ForEach(Array(visible.enumerated()), id: \.element.id) { index, todo in
+                    // A folder heading over the first row of each run. On the heading and not
+                    // in the row, because the modifiers below are what step a row aside during
+                    // a drag, and a heading must not go with it.
+                    if index == 0 || visible[index - 1].folder != todo.folder {
+                        Text(todo.folder.uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(1)
+                            .foregroundStyle(.white.opacity(0.35))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 2)
+                            .padding(.top, index == 0 ? 0 : 6)
+                    }
                     TodoCard(hub: hub,
                              todo: todo,
                              commandHeld: commandHeld,
@@ -179,7 +191,15 @@ struct TodoColumn: View {
                         ?? visible.firstIndex(where: { $0.id == todo.id }) else { return }
                 dragOffset = value.translation.height
                 let travelled = Int((value.translation.height / Self.pitch).rounded())
-                let to = min(max(from + travelled, 0), visible.count - 1)
+                // Within its own run only: the rows under one heading, dated or not. The grid
+                // arithmetic holds only while no heading lies between the row and its slot —
+                // and a deadline dragged past another would be sorted straight back anyway.
+                let same = { (other: Todo) in
+                    other.folder == todo.folder && (other.due == nil) == (todo.due == nil)
+                }
+                let low = visible.firstIndex(where: same) ?? from
+                let high = visible.lastIndex(where: same) ?? from
+                let to = min(max(from + travelled, low), high)
                 guard dragging?.to != to else { return }
                 // No `withAnimation`: the rows stepping aside are animated by the modifier that
                 // watches `dragging`, and an explicit transaction here would reach the dragged

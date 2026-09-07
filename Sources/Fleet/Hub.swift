@@ -80,6 +80,15 @@ struct Todo: Identifiable {
     /// Where you dragged it to. Absent on everything nobody has dragged, which is most of the
     /// list and everything the phone writes — see `rank`.
     var order: Double?
+    /// The phone's date field, once it has one. Absent on everything written before it did,
+    /// which is where the parsed `due` below still earns its keep.
+    var dueAt: Date?
+    /// Whether `dueAt` names a day rather than a moment. The phone stores such a day as noon
+    /// UTC, so the hour must not be shown.
+    var dueAllDay = false
+    /// Which pile of life this belongs to — `epitech` or `self` — as written by the phone.
+    /// Absent on everything older than the field; see `folder`.
+    var project: String?
 
     /// The four values `state` takes. Not an enum on the model: an unknown string must survive
     /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
@@ -108,6 +117,9 @@ struct Todo: Identifiable {
         createdAt = doc.date("createdAt") ?? .distantPast
         doneAt = doc.date("doneAt")
         order = doc.double("order")
+        dueAt = doc.date("dueAt")
+        dueAllDay = doc.bool("dueAllDay")
+        project = doc.string("project").isEmpty ? nil : doc.string("project")
     }
 
     /// Where the todo sits in the column, dragged or not.
@@ -123,28 +135,67 @@ struct Todo: Identifiable {
     /// nothing is ever in it — so this is everything not yet finished.
     var open: Bool { state != Pile.done && state != Pile.past }
 
-    /// When this is due, read off the front of the line: todos here are written "07/09 23h42
-    /// — ATP v1" or "14/09 \u{2192} 21/10 — Part-Time", and the first date is the one the row
-    /// is judged on. Nil for a line that names no day, which is most of a todo list.
-    ///
-    /// Parsed rather than stored because the phone writes these, and a field the phone does not
-    /// know about would be a field that is empty on everything typed away from this Mac.
-    var due: Date? {
-        guard let token = title.split(separator: " ").first(where: { $0.contains("/") }),
-              case let parts = token.split(separator: "/"), parts.count == 2,
+    /// When this is due: the phone's field when it has one, else read off the front of the
+    /// line — todos were written "07/09 23h42 — ATP v1" or "14/09 \u{2192} 21/10 — Part-Time"
+    /// before the field existed, and the first date is the one the row is judged on. Nil for a
+    /// line that names no day, which is most of a todo list.
+    var due: Date? { dueAt ?? parsedDue }
+
+    /// The date at the front of the line, with its time when one follows it ("07/09 23h42")
+    /// and noon UTC when none does — the phone's convention for a day with no hour, see
+    /// `dueAllDay`.
+    var parsedDue: Date? { parsedDueParts?.date }
+
+    var parsedDueParts: (date: Date, allDay: Bool)? {
+        let words = title.split(separator: " ")
+        guard let at = words.firstIndex(where: { $0.contains("/") }),
+              case let parts = words[at].split(separator: "/"), parts.count == 2,
               let day = Int(parts[0]), let month = Int(parts[1]),
               (1 ... 31).contains(day), (1 ... 12).contains(month) else { return nil }
 
-        let calendar = Calendar.current
+        var calendar = Calendar.current
         var components = calendar.dateComponents([.year], from: Date())
         components.day = day
         components.month = month
+        var allDay = true
+        if at + 1 < words.count, case let clock = words[at + 1].split(separator: "h"),
+           (1 ... 2).contains(clock.count), let hour = Int(clock[0]), (0 ... 23).contains(hour),
+           let minute = clock.count == 2 ? Int(clock[1]) : 0, (0 ... 59).contains(minute) {
+            components.hour = hour
+            components.minute = minute
+            allDay = false
+        } else {
+            calendar.timeZone = TimeZone(identifier: "UTC")!
+            components.hour = 12
+        }
         guard let candidate = calendar.date(from: components) else { return nil }
         // A day three months gone is next year's: "01/03" written in September is the March
         // coming, not the one that has been and gone.
-        guard candidate.timeIntervalSinceNow < -90 * 86_400 else { return candidate }
+        guard candidate.timeIntervalSinceNow < -90 * 86_400 else { return (candidate, allDay) }
         components.year = (components.year ?? 0) + 1
-        return calendar.date(from: components)
+        return calendar.date(from: components).map { ($0, allDay) }
+    }
+
+    /// The sub-folder the column files this under. The phone's word when it wrote one; for
+    /// everything older, a guess from the words school todos tend to carry, and `self` for
+    /// the rest.
+    // ponytail: keyword guess, retire it once every open todo carries `project`.
+    var folder: String {
+        if let project { return project }
+        let lowered = title.lowercased()
+        let school = ["epitech", "eip", "atp", "part-time", "rattrapage", "stage", "track",
+                      "user group", "hackathon", "convention"]
+        return school.contains(where: lowered.contains) ? Folder.epitech : Folder.personal
+    }
+
+    enum Folder {
+        static let epitech = "epitech"
+        static let personal = "self"
+        /// The order the folders come in; anything else the phone invents goes after, A to Z.
+        static let order = [epitech, personal]
+        static func rank(_ name: String) -> (Int, String) {
+            (order.firstIndex(of: name) ?? order.count, name)
+        }
     }
 
     /// The first line only, for a row one line tall. Some todos are a whole page — a pasted
@@ -236,18 +287,28 @@ final class HubStore: ObservableObject {
         // Last, and stamped rather than left to its timestamp: a todo dragged to the bottom of
         // the column ranks above *now*, and a new line has to land under it rather than in
         // front of it.
-        let pending = Todo(pending: name, order: (todos.last?.rank ?? Date().timeIntervalSince1970)
+        var pending = Todo(pending: name, order: (todos.last?.rank ?? Date().timeIntervalSince1970)
             + Self.gap)
+        if let parsed = pending.parsedDueParts {
+            pending.dueAt = parsed.date
+            pending.dueAllDay = parsed.allDay
+        }
         todos.append(pending)
+        todos.sort(by: Self.before)
         Task {
             do {
-                let written = try await Firestore.create(in: "todos", fields: [
+                var fields: [String: Any] = [
                     "name": ["stringValue": name],
                     "state": ["stringValue": Todo.Pile.todo],
                     "manual": ["booleanValue": true],
                     "createdAt": Firestore.timestamp(pending.createdAt),
                     "order": ["doubleValue": pending.rank],
-                ])
+                ]
+                if let due = pending.dueAt {
+                    fields["dueAt"] = Firestore.timestamp(due)
+                    fields["dueAllDay"] = ["booleanValue": pending.dueAllDay]
+                }
+                let written = try await Firestore.create(in: "todos", fields: fields)
                 // The real id, so a ✕ on the row it has just become lands on the document that
                 // exists rather than creating a second one under the stand-in id.
                 if let index = todos.firstIndex(where: { $0.id == pending.id }) {
@@ -418,6 +479,21 @@ final class HubStore: ObservableObject {
         inFlight = Task { await load() }
     }
 
+    /// Folder first, then the dated ones soonest first, then the rest in the order you left
+    /// them. A dragged row stays where it was dropped only among its undated neighbours: a
+    /// deadline is a fact, and it does not move because you dragged it.
+    static func before(_ a: Todo, _ b: Todo) -> Bool {
+        let (fa, fb) = (Todo.Folder.rank(a.folder), Todo.Folder.rank(b.folder))
+        if fa != fb { return fa < fb }
+        switch (a.due, b.due) {
+        case let (da?, db?) where da != db: return da < db
+        case (.some, .none): return true
+        case (.none, .some): return false
+        default: break
+        }
+        return a.rank != b.rank ? a.rank < b.rank : a.id < b.id
+    }
+
     private func load() async {
         do {
             // All three at once: they are independent collections and the panel is already
@@ -452,9 +528,7 @@ final class HubStore: ObservableObject {
             mail = fresh.isEmpty ? unread.filter { $0.state == "ongoing" } : fresh
             showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
-            todos = all.filter(\.open).sorted {
-                $0.rank != $1.rank ? $0.rank < $1.rank : $0.id < $1.id
-            }
+            todos = all.filter(\.open).sorted(by: Self.before)
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
