@@ -196,6 +196,33 @@ struct Todo: Identifiable {
         return school.contains(where: lowered.contains) ? Folder.epitech : Folder.personal
     }
 
+    /// Which section the column files this under: how soon it is due, not what it is about.
+    /// The three boundaries are the ones `dueTint` already paints a row by, so the heading a
+    /// todo sits under and the colour of its dot can never disagree.
+    enum Bucket: Int, CaseIterable {
+        case today, week, other
+
+        var title: String {
+            switch self {
+            case .today: return "TODAY"
+            case .week: return "THIS WEEK"
+            case .other: return "OTHERS"
+            }
+        }
+    }
+
+    /// Overdue counts as today — a deadline that has passed is the most today thing on the
+    /// list. A date further out than a week goes under OTHERS with the undated: it is not
+    /// what you are doing this week, which is the only question this column answers.
+    var bucket: Bucket {
+        guard let due else { return .other }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: calendar.startOfDay(for: due)).day ?? 0
+        if days < 1 { return .today }
+        return days < 8 ? .week : .other
+    }
+
     enum Folder {
         static let epitech = "epitech"
         static let personal = "self"
@@ -490,12 +517,11 @@ final class HubStore: ObservableObject {
         inFlight = Task { await load() }
     }
 
-    /// Folder first, then the dated ones soonest first, then the rest in the order you left
+    /// How soon first, then the dated ones soonest first, then the rest in the order you left
     /// them. A dragged row stays where it was dropped only among its undated neighbours: a
     /// deadline is a fact, and it does not move because you dragged it.
     static func before(_ a: Todo, _ b: Todo) -> Bool {
-        let (fa, fb) = (Todo.Folder.rank(a.folder), Todo.Folder.rank(b.folder))
-        if fa != fb { return fa < fb }
+        if a.bucket != b.bucket { return a.bucket.rawValue < b.bucket.rawValue }
         switch (a.due, b.due) {
         case let (da?, db?) where da != db: return da < db
         case (.some, .none): return true

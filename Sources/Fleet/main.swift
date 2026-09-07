@@ -164,7 +164,7 @@ if CommandLine.arguments.contains("--bench") {
     }
 }
 
-// The todo column as the panel would draw it, without the panel: folder, due day, first line.
+// The todo column as the panel would draw it, without the panel: section, due day, first line.
 if CommandLine.arguments.contains("--todos") {
     Task { @MainActor in
         let hub = HubStore()
@@ -173,9 +173,9 @@ if CommandLine.arguments.contains("--todos") {
         if let failure = hub.failure { print(failure); exit(1) }
         let day = DateFormatter()
         day.dateFormat = "dd/MM HH:mm"
-        var folder = ""
+        var section: Todo.Bucket?
         for todo in hub.todos {
-            if todo.folder != folder { folder = todo.folder; print(folder.uppercased()) }
+            if todo.bucket != section { section = todo.bucket; print(todo.bucket.title) }
             let due = todo.due.map { day.string(from: $0) } ?? "    —    "
             print("  \(due)  \(todo.title)")
         }

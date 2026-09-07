@@ -124,8 +124,8 @@ struct TodoColumn: View {
                     // A folder heading over the first row of each run. On the heading and not
                     // in the row, because the modifiers below are what step a row aside during
                     // a drag, and a heading must not go with it.
-                    if index == 0 || visible[index - 1].folder != todo.folder {
-                        Text(todo.folder.uppercased())
+                    if index == 0 || visible[index - 1].bucket != todo.bucket {
+                        Text(todo.bucket.title)
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(1)
                             .foregroundStyle(.white.opacity(0.35))
@@ -206,7 +206,7 @@ struct TodoColumn: View {
                 // arithmetic holds only while no heading lies between the row and its slot —
                 // and a deadline dragged past another would be sorted straight back anyway.
                 let same = { (other: Todo) in
-                    other.folder == todo.folder && (other.due == nil) == (todo.due == nil)
+                    other.bucket == todo.bucket && (other.due == nil) == (todo.due == nil)
                 }
                 let low = visible.firstIndex(where: same) ?? from
                 let high = visible.lastIndex(where: same) ?? from
