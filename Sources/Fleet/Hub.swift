@@ -514,7 +514,8 @@ final class HubStore: ObservableObject {
     private func backfill(_ todo: Todo) {
         guard !todo.filed else { return }
         var fields: [String: Any] = ["project": ["stringValue": todo.folder]]
-        if let parsed = todo.parsedDueParts {
+        // Never over a date somebody picked: a calendar choice outranks the front of a line.
+        if todo.dueAt == nil, let parsed = todo.parsedDueParts {
             fields["dueAt"] = Firestore.timestamp(parsed.date)
             fields["dueAllDay"] = ["booleanValue": parsed.allDay]
         }
