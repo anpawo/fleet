@@ -42,16 +42,6 @@ struct TodoColumn: View {
     /// notification board, and getting out of it must never take aim.
     let onDismiss: () -> Void
 
-    /// Many more than the mail column holds, because a todo is one line and a mail is two.
-    /// As many as the panel is tall enough to draw, because the point of a list whose whole
-    /// job is to be the thing you have not done is that all of it is on screen.
-    ///
-    /// It was twelve, on the reasoning that the list never got that long. It did, and a todo
-    /// typed into the panel sorts to the bottom — so the line you had just written was the one
-    /// the cap hid, and it read as the ✛ being broken. Hence the count below it too: when this
-    /// list is ever cut short again, it says so instead of swallowing the tail.
-    private static let maxItems = 20
-
     /// The row under the pointer, which is the only one that opens. Held here rather than on
     /// the row, because a row is rebuilt from scratch every time the fleet refreshes — once a
     /// second while the panel is up — and state on a view that gets replaced does not survive.
@@ -88,6 +78,39 @@ struct TodoColumn: View {
                   count: hub.todos.count,
                   note: hub.failure,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } }) {
+            // The list scrolls, the heading does not, and the rest of the panel does not
+            // move at all — the fleet either side has its own scroll for the same reason.
+            // The horizontal padding is the room a lifted card's shadow needs, taken inside
+            // and given back outside, so the clip lands out of its reach.
+            ScrollView(.vertical) {
+                VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .padding(.horizontal, -Self.glowRoom)
+            .frame(maxHeight: Self.maxHeight, alignment: .top)
+        }
+        // ⌘ going down or coming up is a state change from outside any of the handlers below,
+        // so it needs its own animation or the whole column snaps.
+        .animation(Self.unroll, value: commandHeld)
+        // Letting ⌘ go mid-drag drops the row where it stands rather than leaving the column
+        // holding a drag nothing can finish.
+        .onChange(of: commandHeld) { if !commandHeld { drop() } }
+    }
+
+    /// As tall as the screen has room for under the panel's own inset. A number rather than
+    /// `.infinity`: in an HStack that sizes to its tallest child, `.infinity` resolves to the
+    /// content's own height and the list runs off the bottom edge instead of scrolling.
+    /// ponytail: the insets are mirrored from OverlayView; measure them if the panel moves.
+    private static var maxHeight: CGFloat {
+        max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
+    }
+
+    /// How far a lifted card's shadow reaches past the column, and the room the scroll view
+    /// has to give it back.
+    private static let glowRoom: CGFloat = 16
+
+    @ViewBuilder private var rows: some View {
             if hub.composing {
                 NewTodoRow(hub: hub)
             }
@@ -96,7 +119,7 @@ struct TodoColumn: View {
                     HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
                 }
             } else {
-                let visible = Array(hub.todos.prefix(Self.maxItems))
+                let visible = hub.todos
                 ForEach(Array(visible.enumerated()), id: \.element.id) { index, todo in
                     // A folder heading over the first row of each run. On the heading and not
                     // in the row, because the modifiers below are what step a row aside during
@@ -146,19 +169,7 @@ struct TodoColumn: View {
                         // a drag from anywhere — the ✕ included — reorders.
                         .gesture(reorder(todo), including: commandHeld ? .all : .subviews)
                 }
-                // Never silently. A list that is cut short and does not say so is how a todo
-                // typed into the panel went missing in the first place.
-                if hub.todos.count > Self.maxItems {
-                    HubEmptyLine(text: "+\(hub.todos.count - Self.maxItems) more")
-                }
             }
-        }
-        // ⌘ going down or coming up is a state change from outside any of the handlers below,
-        // so it needs its own animation or the whole column snaps.
-        .animation(Self.unroll, value: commandHeld)
-        // Letting ⌘ go mid-drag drops the row where it stands rather than leaving the column
-        // holding a drag nothing can finish.
-        .onChange(of: commandHeld) { if !commandHeld { drop() } }
     }
 
     /// How far a row that is *not* being dragged is drawn from its own slot: one row up if the
@@ -186,7 +197,7 @@ struct TodoColumn: View {
         // tracking the pointer.
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in
-                let visible = hub.todos.prefix(Self.maxItems)
+                let visible = hub.todos
                 guard let from = dragging?.from
                         ?? visible.firstIndex(where: { $0.id == todo.id }) else { return }
                 dragOffset = value.translation.height
@@ -476,11 +487,14 @@ struct TodoCard: View {
             // past the fixed height land in the row's own padding.
             // The pencil sits to the left of the ✕ and outside the stack that holds the age's
             // place, because it has no place to take: nothing was there before ⌘ went down.
-            if commandHeld, !editing {
-                edit
-                    .frame(height: 12, alignment: .trailing)
-                    .padding(.top, 1)
-            }
+            // Always in the layout, lit only under ⌘. It used to appear with the key, and
+            // appearing took 25pt off the text beside it — so every truncated row re-wrapped
+            // and its ellipsis jumped the moment you reached for the pencil.
+            edit
+                .opacity(commandHeld && !editing ? 1 : 0)
+                .allowsHitTesting(commandHeld && !editing)
+                .frame(height: 12, alignment: .trailing)
+                .padding(.top, 1)
             ZStack(alignment: .trailing) {
                 Text(shortAge(since: todo.createdAt))
                     .font(.system(size: 9, design: .monospaced))

@@ -159,7 +159,10 @@ struct OverlayView: View {
                            commandHeld: controller.commandHeld,
                            onDismiss: { if !controller.alerting { controller.hidePanel() } })
                     .frame(width: sideWidth)
-                    .padding(.top, Self.podiumDrop)
+                    // No podium here: the todos start on the fleet's own line. They are the
+                    // other list you are answerable to, and a step below the sessions read as
+                    // a footnote to them.
+                    .padding(.bottom, 40)
             }
             gap(Self.edgeWeight)
         }
