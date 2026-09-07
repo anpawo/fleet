@@ -87,8 +87,14 @@ struct Todo: Identifiable {
     /// UTC, so the hour must not be shown.
     var dueAllDay = false
     /// Which pile of life this belongs to — `epitech` or `self` — as written by the phone.
-    /// Absent on everything older than the field; see `folder`.
+    /// Absent on everything older than the field, "" when the phone was told "none"; see
+    /// `folder`.
     var project: String?
+
+    /// Whether the phone, or this Mac, has filed it: the fields are the truth after that, and
+    /// the line's own text is only read on what nobody has touched. Otherwise a date cleared
+    /// on the phone would come straight back from the "14/09" still at the front of the line.
+    var filed: Bool { project != nil }
 
     /// The four values `state` takes. Not an enum on the model: an unknown string must survive
     /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
@@ -119,7 +125,9 @@ struct Todo: Identifiable {
         order = doc.double("order")
         dueAt = doc.date("dueAt")
         dueAllDay = doc.bool("dueAllDay")
-        project = doc.string("project").isEmpty ? nil : doc.string("project")
+        // Absent and empty are two different things: the phone writes "" for "no folder,
+        // and I mean it", and absent is a todo nothing has filed yet — see `backfill`.
+        project = doc.fields["project"]?.stringValue
     }
 
     /// Where the todo sits in the column, dragged or not.
@@ -139,7 +147,7 @@ struct Todo: Identifiable {
     /// line — todos were written "07/09 23h42 — ATP v1" or "14/09 \u{2192} 21/10 — Part-Time"
     /// before the field existed, and the first date is the one the row is judged on. Nil for a
     /// line that names no day, which is most of a todo list.
-    var due: Date? { dueAt ?? parsedDue }
+    var due: Date? { dueAt ?? (filed ? nil : parsedDue) }
 
     /// The date at the front of the line, with its time when one follows it ("07/09 23h42")
     /// and noon UTC when none does — the phone's convention for a day with no hour, see
@@ -181,7 +189,7 @@ struct Todo: Identifiable {
     /// the rest — written back once so the phone files it the same way, see `backfill`.
     // ponytail: keyword guess, retire it once every open todo carries `project`.
     var folder: String {
-        if let project { return project }
+        if let project { return project.isEmpty ? Folder.other : project }
         let lowered = title.lowercased()
         let school = ["epitech", "eip", "atp", "part-time", "rattrapage", "stage", "track",
                       "user group", "hackathon", "convention"]
@@ -191,10 +199,12 @@ struct Todo: Identifiable {
     enum Folder {
         static let epitech = "epitech"
         static let personal = "self"
-        /// The order the folders come in; anything else the phone invents goes after, A to Z.
+        /// What the phone calls a todo filed nowhere on purpose. Last, under everything named.
+        static let other = "autres"
+        /// The order the folders come in; anything else the phone invents goes between, A to Z.
         static let order = [epitech, personal]
         static func rank(_ name: String) -> (Int, String) {
-            (order.firstIndex(of: name) ?? order.count, name)
+            (name == other ? order.count + 1 : order.firstIndex(of: name) ?? order.count, name)
         }
     }
 
@@ -496,17 +506,18 @@ final class HubStore: ObservableObject {
     }
 
     /// What this Mac guessed, written down so the phone stops guessing differently. The folder
-    /// from the keywords and the date from the front of the line are each written once, on
-    /// the first read that finds the field missing, and never revisited: a field that exists
-    /// is the phone's to change.
+    /// from the keywords and the date from the front of the line are written together, once,
+    /// on the first read of a todo nothing has filed yet — and never again: `project` being
+    /// there, empty or not, means the fields are somebody's decision. The phone deletes
+    /// `dueAt` to clear a date, so a missing date on a filed todo is a cleared one, not a
+    /// question.
     private func backfill(_ todo: Todo) {
-        var fields: [String: Any] = [:]
-        if todo.project == nil { fields["project"] = ["stringValue": todo.folder] }
-        if todo.dueAt == nil, let parsed = todo.parsedDueParts {
+        guard !todo.filed else { return }
+        var fields: [String: Any] = ["project": ["stringValue": todo.folder]]
+        if let parsed = todo.parsedDueParts {
             fields["dueAt"] = Firestore.timestamp(parsed.date)
             fields["dueAllDay"] = ["booleanValue": parsed.allDay]
         }
-        guard !fields.isEmpty else { return }
         Task {
             do {
                 try await Firestore.patch("todos/\(todo.id)", fields: fields)
