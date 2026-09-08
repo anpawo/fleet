@@ -124,7 +124,7 @@ struct Todo: Identifiable {
         doneAt = doc.date("doneAt")
         order = doc.double("order")
         dueAt = doc.date("dueAt")
-        dueAllDay = doc.bool("dueAllDay")
+        dueAllDay = doc.fields["dueAllDay"]?.booleanValue ?? true
         // Absent and empty are two different things: the phone writes "" for "no folder,
         // and I mean it", and absent is a todo nothing has filed yet — see `backfill`.
         project = doc.fields["project"]?.stringValue
