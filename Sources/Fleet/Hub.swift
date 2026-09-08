@@ -86,15 +86,15 @@ struct Todo: Identifiable {
     /// Whether `dueAt` names a day rather than a moment. The phone stores such a day as noon
     /// UTC, so the hour must not be shown.
     var dueAllDay = false
-    /// Which pile of life this belongs to — `epitech` or `self` — as written by the phone.
-    /// Absent on everything older than the field, "" when the phone was told "none"; see
-    /// `folder`.
-    var project: String?
+    /// Whether the fields are the truth and the line's own text is not to be read: anything
+    /// written since the phone had a date field, or anything this Mac already went over. The
+    /// old marker was a `project` the phone no longer writes; it is still honoured on the
+    /// todos that carry it. Without this a date cleared on the phone would come straight back
+    /// from the "14/09" still at the front of the line.
+    var filed = true
 
-    /// Whether the phone, or this Mac, has filed it: the fields are the truth after that, and
-    /// the line's own text is only read on what nobody has touched. Otherwise a date cleared
-    /// on the phone would come straight back from the "14/09" still at the front of the line.
-    var filed: Bool { project != nil }
+    /// When the phone started writing `dueAt` itself (release 6.140).
+    static let dueFieldBorn = Date(timeIntervalSince1970: 1_788_000_000)
 
     /// The four values `state` takes. Not an enum on the model: an unknown string must survive
     /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
@@ -125,9 +125,7 @@ struct Todo: Identifiable {
         order = doc.double("order")
         dueAt = doc.date("dueAt")
         dueAllDay = doc.fields["dueAllDay"]?.booleanValue ?? true
-        // Absent and empty are two different things: the phone writes "" for "no folder,
-        // and I mean it", and absent is a todo nothing has filed yet — see `backfill`.
-        project = doc.fields["project"]?.stringValue
+        filed = doc.fields["project"] != nil || createdAt >= Self.dueFieldBorn
     }
 
     /// Where the todo sits in the column, dragged or not.
@@ -184,18 +182,6 @@ struct Todo: Identifiable {
         return calendar.date(from: components).map { ($0, allDay) }
     }
 
-    /// The sub-folder the column files this under. The phone's word when it wrote one; for
-    /// everything older, a guess from the words school todos tend to carry, and `self` for
-    /// the rest — written back once so the phone files it the same way, see `backfill`.
-    // ponytail: keyword guess, retire it once every open todo carries `project`.
-    var folder: String {
-        if let project { return project.isEmpty ? Folder.other : project }
-        let lowered = title.lowercased()
-        let school = ["epitech", "eip", "atp", "part-time", "rattrapage", "stage", "track",
-                      "user group", "hackathon", "convention"]
-        return school.contains(where: lowered.contains) ? Folder.epitech : Folder.personal
-    }
-
     /// Which section the column files this under: how soon it is due, not what it is about.
     /// The three boundaries are the ones `dueTint` already paints a row by, so the heading a
     /// todo sits under and the colour of its dot can never disagree.
@@ -221,18 +207,6 @@ struct Todo: Identifiable {
                                            to: calendar.startOfDay(for: due)).day ?? 0
         if days < 1 { return .today }
         return days < 8 ? .week : .other
-    }
-
-    enum Folder {
-        static let epitech = "epitech"
-        static let personal = "self"
-        /// What the phone calls a todo filed nowhere on purpose. Last, under everything named.
-        static let other = "autres"
-        /// The order the folders come in; anything else the phone invents goes between, A to Z.
-        static let order = [epitech, personal]
-        static func rank(_ name: String) -> (Int, String) {
-            (name == other ? order.count + 1 : order.firstIndex(of: name) ?? order.count, name)
-        }
     }
 
     /// The first line only, for a row one line tall. Some todos are a whole page — a pasted
@@ -340,7 +314,6 @@ final class HubStore: ObservableObject {
                     "manual": ["booleanValue": true],
                     "createdAt": Firestore.timestamp(pending.createdAt),
                     "order": ["doubleValue": pending.rank],
-                    "project": ["stringValue": pending.folder],
                 ]
                 if let due = pending.dueAt {
                     fields["dueAt"] = Firestore.timestamp(due)
@@ -531,30 +504,6 @@ final class HubStore: ObservableObject {
         return a.rank != b.rank ? a.rank < b.rank : a.id < b.id
     }
 
-    /// What this Mac guessed, written down so the phone stops guessing differently. The folder
-    /// from the keywords and the date from the front of the line are written together, once,
-    /// on the first read of a todo nothing has filed yet — and never again: `project` being
-    /// there, empty or not, means the fields are somebody's decision. The phone deletes
-    /// `dueAt` to clear a date, so a missing date on a filed todo is a cleared one, not a
-    /// question.
-    private func backfill(_ todo: Todo) {
-        guard !todo.filed else { return }
-        var fields: [String: Any] = ["project": ["stringValue": todo.folder]]
-        // Never over a date somebody picked: a calendar choice outranks the front of a line.
-        if todo.dueAt == nil, let parsed = todo.parsedDueParts {
-            fields["dueAt"] = Firestore.timestamp(parsed.date)
-            fields["dueAllDay"] = ["booleanValue": parsed.allDay]
-        }
-        Task {
-            do {
-                try await Firestore.patch("todos/\(todo.id)", fields: fields)
-                NSLog("Fleet: filled in \(fields.keys.sorted().joined(separator: ", ")) on todo \(todo.id)")
-            } catch {
-                NSLog("Fleet: could not fill in todo \(todo.id) — \(error.localizedDescription)")
-            }
-        }
-    }
-
     private func load() async {
         do {
             // All three at once: they are independent collections and the panel is already
@@ -590,7 +539,6 @@ final class HubStore: ObservableObject {
             showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
             todos = all.filter(\.open).sorted(by: Self.before)
-            todos.forEach(backfill)
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
