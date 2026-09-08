@@ -344,11 +344,14 @@ private struct ParseState {
         // and an open turn with nothing pending still looks exactly like a finished one.
         if type == "assistant" {
             turnOpen = false
-        } else if obj["isMeta"] as? Bool == true {
+        } else if obj["isMeta"] as? Bool == true || Self.isLocalCommand(blocks) {
             // Not you talking. Claude Code files hook output, cross-session messages and its
             // own notes as user entries, and they land whenever they land — including after a
             // turn has finished. Treated as a prompt, one of those reopens a closed turn and
             // paints a session that is doing nothing as a session that is working.
+            //
+            // A slash command that runs locally (`/model`, `/config`…) is the same thing
+            // without the flag: three user entries, and Claude never answers them.
         } else if blocks.contains(where: { $0["type"] as? String == "text" }) {
             // A user entry carrying real text is a prompt: the window between sending it and
             // Claude's first token.
@@ -446,6 +449,13 @@ private struct ParseState {
 
     /// Cancelling a turn with Esc appends a user entry too. Without this the session would
     /// sit at "working" forever, since no assistant reply is ever coming.
+    private static func isLocalCommand(_ blocks: [[String: Any]]) -> Bool {
+        blocks.contains { block in
+            guard let text = block["text"] as? String else { return false }
+            return text.hasPrefix("<local-command-") || text.hasPrefix("<command-name>")
+        }
+    }
+
     private static func isInterruption(_ blocks: [[String: Any]]) -> Bool {
         blocks.contains { block in
             guard let text = block["text"] as? String else { return false }
