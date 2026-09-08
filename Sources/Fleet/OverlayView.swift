@@ -745,7 +745,7 @@ struct MemoryStrip: View {
             // indicator; neither is something you act on. What is worth a glance is how full
             // the RAM is and whether the machine has started paying disk latency for it —
             // and the amber state below, which is the kernel's own verdict, covers the rest.
-            HStack(spacing: 4) {
+            WeightedRow(weights: [2, 1], spacing: 4) {
                 if tight {
                     // Under pressure the pills are the processes holding the memory, which is
                     // the only thing to do about it.
@@ -876,6 +876,31 @@ private struct StopAgentsButton: View {
 }
 
 /// One number and what it is, on the quiet strip.
+/// A row whose children split the width by weight — the RAM pill two thirds, the swap pill
+/// one — where an `HStack` hands any two flexible views half each. A lone child takes it all.
+private struct WeightedRow: Layout {
+    var weights: [CGFloat]
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: proposal.width ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                       cache: inout ()) {
+        let total = weights.prefix(subviews.count).reduce(0, +)
+        let free = bounds.width - spacing * CGFloat(max(subviews.count - 1, 0))
+        var x = bounds.minX
+        for (i, view) in subviews.enumerated() {
+            let width = free * weights[i] / total
+            view.place(at: CGPoint(x: x, y: bounds.minY),
+                       proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width + spacing
+        }
+    }
+}
+
 private struct Reading: View {
     let label: String
     let value: String
