@@ -120,9 +120,19 @@ enum Hooks {
     }
 
     static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog]) {
+        // Each hog carries WHERE it works and HOW LONG it has run, so a session can tell
+        // whether the load is its own. "java 2.7 GB" is unactionable in every session;
+        // "nuit 1 core, 60 h, ~/self/finance/crypto/simu" is actionable in exactly one.
         let names = hogs.prefix(4)
-            .map { "\($0.name) \($0.sizeLabel)" }
-            .joined(separator: ", ")
+            .map { h -> String in
+                var s = "\(h.name) \(h.sizeLabel)"
+                if h.age > 600 { s += " depuis \(h.ageLabel)" }
+                if let c = h.cwd, c != "/" {
+                    s += " dans \(c.replacingOccurrences(of: NSHomeDirectory(), with: "~"))"
+                }
+                return s
+            }
+            .joined(separator: " | ")
         var json: [String: Any] = [
             "struggling": struggling,
             "reason": reason,
@@ -305,7 +315,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 4
+    # fleet-hook-version: 5
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -373,11 +383,17 @@ enum Hooks {
         mkdir -p "$dir" && echo "$now" > "$stamp"
 
         hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
-        note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now: \\
-    ${hogs:-unknown}. Wind down what you can until it recovers: no new subagents, no new \\
-    builds, servers or watchers, finish or checkpoint what is already in flight, and read one \\
-    file at a time rather than fanning out. If the heavy thing is the task the user asked for, \\
-    say so in one line and let them decide."
+        note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now, \\
+    each with how long it has run and the directory it works in: ${hogs:-unknown}. \\
+    FIRST, check whether any of them is YOURS: a process whose directory is your working \\
+    directory, or below it, is your load — a container mounting your repo included. If one \\
+    is yours, you are the only session that can act on it: decide whether to stop it, and \\
+    say in one line what you stopped or why you kept it. A process that has run for hours \\
+    at full tilt is usually something a past session forgot to stop. If NONE of them is \\
+    yours, do not stop anything you do not own; just wind down until the machine recovers: \\
+    no new subagents, no new builds, servers or watchers, finish or checkpoint what is \\
+    already in flight, and read one file at a time rather than fanning out. If the heavy \\
+    thing is the task the user asked for, say so in one line and let them decide."
         note=$(printf '%s' "$note" | tr -s ' \\n' ' ')
         printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' \\
             "$event" "$note"

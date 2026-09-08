@@ -178,7 +178,7 @@ enum ProcessScanner {
         return Array(pids.prefix(Int(written) / MemoryLayout<pid_t>.size))
     }
 
-    private static func workingDirectory(_ pid: pid_t) -> String? {
+    static func workingDirectory(_ pid: pid_t) -> String? {
         var info = proc_vnodepathinfo()
         let size = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info,
                                 Int32(MemoryLayout<proc_vnodepathinfo>.size))

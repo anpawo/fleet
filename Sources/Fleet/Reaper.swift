@@ -111,7 +111,22 @@ struct Hog: Identifiable {
     /// something that is about to go on its own.
     var reapable: Bool = false
 
+    /// Where the process works. This is what lets a Claude session recognise its OWN load:
+    /// a container mounting ~/self/finance belongs to the finance session, and no amount of
+    /// broadcasting "java 2.7 GB" to every session ever conveys that.
+    var cwd: String?
+
+    /// How long it has been running. Sixty hours at full tilt is almost always a leftover,
+    /// and the number says so where a size never can.
+    var age: TimeInterval = 0
+
     var sizeLabel: String { byteLabel(rss) }
+
+    var ageLabel: String {
+        if age < 3600 { return "\(Int(age / 60)) min" }
+        if age < 172_800 { return "\(Int(age / 3600)) h" }
+        return "\(Int(age / 86_400)) d"
+    }
 }
 
 /// Frees memory before the machine grinds, by killing daemons that nothing is using.
@@ -551,10 +566,14 @@ final class Reaper: ObservableObject {
         for pid in ProcessScanner.allPIDs() where pid > 0 && pid != mine {
             guard let task = ProcessScanner.taskInfo(pid),
                   task.pti_resident_size > Config.hogFloorBytes else { continue }
+            let bsd = ProcessScanner.bsdInfo(pid)
+            let debut = bsd.map { TimeInterval($0.pbi_start_tvsec) } ?? 0
             found.append(Hog(pid: pid,
                              name: ProcessScanner.displayName(pid),
                              rss: task.pti_resident_size,
-                             reapable: reapable.contains(pid)))
+                             reapable: reapable.contains(pid),
+                             cwd: ProcessScanner.workingDirectory(pid),
+                             age: debut > 0 ? Date().timeIntervalSince1970 - debut : 0))
         }
         return Array(found.sorted { $0.rss > $1.rss }.prefix(Config.hogCount))
     }
