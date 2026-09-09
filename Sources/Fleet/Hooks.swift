@@ -281,15 +281,11 @@ enum Hooks {
 
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
         for (event, argument) in events {
-            // Every other matcher group for this event is kept as it is; only the group Fleet
-            // wrote last time is replaced.
+            // Only Fleet's own command is taken out, and the group around it is kept unless
+            // that command was all it held. Another tool registered in the same group is not
+            // Fleet's to delete — and it is a hook the user cannot know went missing.
             var groups = (hooks[event] as? [[String: Any]]) ?? []
-            groups.removeAll { group in
-                let commands = (group["hooks"] as? [[String: Any]]) ?? []
-                return commands.contains {
-                    ($0["command"] as? String)?.contains(marker) == true
-                }
-            }
+            groups = groups.compactMap { withoutFleet($0) }
             groups.append([
                 "hooks": [[
                     "type": "command",
@@ -308,6 +304,19 @@ enum Hooks {
         return settingsPath
     }
 
+    /// One matcher group with Fleet's own command stripped out of it, or nil when that command
+    /// was the only thing in it. Anything else in the group survives.
+    private static func withoutFleet(_ group: [String: Any]) -> [String: Any]? {
+        var group = group
+        var commands = (group["hooks"] as? [[String: Any]]) ?? []
+        let before = commands.count
+        commands.removeAll { ($0["command"] as? String)?.contains(marker) == true }
+        guard commands.count != before else { return group }
+        guard !commands.isEmpty else { return nil }
+        group["hooks"] = commands
+        return group
+    }
+
     /// Removes Fleet's hook entries again, leaving the rest of settings.json alone.
     @discardableResult
     static func uninstall() throws -> Bool {
@@ -318,14 +327,13 @@ enum Hooks {
 
         var removed = false
         for (event, groups) in hooks {
-            guard var groups = groups as? [[String: Any]] else { continue }
-            let before = groups.count
-            groups.removeAll { group in
-                let commands = (group["hooks"] as? [[String: Any]]) ?? []
-                return commands.contains { ($0["command"] as? String)?.contains(marker) == true }
+            guard let groups = groups as? [[String: Any]] else { continue }
+            let hadFleet = groups.contains { group in
+                ((group["hooks"] as? [[String: Any]]) ?? [])
+                    .contains { ($0["command"] as? String)?.contains(marker) == true }
             }
-            if groups.count != before { removed = true }
-            hooks[event] = groups
+            if hadFleet { removed = true }
+            hooks[event] = groups.compactMap { withoutFleet($0) }
         }
         guard removed else { return false }
         settings["hooks"] = hooks
