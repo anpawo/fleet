@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>6</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>8</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">1404b20</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">491c53a</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,91 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Hooks.script</span>
+        <span class="chip chip-sha">0df95bc</span>
+      </div>
+      <h3>STOP AGENTS n'arrêtait personne</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le bouton pressé pendant que la machine décroche&nbsp;: il passe à
+          <code>STOPPING…</code> et y reste. Aucune session ne s'arrête, et quand la machine se
+          remet toute seule le bouton disparaît avec la strip ambre, sans jamais avoir dit ce
+          qui s'était passé.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          La pression écrit <code>"stop":&lt;epoch&gt;</code> dans <code>machine.json</code>, et
+          c'est tout&nbsp;: c'est le hook, dans chaque session, qui doit aller la lire. Or la
+          lecture était placée derrière trois gardes qui n'ont rien à voir avec elle&nbsp;:
+          <code>struggling:true</code>, un verdict rafraîchi depuis moins de cinq minutes — et
+          Fleet n'en écrit un qu'au <b>franchissement</b>, donc une tension longue périme la
+          sienne toute seule — et <code>PostToolUse</code>&nbsp;/&nbsp;<code>UserPromptSubmit</code>,
+          qui arrivent une fois l'outil déjà exécuté. Côté Swift, <code>writeMachineState</code>
+          prend soin de conserver <code>stop</code> pendant 300&nbsp;s malgré un rétablissement,
+          précisément pour ce cas&nbsp;; le shell sortait avant d'y arriver.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La pression est lue en premier, sans autre condition que son propre âge, et sur
+          <code>PreToolUse</code> aussi — l'événement qui termine le tour <b>avant</b> l'outil
+          suivant plutôt qu'après. Le bouton, lui, relit les jetons <code>.stopped</code> et dit
+          combien de sessions ont répondu&nbsp;; il reste affiché tant que la demande est en vol
+          et se réarme à la fermeture de la fenêtre. Un compteur bloqué à 0 est le vrai rapport&nbsp;:
+          une session au repos ou bloquée sur une permission n'atteint aucun appel d'outil et
+          n'apprend jamais que le bouton existe.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>11:00:29  asked every session to stop
+11:05:29  la clé "stop" périme, retirée au write suivant
+11:08:57  machine keeping up again
+~/.claude/fleet/state/*.stopped  →  <b>aucun</b>   (zéro session a répondu)
+
+./test-stop-hook.sh                   →  6/6 ok
+./test-stop-hook.sh &lt;ancien script&gt;   →  2 FAIL, exactement les deux cas corrigés</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Hooks.install</span>
+        <span class="chip chip-sha">491c53a</span>
+      </div>
+      <h3>L'installation qui emportait le hook du voisin</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Trouvé en installant le correctif ci-dessus&nbsp;: <code>fleet --install-hooks</code> a
+          supprimé <code>python3 ~/.claude/hooks/context-guard.py</code> de
+          <code>settings.json</code>. Rien ne le signale — un hook absent ne se manifeste que le
+          jour où on remarque qu'il ne tourne plus.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Pour se réinstaller sans s'empiler, <code>install()</code> cherchait sa propre commande
+          dans un groupe de <code>settings.json</code>… puis retirait <b>le groupe entier</b>.
+          Tout ce qui partageait ce groupe partait avec. <code>uninstall()</code> avait la même
+          forme.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Seule la commande portant le marqueur est retirée&nbsp;; le groupe survit sauf si elle
+          était tout ce qu'il contenait.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>avant le correctif : 9 commandes → 8, perdue : context-guard.py
+après               : 9 commandes → <b>9</b>, perdue : aucune</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
