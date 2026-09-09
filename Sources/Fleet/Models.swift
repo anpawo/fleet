@@ -34,6 +34,10 @@ enum Config {
     static let stallStreak = 3
     /// How long the panel waits before it is allowed to interrupt you about slowness again.
     static let stallAlertCooldown: TimeInterval = 10 * 60
+    /// How long an alert panel ignores clicks. Only the click you were already making when it
+    /// appeared: after that a click is aimed at it, and a panel that will not go away is worse
+    /// than an alert lost.
+    static let alertClickGrace: TimeInterval = 1.5
 
     /// A tick later than this was not a stall: the machine was asleep, or the process was
     /// suspended. Nothing that takes this long is a scheduling delay.
