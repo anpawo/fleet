@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>5</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>6</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">9cad47d</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">1404b20</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,43 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">AppController.alerting</span>
+        <span class="chip chip-sha">1404b20</span>
+      </div>
+      <h3>Le panneau qui ne partait pas au clic</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Un clic sur le noir semi-transparent, à côté de tout, ne ferme pas le panneau. Pas
+          toujours&nbsp;: la plupart du temps il part, et parfois il reste, sans que rien à
+          l'écran ne dise pourquoi. Esc, lui, marche à tous les coups.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le panneau qui s'invite tout seul quand la machine décroche lève <code>alerting</code>,
+          et les trois gestes de fermeture au clic sont gardés par <code>if !controller.alerting</code>.
+          Ce drapeau n'était remis à zéro que par <code>hidePanel</code> ou un clic sur une tuile —
+          donc par Esc. Tant que l'alerte était debout, <b>aucun</b> clic ne la fermait, pour
+          toujours. L'intention était de protéger l'alerte du clic qu'on était déjà en train de
+          faire quand elle est apparue&nbsp;; la protection ne s'arrêtait jamais.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>alerting</code> devient calculé&nbsp;: vrai pendant <code>Config.alertClickGrace</code>
+          (1,5&nbsp;s) après l'apparition de l'alerte, faux ensuite. Le clic en vol est toujours
+          avalé, le clic visé ferme le panneau comme sur n'importe quel autre.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>grep -c "machine struggling" /tmp/fleet.log  →  <b>51</b>
+dernière : 2026-09-09 03:28:25  (load 1.3 par cœur), quelques minutes avant le rapport</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
