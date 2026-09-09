@@ -108,6 +108,37 @@ enum Hooks {
         NSLog("Fleet: asked every session to stop")
     }
 
+    /// How long a press stays readable, and the same number the hook checks. It is the window
+    /// in which a session has to reach a tool call: one that makes none inside it — idle,
+    /// blocked on a permission prompt, deep in a model turn — never learns the button was
+    /// pressed at all, which is why the button reports who answered rather than claiming
+    /// everyone did.
+    static let stopWindow: TimeInterval = 300
+
+    /// A press that sessions can still answer.
+    struct StopRequest {
+        var at: Date
+        /// How many have halted on it. Each writes a `<id>.stopped` stamp naming the press it
+        /// obeyed — the only acknowledgement a hook has any way of sending back.
+        var honoured: Int
+    }
+
+    /// The press in flight, if any. Nil once its window has closed, which is what re-arms the
+    /// button; read from disk each time because the answers arrive one session at a time.
+    static func stopInFlight() -> StopRequest? {
+        guard let stamp = machineState()?["stop"] as? Int else { return nil }
+        let at = Date(timeIntervalSince1970: Double(stamp))
+        guard Date().timeIntervalSince(at) < stopWindow else { return nil }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: stateDirectory)) ?? []
+        let honoured = names.filter { name in
+            guard name.hasSuffix(".stopped") else { return false }
+            let path = (stateDirectory as NSString).appendingPathComponent(name)
+            return (try? String(contentsOfFile: path, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) == String(stamp)
+        }.count
+        return StopRequest(at: at, honoured: honoured)
+    }
+
     private static func machineState() -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: machinePath) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -142,7 +173,7 @@ enum Hooks {
         // A stop pressed a moment ago outlives the verdict that prompted it: the machine
         // recovering one second later must not cancel a stop the sessions have not yet read.
         if let stop = machineState()?["stop"] as? Int,
-           Date().timeIntervalSince1970 - Double(stop) < 300 {
+           Date().timeIntervalSince1970 - Double(stop) < stopWindow {
             json["stop"] = stop
         }
         write(json)
@@ -152,7 +183,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 2
+    static let version = 6
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -315,7 +346,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 5
+    # fleet-hook-version: 6
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -346,23 +377,24 @@ enum Hooks {
         machine="$HOME/.claude/fleet/machine.json"
         [ -f "$machine" ] || return 0
         payload=$(cat "$machine" 2>/dev/null) || return 0
-        case "$payload" in *'"struggling":true'*) ;; *) return 0 ;; esac
-
-        # Only the two events whose stdout Claude Code feeds back to the model.
+        now=$(date +%s)
         event=$(printf '%s' "$input" | sed -n \\
             's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
-        case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
-
-        now=$(date +%s)
         reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
-        # A verdict nobody has refreshed in five minutes is from a Fleet that is no longer
-        # running. Stale advice about a machine is worse than none.
-        at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
-        [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
 
-        # The panel's stop button. One per session per press: the stamp records which stop
-        # this session has already honoured, so a run started after it is not cut down by a
-        # press from ten minutes ago.
+        # The panel's stop button, read ahead of every other condition in this function. A stop
+        # is something the user pressed, not a symptom of the machine: it has to outlive the
+        # machine recovering a second later, and it has to outlive a verdict Fleet has not
+        # rewritten in a while — Fleet only writes one when the machine crosses either way. The
+        # press carries its own expiry, which is the only one that means anything here.
+        #
+        # PreToolUse as well as the two events that feed the model, because `continue:false` is
+        # answered on all three — and PreToolUse is the one that ends the turn BEFORE the next
+        # tool runs rather than after it.
+        #
+        # One per session per press: the stamp records which stop this session has already
+        # honoured, so a run started after it is not cut down by a press from ten minutes ago.
+        case "$event" in PreToolUse | PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
         stop=$(printf '%s' "$payload" | sed -n 's/.*"stop":\\([0-9]*\\).*/\\1/p' | head -1)
         if [ -n "${stop:-}" ] && [ $((now - stop)) -lt 300 ]; then
             honoured=0
@@ -370,10 +402,20 @@ enum Hooks {
             if [ "$stop" != "$honoured" ]; then
                 mkdir -p "$dir" && echo "$stop" > "$dir/$sid.stopped"
                 printf '{"continue":false,"stopReason":"Fleet stopped this session: %s. '
-                printf 'Nothing is lost — say go when the machine has room again."}\\n' "$reason"
+                printf 'Nothing is lost — say go when the machine has room again."}\\n' \\
+                    "${reason:-you pressed stop on the panel}"
                 return 0
             fi
         fi
+
+        # Everything below is the advisory nudge, which IS a report about the machine: it only
+        # makes sense while the machine is still struggling, from a verdict recent enough to
+        # have come from a Fleet that is still running, and on the two events whose stdout
+        # Claude Code feeds back to the model.
+        case "$payload" in *'"struggling":true'*) ;; *) return 0 ;; esac
+        case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
+        at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+        [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
 
         stamp="$dir/$sid.nudge"
         if [ -f "$stamp" ]; then

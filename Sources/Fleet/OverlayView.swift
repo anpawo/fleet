@@ -712,6 +712,11 @@ struct MemoryStrip: View {
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
+        // Read every time the strip is drawn — every tick, while the panel is up. The answers
+        // come back one session at a time, and a press outlives the strain that prompted it:
+        // hung on `tight` alone the button would vanish mid-flight, taking the only report of
+        // what happened with it.
+        let stop = Hooks.stopInFlight()
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -721,9 +726,12 @@ struct MemoryStrip: View {
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround()
                 Spacer(minLength: 3)
-                if tight {
+                if tight || stop != nil {
                     Spacer(minLength: 6)
-                    StopAgentsButton(tint: amber)
+                    StopAgentsButton(tint: amber, stop: stop)
+                        // A new press, or a window closing, is a new button: the optimistic
+                        // label below is @State, and this is what clears it.
+                        .id(stop?.at)
                 }
             }
             .padding(.horizontal, 2)
@@ -848,20 +856,35 @@ extension View {
 /// Pressed, every Claude Code session on the machine is told to stop at its next tool call —
 /// through the same hooks that tell Fleet what they are doing, answering `continue: false`.
 /// Turns end; nothing is killed, nothing is lost, and each session says why it stopped.
+///
+/// It says how many have answered rather than simply "STOPPING…", because a session only reads
+/// the press when it next reaches a tool call: one that is idle, or waiting on a permission
+/// prompt, never answers at all. A count stuck at zero is the honest report of that, where the
+/// old latched label claimed a stop that had reached nobody.
 private struct StopAgentsButton: View {
     let tint: Color
+    /// The press in flight, if any, with how many sessions have halted on it.
+    let stop: Hooks.StopRequest?
     @State private var hovering = false
+    /// Covers the gap between the click and the next tick, five seconds later, that reads the
+    /// press back off disk.
     @State private var pressed = false
 
+    private var label: String {
+        guard let stop else { return pressed ? "STOPPING\u{2026}" : "STOP AGENTS" }
+        return stop.honoured == 0 ? "STOPPING\u{2026} 0" : "STOPPED \(stop.honoured)"
+    }
+
     var body: some View {
+        let live = pressed || stop != nil
         Button {
             Hooks.requestAgentStop()
             pressed = true
         } label: {
-            Text(pressed ? "STOPPING\u{2026}" : "STOP AGENTS")
+            Text(label)
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.6)
-                .foregroundStyle(pressed ? tint.opacity(0.6) : tint)
+                .foregroundStyle(live ? tint.opacity(0.6) : tint)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(
@@ -870,7 +893,7 @@ private struct StopAgentsButton: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(pressed)
+        .disabled(live)
         .onHover { hovering = $0 }
     }
 }
