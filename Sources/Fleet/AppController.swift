@@ -136,7 +136,7 @@ final class AppController: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if self.isPanelVisible { self.hidePanel() }
-                else { self.forceShow(announceEmpty: true) }
+                else { self.forceShow() }
             }
         }
         HotKey.register(Settings.muteChord, id: 2) { [weak self] in
@@ -174,35 +174,16 @@ final class AppController: ObservableObject {
             hidePanel()
             return
         }
-        forceShow(announceEmpty: true)
+        forceShow()
     }
 
-    /// Open the panel straight away, ignoring the idle timer.
-    func forceShow(announceEmpty: Bool = false) {
-        let found = pretendFleet ?? registry.refresh()
-        guard !found.isEmpty else {
-            NSLog("Fleet: no sessions to show")
-            if announceEmpty { announceNoSessions() }
-            return
-        }
-        sessions = found
+    /// Open the panel straight away, ignoring the idle timer. An empty fleet is not a reason
+    /// to refuse: the panel is mail, todos and memory too, and the sessions grid simply has
+    /// nothing in it.
+    func forceShow() {
+        sessions = pretendFleet ?? registry.refresh()
         armed = false
         showPanel()
-    }
-
-    /// A manual trigger that silently does nothing reads as a broken app, so say why.
-    private func announceNoSessions() {
-        let previous = NSWorkspace.shared.frontmostApplication
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "No Claude Code sessions running"
-        alert.informativeText = "Fleet shows a panel of your live sessions. "
-            + "Start one in a terminal and open Fleet again."
-        alert.alertStyle = .informational
-        alert.runModal()
-        // Same reason as `OverlayWindowController.hide`: hiding the app makes the next
-        // activation warp the user to the Space we were hidden on.
-        if let previous, !previous.isTerminated { previous.activate() } else { NSApp.deactivate() }
     }
 
     // MARK: - Timer
@@ -289,12 +270,7 @@ final class AppController: ObservableObject {
     }
 
     private func refreshVisible() {
-        let found = registry.refresh()
-        if found.isEmpty {
-            hidePanel()          // last session exited while the panel was up
-            return
-        }
-        sessions = found
+        sessions = registry.refresh()
     }
 
     // MARK: - Panel
@@ -345,7 +321,7 @@ final class AppController: ObservableObject {
         guard muteRemaining == nil, !isPanelVisible,
               Date().timeIntervalSince(lastStallAlert) > Config.stallAlertCooldown else { return }
         lastStallAlert = Date()
-        forceShow(announceEmpty: true)
+        forceShow()
         alertedAt = isPanelVisible ? Date() : nil
     }
 

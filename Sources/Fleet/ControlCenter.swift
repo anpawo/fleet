@@ -206,7 +206,7 @@ struct ControlCenterView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button("Show Panel") { controller.forceShow(announceEmpty: true) }
+            Button("Show Panel") { controller.forceShow() }
             Spacer()
             // "until login" is not hedging: the LaunchAgent has KeepAlive set, so a plain
             // terminate would have launchd start us again a second later.
