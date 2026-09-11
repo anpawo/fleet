@@ -296,7 +296,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Fleet · tenue à jour le 19 août 2026</p>
+    <p class="eyebrow">Fleet · tenue à jour le 12 septembre 2026</p>
     <h1>Journal de bord</h1>
     <p class="standfirst">
       Ce qui a cassé, ce qui est réparé, ce qui reste ouvert. Chaque entrée porte le symptôme
@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>8</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>9</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">491c53a</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">1493c7a</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,44 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">AppController.forceShow</span>
+        <span class="chip chip-sha">1493c7a</span>
+      </div>
+      <h3>Une alerte modale à la place du panneau</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Ouvrir Fleet à la main sans aucune session en cours ne montrait pas le panneau mais
+          une fenêtre modale&nbsp;: <i>No Claude Code sessions running</i>, avec un OK à
+          cliquer. Elle volait le focus à l'app de devant pour dire qu'il n'y avait rien à voir.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          <code>forceShow</code> refusait une flotte vide et appelait <code>announceNoSessions</code>
+          — une garde écrite quand le panneau n'était que la grille des sessions. Il ne l'est
+          plus depuis que le mail, les todos et le bloc mémoire occupent les deux colonnes qui
+          l'encadrent&nbsp;: ces trois-là valent le même coup d'œil, session ou pas.
+          <code>refreshVisible</code> avait la même hypothèse dans l'autre sens et fermait le
+          panneau ouvert dès que la dernière session sortait.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La garde, le paramètre <code>announceEmpty</code> et l'alerte sont supprimés&nbsp;:
+          zéro session est un état normal du panneau, la grille du milieu est simplement vide.
+          <code>refreshVisible</code> ne ferme plus rien non plus.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>fleet --scan   →  No Claude Code sessions running.
+fleet          →  panneau affiché, grille vide, mail + todos lisibles
+                  (avant : NSAlert modale, aucun panneau)</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
