@@ -301,7 +301,11 @@ struct Session: Identifiable {
     /// Last path component of the working directory, e.g. "portfolio" — except under ~/self,
     /// where the project is what identifies a session: one working in ~/self/finance/backend
     /// is still "finance", not "backend".
-    var dirName: String {
+    var dirName: String { Session.project(for: cwd) }
+
+    /// The same rule, applied to a bare path: the registry needs a session's project name
+    /// before it has a session to ask — it is what the pinned tile numbers are keyed on.
+    static func project(for cwd: String) -> String {
         let projects = NSHomeDirectory() + "/self/"
         if cwd.hasPrefix(projects),
            let project = cwd.dropFirst(projects.count).split(separator: "/").first {

@@ -25,8 +25,6 @@ final class SessionRegistry {
         cpuSamples = cpuSamples.filter { live.contains($0.key) }
         bindings = bindings.filter { live.contains($0.key) }
         screens.forget(everythingBut: live)
-        numbers = numbers.filter { live.contains($0.key) }
-        assignNumbers(procs)
 
         bind(procs)
         store.retain(paths: Set(bindings.values))
@@ -54,13 +52,14 @@ final class SessionRegistry {
                 }
             }
             sessions.append(Session(
-                number: numbers[proc.pid] ?? 0,
                 proc: proc,
                 transcript: info,
                 state: state,
                 cpuPercent: cpu
             ))
         }
+
+        assignNumbers(&sessions, pins: Slots.pins)
 
         // By number, so tile three is always tile three. Sorting by state used to put the
         // sessions you could pick up first, and it meant the grid rearranged itself under you
@@ -69,7 +68,7 @@ final class SessionRegistry {
         return sessions.sorted { $0.number < $1.number }
     }
 
-    /// Give every new session the lowest number nobody is using.
+    /// Pinned projects first, then the lowest number nobody is using.
     ///
     /// Lowest free rather than ever-increasing, because the number is meant to be said out loud
     /// and pointed at — six sessions should be one to six, not thirty-one to thirty-six because
@@ -77,15 +76,43 @@ final class SessionRegistry {
     /// goes back in the pot the moment it exits.
     ///
     /// Handed out oldest first, so on a cold start the numbers follow the order the sessions
-    /// were actually started in rather than whatever order the process table came back in.
-    private func assignNumbers(_ procs: [ClaudeProcess]) {
-        for proc in procs.sorted(by: { $0.startedAt < $1.startedAt })
-        where numbers[proc.pid] == nil {
-            let taken = Set(numbers.values)
-            var free = 1
-            while taken.contains(free) { free += 1 }
-            numbers[proc.pid] = free
+    /// were actually started in rather than whatever order the process table came back in —
+    /// and so that two sessions in one pinned project have a settled answer to which of them
+    /// gets the pin.
+    ///
+    /// Recomputed from scratch every pass rather than only for new pids: that is what lets an
+    /// edit to `slots.txt` move a running session's tile without restarting anything.
+    func assignNumbers(_ sessions: inout [Session], pins: [String: Int]) {
+        // A pinned number is held for its project even while it is away. Lending it out is
+        // what ⌘3 meaning two different things on two different days is made of.
+        let reserved = Set(pins.values)
+        let order = sessions.indices.sorted {
+            sessions[$0].proc.startedAt < sessions[$1].proc.startedAt
         }
+
+        var taken = Set<Int>()
+        var assigned: [pid_t: Int] = [:]
+        for i in order {
+            guard let pin = pins[sessions[i].dirName], !taken.contains(pin) else { continue }
+            assigned[sessions[i].proc.pid] = pin
+            taken.insert(pin)
+        }
+        for i in order where assigned[sessions[i].proc.pid] == nil {
+            let pid = sessions[i].proc.pid
+            // Whatever it wore last pass, unless the file has since promised that number to
+            // somebody — a tile that renumbers itself under you is as bad as one that moves.
+            if let last = numbers[pid], !taken.contains(last), !reserved.contains(last) {
+                assigned[pid] = last
+            } else {
+                var free = 1
+                while taken.contains(free) || reserved.contains(free) { free += 1 }
+                assigned[pid] = free
+            }
+            taken.insert(assigned[pid]!)
+        }
+
+        numbers = assigned
+        for i in sessions.indices { sessions[i].number = assigned[sessions[i].proc.pid] ?? 0 }
     }
 
     // MARK: - Process to transcript binding

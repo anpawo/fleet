@@ -84,6 +84,7 @@ struct ControlCenterView: View {
                                 Settings.muteChord = $0
                                 controller.bindHotKeys()
                             }))
+                tileNumbers
             }
             section("SESSION STATE") { hooks }
             Spacer(minLength: 0)
@@ -184,6 +185,22 @@ struct ControlCenterView: View {
             }
             .labelsHidden()
             .frame(width: 170)
+        }
+    }
+
+    /// ⌘-digit is only worth learning if the digit holds still, and it only holds still if you
+    /// say which project owns it. The list is a text file — see `Slots`.
+    private var tileNumbers: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            row("Tile numbers") {
+                Button("Edit…") { NSWorkspace.shared.open(URL(fileURLWithPath: Slots.path)) }
+            }
+            Text("⌘1 to ⌘9 open the tile wearing that number while the panel is up. Pin a "
+                 + "project to a number and it keeps it, running or not; everything else "
+                 + "takes what is left.")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.4))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
