@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>9</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>10</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">1493c7a</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">a218c46</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,56 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore.liveSubagents</span>
+        <span class="chip chip-sha">a218c46</span>
+      </div>
+      <h3>Une session verte pendant que quatre agents travaillent</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Une session qui lance des sous-agents affiche <code>READY</code>, sans pastille
+          <code>SUB-AGENT</code> ni ligne <code>↳</code>, tant que les agents tournent. Rien ne
+          distingue au panneau une session finie d'une session dont le travail est parti
+          ailleurs.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          La vivacité d'un sous-agent se lisait sur un seul critère&nbsp;: son appel
+          <code>Task</code> encore <b>en attente</b> sur le fil principal. Or un agent
+          asynchrone répond à son propre appel tout de suite —
+          <i>«&nbsp;Async agent launched successfully&nbsp;»</i> — puis travaille des minutes
+          durant. L'ensemble des appels en attente est donc vide, le tour se ferme, le hook
+          écrit <code>ready</code>, et chaque signal que Fleet sait lire dit «&nbsp;au
+          repos&nbsp;». L'outil s'appelle aussi <code>Agent</code> depuis la 2.1, pas
+          <code>Task</code>&nbsp;: même le cas bloquant ne matchait plus.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Le transcript principal dit bien quand un agent s'arrête&nbsp;: un
+          <code>&lt;task-notification&gt;</code> qui nomme le <code>tool-use-id</code> du
+          lancement, avec l'un de quatre statuts terminaux
+          (<code>completed</code>, <code>failed</code>, <code>killed</code>,
+          <code>stopped</code>). Un lancement sans notification postérieure&nbsp;= un agent
+          encore dehors. Rien n'est listé sur disque tant qu'aucun agent n'est dehors, comme
+          avant. Cinquième état, violet, appliqué au-dessus de <code>ready</code> seulement&nbsp;:
+          <code>AGENTS OUT</code> — le travail a lieu sur un fil qui n'est pas celui auquel on
+          parle, donc la session reste disponible.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>196 agents sur cette machine, écart entre le tool_result et le dernier write de l'agent :
+  +928.9 s   +435.6 s   +388.1 s   +342.7 s   …   +25.2 s     (jamais négatif)
+
+fleet --selftest  →  11/11 ok, dont un transcript-fixture :
+  appel Agent répondu       →  1 agent dehors, son transcript lu
+  &lt;task-notification&gt;       →  0 agent, la tuile cesse de le compter</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
