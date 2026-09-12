@@ -184,6 +184,27 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
+// `--render-settings <path.png>` draws the settings window offscreen, controls and all. The
+// panel has `--render` for the same reason: the only honest way to look at this window is a
+// picture of it, because opening it lands it on whatever desktop is in front of you.
+if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
+   i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let view = NSHostingView(rootView: ControlCenterView(controller: AppController()))
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.frame = NSRect(origin: .zero, size: view.fittingSize)
+        view.layoutSubtreeIfNeeded()
+        if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            print("wrote \(CommandLine.arguments[i + 1]) \(view.bounds.size)")
+        }
+        exit(0)
+    }
+}
+
 if CommandLine.arguments.contains("--selftest") {
     MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
 }

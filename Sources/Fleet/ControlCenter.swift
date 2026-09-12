@@ -148,7 +148,7 @@ struct ControlCenterView: View {
                     .foregroundStyle(.white.opacity(0.4))
             }
             Spacer(minLength: 8)
-            Button(controller.muteRemaining == nil ? "Mute" : "Unmute") {
+            wideButton(controller.muteRemaining == nil ? "Mute" : "Unmute", width: 76) {
                 controller.toggleMute()
             }
         }
@@ -172,7 +172,6 @@ struct ControlCenterView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 170)
             }
             Text("How long the machine has to sit untouched before the panel opens on its own. "
                  + "It stays away while a video is playing or a microphone is recording.")
@@ -191,7 +190,6 @@ struct ControlCenterView: View {
                 ForEach(choices, id: \.self) { Text($0.label).tag($0) }
             }
             .labelsHidden()
-            .frame(width: 170)
         }
     }
 
@@ -200,7 +198,9 @@ struct ControlCenterView: View {
     private var tileNumbers: some View {
         VStack(alignment: .leading, spacing: 8) {
             row("Tile numbers") {
-                Button("Edit…") { NSWorkspace.shared.open(URL(fileURLWithPath: Slots.path)) }
+                wideButton("Edit…") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: Slots.path))
+                }
             }
             Text("⌘1 to ⌘9 open the tile wearing that number while the panel is up. A project "
                  + "pinned to a number takes it back whenever it is running; while it is away "
@@ -229,18 +229,20 @@ struct ControlCenterView: View {
                     Text(entry.meaning)
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.45))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                 }
             }
         }
     }
 
+    /// Green, blue, purple, red, orange — his order. One line each: this column is 262 points
+    /// wide and a description that wraps turns the key into a paragraph.
     private static let meanings: [(state: SessionState, meaning: String)] = [
         (.ready, "Finished its turn. Yours to type into."),
-        (.running, "A tool is in flight."),
-        (.delegated, "Sub-agents are working. The session itself is free."),
         (.awaitingAnswer, "A question or a permission is on screen."),
-        (.apiError, "The request failed and Claude Code is retrying it."),
+        (.delegated, "Sub-agents working, the session is free."),
+        (.running, "A tool is in flight."),
+        (.apiError, "The request failed. It is retrying."),
     ]
 
     @ViewBuilder private var hooks: some View {
@@ -262,11 +264,11 @@ struct ControlCenterView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button("Show Panel") { controller.forceShow() }
-            Spacer()
+            wideButton("Show Panel") { controller.forceShow() }
+            Spacer(minLength: 4)
             // "until login" is not hedging: the LaunchAgent has KeepAlive set, so a plain
             // terminate would have launchd start us again a second later.
-            Button("Quit until next login") { quit() }
+            wideButton("Quit until next login") { quit() }
         }
     }
 
@@ -283,6 +285,22 @@ struct ControlCenterView: View {
         }
     }
 
+    /// Every control in the window lives in a slot this wide, against the same right edge —
+    /// pickers, buttons, both footer buttons. They were each their own width before, which put
+    /// four different right edges down one short column.
+    static let controlWidth: CGFloat = 178
+
+    /// A button of a stated width. The width has to go on the *label*: given it on the button
+    /// itself, the chrome keeps hugging its title and only the invisible frame around it grows,
+    /// which is how four buttons in one window ended up four different sizes.
+    private func wideButton(_ title: String, width: CGFloat = ControlCenterView.controlWidth,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).frame(maxWidth: .infinity)
+        }
+        .frame(width: width)
+    }
+
     private func row<Control: View>(_ title: String,
                                     @ViewBuilder control: () -> Control) -> some View {
         HStack {
@@ -290,7 +308,10 @@ struct ControlCenterView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.85))
             Spacer(minLength: 12)
-            control()
+            // Trailing: a popup button draws at the width of its own longest title and
+            // centres itself in whatever frame it is given, so a common width is not
+            // something a Picker will honour. A common right edge it will.
+            control().frame(width: Self.controlWidth, alignment: .trailing)
         }
     }
 

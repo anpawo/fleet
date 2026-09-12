@@ -252,10 +252,10 @@ struct OverlayView: View {
             // card read as a key. Kept as small as the dots allow — it is furniture, not a
             // control, and it sits on a line with a name and a count either side of it.
             HStack(spacing: 9) {
-                legend(.awaitingAnswer)
                 legend(.ready)
-                legend(.running)
+                legend(.awaitingAnswer)
                 legend(.delegated)
+                legend(.running)
                 legend(.apiError)
             }
             .padding(.horizontal, 9)
