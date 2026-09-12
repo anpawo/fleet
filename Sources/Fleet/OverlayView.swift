@@ -28,8 +28,10 @@ struct OverlayView: View {
     /// so `--render` drops the scroll container to draw every tile.
     var eagerLayout = false
 
-    /// Fixed tiles per row and fixed width, rather than adaptive, so a partial last row
-    /// (and a one-session fleet) still centres instead of hugging the left edge.
+    /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a
+    /// one-session fleet, start at the same left edge as every full row rather than drifting
+    /// to the middle. A lone tile that centres itself reads as a different column each time
+    /// the fleet is odd-numbered.
     ///
     /// Two, and never three. A third column used to appear once a fleet outgrew six, and the
     /// width it took is now the mail and todo columns either side of it — the middle of the
@@ -272,7 +274,7 @@ struct OverlayView: View {
     }
 
     private func tiles(_ sessions: [Session]) -> some View {
-        VStack(spacing: tileSpacing) {
+        VStack(alignment: .leading, spacing: tileSpacing) {
             ForEach(rows(of: sessions), id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: tileSpacing) {
                     ForEach(row) { session in
@@ -284,7 +286,7 @@ struct OverlayView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Every tile, in rows of two. However long the fleet gets, it grows downwards — the
@@ -540,7 +542,7 @@ struct SessionTile: View {
             .foregroundStyle(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The session's recent history, oldest at the top: what you asked, what it ran, what it
