@@ -43,7 +43,12 @@ final class ControlCenterController {
         // view states a width and no height: the height is whatever the sections come to, and
         // the window is exactly that tall. Pinning it instead — at 620, as it was — is what
         // made every paragraph in here end in an ellipsis.
-        window.contentView = NSHostingView(rootView: ControlCenterView(controller: controller))
+        let hosting = NSHostingView(rootView: ControlCenterView(controller: controller))
+        window.contentView = hosting
+        // Stated rather than left to the constraints the hosting view installs: landing a few
+        // points under what the content asked for does not scroll or clip, it *compresses* —
+        // every wrapping paragraph loses its second line and ends in an ellipsis instead.
+        window.setContentSize(hosting.fittingSize)
         return window
     }
 
@@ -165,13 +170,9 @@ struct ControlCenterView: View {
     private var idlePicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             row("Show by itself after") {
-                Picker("", selection: Binding(get: { idle },
-                                              set: { idle = $0; Settings.idleThreshold = $0 })) {
-                    ForEach(Settings.idleChoices, id: \.self) {
-                        Text(Self.idleLabel($0)).tag($0)
-                    }
-                }
-                .labelsHidden()
+                menu(Settings.idleChoices, label: Self.idleLabel,
+                     selection: Binding(get: { idle },
+                                        set: { idle = $0; Settings.idleThreshold = $0 }))
             }
             Text("How long the machine has to sit untouched before the panel opens on its own. "
                  + "It stays away while a video is playing or a microphone is recording.")
@@ -186,10 +187,7 @@ struct ControlCenterView: View {
             // A list of chords rather than a recorder that captures whatever you press: the
             // recorder is a window's worth of code, and these are the combinations that are
             // actually free.
-            Picker("", selection: selection) {
-                ForEach(choices, id: \.self) { Text($0.label).tag($0) }
-            }
-            .labelsHidden()
+            menu(choices, label: \.label, selection: selection)
         }
     }
 
@@ -289,6 +287,43 @@ struct ControlCenterView: View {
     /// pickers, buttons, both footer buttons. They were each their own width before, which put
     /// four different right edges down one short column.
     static let controlWidth: CGFloat = 178
+
+    /// A popup that is the width you tell it.
+    ///
+    /// `Picker` is not: it measures its longest title, draws that wide, and centres itself in
+    /// whatever frame it is handed — which is why the two chord popups came out narrower than
+    /// the idle one and narrower than each other. A `Menu` with a label of our own is the same
+    /// control with the width under our control, and it takes the same chrome as the buttons
+    /// beside it.
+    private func menu<T: Hashable>(_ options: [T], label: @escaping (T) -> String,
+                                   selection: Binding<T>) -> some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button(label(option)) { selection.wrappedValue = option }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(label(selection.wrappedValue))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.white.opacity(0.10)))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .frame(width: ControlCenterView.controlWidth)
+    }
 
     /// A button of a stated width. The width has to go on the *label*: given it on the button
     /// itself, the chrome keeps hugging its title and only the invisible frame around it grows,
