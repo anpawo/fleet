@@ -105,18 +105,22 @@ final class TranscriptStore {
     /// Parsed transcript for `path`, plus whatever sub-agents it is currently waiting on.
     func info(for path: String) -> TranscriptInfo? {
         guard var info = parse(path: path, acceptSidechain: false) else { return nil }
-        info.subagents = liveSubagents(of: path, pendingTaskIDs: info.pendingTaskIDs)
+        info.subagents = liveSubagents(of: path,
+                                       spawns: info.pendingTaskIDs + info.unfinishedAgentIDs)
         return info
     }
 
     /// Every sub-agent this session spawned that has not reported back.
     ///
-    /// The pending `Task` calls are the authority on which are still running: a sub-agent's own
-    /// files stay on disk long after it finishes, so the directory alone cannot tell a live one
-    /// from last week's. Each `agent-*.meta.json` names the `tool_use` that spawned it, and a
-    /// call still pending on the main thread is a sub-agent still working.
-    private func liveSubagents(of sessionPath: String, pendingTaskIDs: [String]) -> [SubagentRun] {
-        guard !pendingTaskIDs.isEmpty else {
+    /// A sub-agent's own files stay on disk long after it finishes, so the directory alone
+    /// cannot tell a live one from last week's — the main transcript is the authority. Each
+    /// `agent-*.meta.json` names the `tool_use` that spawned it, and that call is either still
+    /// pending, which means the main thread is blocked on it, or answered at once and closed
+    /// later by a `<task-notification>`, which means the agent has been working in the
+    /// background all along. Both are handed in here; neither costs a directory listing when
+    /// there is nothing out.
+    private func liveSubagents(of sessionPath: String, spawns: [String]) -> [SubagentRun] {
+        guard !spawns.isEmpty else {
             // Nothing delegated: no directory listing, no reads, nothing to keep cached.
             subagentPaths[sessionPath] = nil
             return []
@@ -128,7 +132,7 @@ final class TranscriptStore {
         }
 
         let suffix = ".meta.json"
-        let wanted = Set(pendingTaskIDs)
+        let wanted = Set(spawns)
         var runs: [SubagentRun] = []
         var read: Set<String> = []
 
@@ -282,6 +286,12 @@ private struct ParseState {
     /// ends, so the mtime of a session that has finished keeps moving while nothing is being
     /// said. Every "has it gone quiet" question here means this, not the file.
     var lastMessageAt: Date?
+    /// Agent spawns and endings, by the `tool_use` id that started them. A spawn whose id has
+    /// no later ending is an agent still working — see `TranscriptInfo.unfinishedAgentIDs`.
+    /// Both outlive the entries they came from: an async agent's spawn and its notification can
+    /// be a quarter of an hour and several turns apart.
+    var agentSpawnedAt: [String: Date] = [:]
+    var agentEndedAt: [String: Date] = [:]
 
     mutating func ingest(_ obj: [String: Any]) {
         guard let type = obj["type"] as? String else { return }
@@ -368,6 +378,13 @@ private struct ParseState {
             guard let kind = block["type"] as? String else { continue }
             switch kind {
             case "text":
+                // "A task-notification fires each time this agent stops" — so the last one
+                // wins, and an agent resumed after one is missed until it stops again. That is
+                // the whole cost of never listing a directory while nothing is out.
+                if let raw = block["text"] as? String, raw.contains("<task-notification>"),
+                   let call = Self.tagged("tool-use-id", in: raw) {
+                    agentEndedAt[call] = lastMessageAt ?? Date()
+                }
                 if let t = (block["text"] as? String)?.plainProse, !t.isEmpty {
                     // Capped: this state outlives a single read now, and a reply runs for pages.
                     preview.append(PreviewLine(kind: type == "user" ? .user : .assistant,
@@ -380,6 +397,9 @@ private struct ParseState {
                     issued += 1
                     pending[id] = PendingTool(name: name, label: label, seq: issued,
                                               messageID: messageID)
+                    if Self.agentTools.contains(name) {
+                        agentSpawnedAt[id] = lastMessageAt ?? Date()
+                    }
                 }
                 if block["name"] is String {
                     preview.append(PreviewLine(kind: .tool, text: label))
@@ -414,7 +434,10 @@ private struct ParseState {
             hasPendingTool: !pending.isEmpty,
             pendingToolNames: inFlight.map(\.name),
             pendingToolLabels: inFlight.map(\.label),
-            pendingTaskIDs: pending.filter { $0.value.name == "Task" }.map(\.key),
+            pendingTaskIDs: pending.filter { Self.agentTools.contains($0.value.name) }.map(\.key),
+            unfinishedAgentIDs: agentSpawnedAt
+                .filter { (agentEndedAt[$0.key] ?? .distantPast) < $0.value }
+                .map(\.key),
             lastCompletedTool: lastCompleted,
             cwd: cwd,
             turnOpen: turnOpen,
@@ -422,6 +445,19 @@ private struct ParseState {
             lastMessageAt: lastMessageAt,
             preview: preview
         )
+    }
+
+    /// What spawns a sub-agent. "Task" is what it was called before 2.1 and still answers to.
+    static let agentTools: Set<String> = ["Agent", "Task"]
+
+    /// The contents of `<tag>…</tag>`, or nil. `task-notification` is the one XML block Claude
+    /// Code writes into a transcript as prose, and one tag is not worth a parser.
+    static func tagged(_ tag: String, in text: String) -> String? {
+        guard let open = text.range(of: "<\(tag)>"),
+              let close = text.range(of: "</\(tag)>", range: open.upperBound ..< text.endIndex)
+        else { return nil }
+        return String(text[open.upperBound ..< close.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// "Bash" says a command ran; "Bash ./install.sh" says which. The argument that identifies

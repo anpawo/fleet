@@ -44,6 +44,15 @@ final class SessionRegistry {
             // request and a long thinking turn look like. Nothing else is re-examined; the
             // terminal costs a round trip to read.
             var state = state(for: bindings[proc.pid], info: info, cpu: cpu, now: now)
+            // An async agent leaves the session looking finished: its call was answered the
+            // moment it launched, the turn closed, and the hook said `ready` — all true of the
+            // main thread, and all beside the point while three agents are still out. Only
+            // over `ready`: a session that is working, or owes you an answer, is that first.
+            if state == .ready, info?.subagents.contains(where: {
+                now.timeIntervalSince($0.lastActivity) < Config.subagentStaleAfter
+            }) == true {
+                state = .delegated
+            }
             if state == .awaitingAnswer {
                 switch screens.verdict(proc, now: now) {
                 case .retrying: state = .apiError
@@ -83,32 +92,35 @@ final class SessionRegistry {
     /// Recomputed from scratch every pass rather than only for new pids: that is what lets an
     /// edit to `slots.txt` move a running session's tile without restarting anything.
     func assignNumbers(_ sessions: inout [Session], pins: [String: Int]) {
-        // A pinned number is held for its project even while it is away. Lending it out is
-        // what ⌘3 meaning two different things on two different days is made of.
-        let reserved = Set(pins.values)
+        // A pin is a claim, not a reservation: the project takes its number back the moment it
+        // starts, and while it is away the number is free like any other. Pins are handed out
+        // before the free-for-all below, so the squatter is the one that moves.
         let order = sessions.indices.sorted {
             sessions[$0].proc.startedAt < sessions[$1].proc.startedAt
         }
 
         var taken = Set<Int>()
         var assigned: [pid_t: Int] = [:]
+        func give(_ number: Int, to index: Int) {
+            assigned[sessions[index].proc.pid] = number
+            taken.insert(number)
+        }
+
         for i in order {
             guard let pin = pins[sessions[i].dirName], !taken.contains(pin) else { continue }
-            assigned[sessions[i].proc.pid] = pin
-            taken.insert(pin)
+            give(pin, to: i)
+        }
+        // Then everyone who can keep what they wore last pass. Ahead of the free-for-all on
+        // purpose: a session that has lost its number to a pin must not take a number off a
+        // tile that was sitting still, or one pinned project starting renumbers the whole grid.
+        for i in order where assigned[sessions[i].proc.pid] == nil {
+            guard let last = numbers[sessions[i].proc.pid], !taken.contains(last) else { continue }
+            give(last, to: i)
         }
         for i in order where assigned[sessions[i].proc.pid] == nil {
-            let pid = sessions[i].proc.pid
-            // Whatever it wore last pass, unless the file has since promised that number to
-            // somebody — a tile that renumbers itself under you is as bad as one that moves.
-            if let last = numbers[pid], !taken.contains(last), !reserved.contains(last) {
-                assigned[pid] = last
-            } else {
-                var free = 1
-                while taken.contains(free) || reserved.contains(free) { free += 1 }
-                assigned[pid] = free
-            }
-            taken.insert(assigned[pid]!)
+            var free = 1
+            while taken.contains(free) { free += 1 }
+            give(free, to: i)
         }
 
         numbers = assigned

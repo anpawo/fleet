@@ -117,6 +117,12 @@ enum Config {
     /// How many live sub-agents a session will read and report. A council run spawns half a
     /// dozen at once; past this the tile only counts them, so parsing more buys nothing.
     static let maxLiveSubagents: Int = 8
+    /// How long a background sub-agent's own transcript may go untouched before the tile stops
+    /// claiming it is working. A finished agent says so in the main transcript, so this only
+    /// catches the one that cannot: an agent whose session was killed under it, which leaves a
+    /// spawn with no ending anywhere. Generous, because a long tool call inside an agent is
+    /// quiet on disk for as long as it runs.
+    static let subagentStaleAfter: TimeInterval = 300
     /// Conversation lines kept for the tile preview.
     static let previewLineCount: Int = 14
     /// Of those, how many a tile actually draws.
@@ -180,6 +186,7 @@ enum SessionState {
     case ready          // green — finished its turn, waiting for a new prompt
     case awaitingAnswer // blue  — blocked on a question or a permission approval
     case apiError       // amber — the request failed and Claude Code is retrying it
+    case delegated      // purple — sub-agents are working and the main thread is free
 
     /// How much a state wants you, most first. The tiles are laid out by number rather than by
     /// this — a grid that rearranges itself as sessions finish their turns is a grid you cannot
@@ -194,7 +201,11 @@ enum SessionState {
         case .ready: return 0
         case .awaitingAnswer: return 1
         case .apiError: return 2
-        case .running: return 3
+        // Below the failed request and above plain work: nothing to answer, but unlike a
+        // session mid-turn this one can be typed into — the thread doing the work is not the
+        // one you would be talking to.
+        case .delegated: return 3
+        case .running: return 4
         }
     }
 }
@@ -243,9 +254,17 @@ struct TranscriptInfo {
     var pendingToolNames: [String]
     /// The same tools with their argument — "Bash npm test" rather than "Bash". Same order.
     var pendingToolLabels: [String]
-    /// `tool_use` ids of the pending `Task` calls, which is what ties a running sub-agent's
-    /// file back to the call waiting on it.
+    /// `tool_use` ids of the pending `Agent` calls — a sub-agent the main thread is blocked on,
+    /// which is what ties that sub-agent's file back to the call waiting on it.
     var pendingTaskIDs: [String]
+    /// `tool_use` ids of agents that were launched and have not reported back, blocking or not.
+    ///
+    /// An async agent answers its own call immediately — "Async agent launched successfully" —
+    /// and then works for minutes with the main thread free the whole time. Nothing is pending,
+    /// nothing is written here, no CPU is burnt: the session reads as finished. What does
+    /// arrive, when the agent stops, is a `<task-notification>` naming the call that spawned
+    /// it, so a spawn with no notification after it is an agent still out.
+    var unfinishedAgentIDs: [String] = []
     /// Name of the most recent tool that actually finished — the last completed step. Nil
     /// when nothing in the parsed tail ran to completion.
     var lastCompletedTool: String?

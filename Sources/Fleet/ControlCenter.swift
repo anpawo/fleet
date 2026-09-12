@@ -39,13 +39,11 @@ final class ControlCenterController {
         // Closing must not deallocate it: the controller keeps the reference and reopens it.
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
-        let hosting = NSHostingView(rootView: ControlCenterView(controller: controller))
-        // Without this the window is whatever height SwiftUI would like, and the root view says
-        // `maxHeight: .infinity` — so it asked for the whole screen and got it. Empty sizing
-        // options stop the hosting view pushing its size onto the window: the contentRect above
-        // is the size, and the view fills it, which is what puts the footer at the bottom.
-        hosting.sizingOptions = []
-        window.contentView = hosting
+        // The hosting view sizes the window to what SwiftUI asks for, which is why the root
+        // view states a width and no height: the height is whatever the sections come to, and
+        // the window is exactly that tall. Pinning it instead — at 620, as it was — is what
+        // made every paragraph in here end in an ellipsis.
+        window.contentView = NSHostingView(rootView: ControlCenterView(controller: controller))
         return window
     }
 
@@ -92,14 +90,16 @@ struct ControlCenterView: View {
                             }))
                 tileNumbers
             }
-            section("SESSION STATE") { hooks }
-            Spacer(minLength: 0)
+            section("SESSION STATE") {
+                legend
+                hooks
+            }
             footer
         }
         .padding(.horizontal, 26)
         .padding(.top, 18)
         .padding(.bottom, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(width: 420, alignment: .leading)
         .background(Self.background)
     }
 
@@ -120,7 +120,8 @@ struct ControlCenterView: View {
     private var fleetSummary: String {
         let sessions = controller.sessions
         guard !sessions.isEmpty else { return "No Claude Code sessions running" }
-        let parts = [SessionState.awaitingAnswer, .apiError, .ready, .running].compactMap {
+        let parts = [SessionState.awaitingAnswer, .apiError, .delegated, .ready, .running]
+            .compactMap {
             state -> String? in
             let n = sessions.filter { $0.state == state }.count
             return n > 0 ? "\(n) \(state.label.lowercased())" : nil
@@ -201,14 +202,46 @@ struct ControlCenterView: View {
             row("Tile numbers") {
                 Button("Edit…") { NSWorkspace.shared.open(URL(fileURLWithPath: Slots.path)) }
             }
-            Text("⌘1 to ⌘9 open the tile wearing that number while the panel is up. Pin a "
-                 + "project to a number and it keeps it, running or not; everything else "
-                 + "takes what is left.")
+            Text("⌘1 to ⌘9 open the tile wearing that number while the panel is up. A project "
+                 + "pinned to a number takes it back whenever it is running; while it is away "
+                 + "the number is free like any other.")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.4))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    /// What each border colour means. The panel is colour and almost nothing else — four
+    /// states and a fifth that is easy to mistake for green — so the key belongs somewhere you
+    /// can read it, and this window is the only page Fleet has.
+    private var legend: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(Self.meanings.enumerated()), id: \.offset) { _, entry in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(entry.state.label)
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.5)
+                        .foregroundStyle(entry.state.tint)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(entry.state.tint.opacity(0.15), in: Capsule())
+                        .frame(width: 96, alignment: .leading)
+                    Text(entry.meaning)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private static let meanings: [(state: SessionState, meaning: String)] = [
+        (.ready, "Finished its turn. Yours to type into."),
+        (.running, "A tool is in flight."),
+        (.delegated, "Sub-agents are working. The session itself is free."),
+        (.awaitingAnswer, "A question or a permission is on screen."),
+        (.apiError, "The request failed and Claude Code is retrying it."),
+    ]
 
     @ViewBuilder private var hooks: some View {
         if Hooks.isInstalled {

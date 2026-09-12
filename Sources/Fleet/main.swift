@@ -184,8 +184,8 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
-if CommandLine.arguments.contains("--test-slots") {
-    MainActor.assumeIsolated { exit(Slots.selfCheck() == 0 ? 0 : 1) }
+if CommandLine.arguments.contains("--selftest") {
+    MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
 }
 
 if CommandLine.arguments.contains("--scan") {

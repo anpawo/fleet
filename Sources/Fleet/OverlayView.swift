@@ -6,9 +6,13 @@ extension SessionState {
         case .running: return Color(red: 1.00, green: 0.35, blue: 0.32)
         case .ready: return Color(red: 0.24, green: 0.82, blue: 0.35)
         case .awaitingAnswer: return Color(red: 0.27, green: 0.62, blue: 1.00)
-        // The panel's one amber, shared with the sub-agent pill, and it means the same thing in
-        // both places: something is happening that is not yours to answer.
+        // Amber is the machine's own colour here and in the stall strip: something is going
+        // wrong that is not yours to answer.
         case .apiError: return Color(red: 1.00, green: 0.62, blue: 0.15)
+        // The panel's one purple, shared with the sub-agent pill: agents are out. On the border
+        // it says the session is nonetheless yours to type into — the work is happening on
+        // threads that are not the one you would be talking to.
+        case .delegated: return Color(red: 0.70, green: 0.48, blue: 1.00)
         }
     }
 
@@ -18,6 +22,7 @@ extension SessionState {
         case .ready: return "READY"
         case .awaitingAnswer: return "NEEDS YOU"
         case .apiError: return "API ERROR"
+        case .delegated: return "AGENTS OUT"
         }
     }
 }
@@ -250,6 +255,7 @@ struct OverlayView: View {
                 legend(.awaitingAnswer)
                 legend(.ready)
                 legend(.running)
+                legend(.delegated)
                 legend(.apiError)
             }
             .padding(.horizontal, 9)
@@ -295,7 +301,7 @@ struct OverlayView: View {
         tiles(controller.sessions).background(dismissLayer)
     }
 
-    /// Four dots, and no words.
+    /// Five dots, and no words.
     ///
     /// The words were there to teach the colours and they had stopped teaching anybody
     /// anything — the tiles carry them, spelled out, on every pill. What is left is the palette
@@ -467,10 +473,10 @@ struct SessionTile: View {
     let session: Session
     let onSelect: () -> Void
 
-    /// Sub-agent work gets its own colour rather than the state tint. The border already says
-    /// what the session is; this says the work is happening somewhere else, on someone else's
-    /// clock — and orange reads as "in flight" next to a red that means "this one is busy".
-    static let subagentTint = Color(red: 1.00, green: 0.62, blue: 0.15)
+    /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
+    /// the border wears when the agents are the only thing running: one colour, one meaning —
+    /// work happening on a thread that is not the one you would be talking to.
+    static let subagentTint = SessionState.delegated.tint
 
     @State private var hovering = false
 
