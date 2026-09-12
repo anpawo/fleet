@@ -39,7 +39,13 @@ final class ControlCenterController {
         // Closing must not deallocate it: the controller keeps the reference and reopens it.
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
-        window.contentView = NSHostingView(rootView: ControlCenterView(controller: controller))
+        let hosting = NSHostingView(rootView: ControlCenterView(controller: controller))
+        // Without this the window is whatever height SwiftUI would like, and the root view says
+        // `maxHeight: .infinity` — so it asked for the whole screen and got it. Empty sizing
+        // options stop the hosting view pushing its size onto the window: the contentRect above
+        // is the size, and the view fills it, which is what puts the footer at the bottom.
+        hosting.sizingOptions = []
+        window.contentView = hosting
         return window
     }
 

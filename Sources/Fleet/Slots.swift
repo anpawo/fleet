@@ -70,19 +70,22 @@ enum Slots {
         var text = """
         # Fleet — which project wears which tile number.
         #
-        # One "<number> <project>" per line, 1 to 9. The project is the name on the tile: the
-        # folder under ~/self, whatever sub-directory the session is working in.
+        # One "<number> <project>" per line, 1 to 9, like:
+        #
+        #     2 fleet
+        #
+        # The project is the name on the tile: the folder under ~/self, whatever
+        # sub-directory the session is working in.
         #
         # A number listed here is that project's and nobody else's — no other session borrows
         # it while the project is away — so ⌘3 opens the same thing every time. Sessions with
         # no line here take the numbers nothing has claimed, oldest first, as before.
         #
-        # Uncomment a line to pin it. Saved edits apply within a few seconds; no restart.
+        # Saved edits apply within a few seconds; no restart. Every project found under ~/self
+        # is listed below — uncomment one and give it a number.
 
         """
-        for (i, project) in projects.prefix(9).enumerated() {
-            text += "\n# \(i + 1) \(project)"
-        }
+        for project in projects { text += "\n# \(project)" }
 
         try? FileManager.default.createDirectory(atPath: Hooks.home,
                                                  withIntermediateDirectories: true)
