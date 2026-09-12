@@ -542,7 +542,7 @@ struct SessionTile: View {
             .foregroundStyle(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// The session's recent history, oldest at the top: what you asked, what it ran, what it
