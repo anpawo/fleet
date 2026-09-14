@@ -397,7 +397,7 @@ private struct ParseState {
                 // "[Image: source: <path>]", hook output, a skill's instructions. None of it is
                 // anything you said, and a cache path is all a tile row had room for.
                 if obj["isMeta"] as? Bool != true,
-                   let t = (block["text"] as? String)?.plainProse
+                   let t = (block["text"] as? String)?.plainProse.collapsedWhitespace
                        .replacingOccurrences(of: #"\[Image #(\d+)\]"#, with: "image$1",
                                              options: .regularExpression), !t.isEmpty {
                     // Capped: this state outlives a single read now, and a reply runs for pages.
@@ -567,6 +567,9 @@ private extension String {
         var out = replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "`", with: "")
             .replacingOccurrences(of: "__", with: "")
+            // A reply opening on a code fence leaves its newline in front once the backticks go,
+            // and a one-line row shows only that empty first line.
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         while let first = out.first, "#->*•".contains(first) {
             out.removeFirst()
             out = out.trimmingCharacters(in: .whitespaces)
