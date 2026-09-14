@@ -506,7 +506,10 @@ struct TodoCard: View {
                     .opacity(commandHeld ? 0 : 1)
                 if commandHeld { finish }
             }
-            .frame(height: 12, alignment: .trailing)
+            // A fixed width, not whatever the stack measures: "2d" is eleven points and the ✕
+            // is sixteen, so on a young todo ⌘ took five points off the text, and the row
+            // re-wrapped and moved its ellipsis. The widest age, "11mo", measures 22.3.
+            .frame(width: 23, height: 12, alignment: .trailing)
             .padding(.top, 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
