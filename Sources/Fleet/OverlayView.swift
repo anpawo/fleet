@@ -510,9 +510,11 @@ struct SessionTile: View {
                         subagent
                         step
                     }
-                    Spacer().frame(height: 12)
                 }
-                .padding(12)
+                .padding([.horizontal, .top], 12)
+                // Down against the border: the last line is as far from the edge as it is from
+                // the line above it — the 3 pt of spacing, clear of the 2.5 pt stroke.
+                .padding(.bottom, 2.5 + 3)
                 // Without this the stack is only as tall as its content, the flexible spacer
                 // above the history has nothing to expand into, and the slack ends up below
                 // the tile's content instead of above it — which is why the history sat high
