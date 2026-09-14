@@ -348,13 +348,6 @@ struct Session: Identifiable {
         return "New session"
     }
 
-    /// Path to show beneath the name, or nil when it only repeats the name — the usual case
-    /// for a project checked out at ~/self/<name>. The name alone already identifies those.
-    var subPath: String? {
-        let path = displayPath
-        return (path as NSString).lastPathComponent == dirName ? nil : path
-    }
-
     /// The step in flight right now, pinned under the history. Nil unless the session is
     /// working — the rail already shows everything that has finished.
     var currentStep: String? {

@@ -517,7 +517,6 @@ struct SessionTile: View {
 
                 HStack(alignment: .top, spacing: 7) {
                     number
-                    path
                     Spacer(minLength: 6)
                     subagentPill
                     statePill
@@ -617,18 +616,6 @@ struct SessionTile: View {
         }
     }
 
-    /// Top left, and only when it says something the name doesn't already — a project sitting
-    /// at ~/self/<name> gets nothing here.
-    @ViewBuilder private var path: some View {
-        if let path = session.subPath {
-            Text(path)
-                .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.3))
-                .lineLimit(1)
-                .truncationMode(.head)
-        }
-    }
-
     /// Pinned under the rail: the step still in flight, which by definition has no result yet
     /// and so never appears in the history above it.
     @ViewBuilder private var step: some View {
@@ -683,6 +670,9 @@ struct SessionTile: View {
         Text(session.state.label)
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
+            // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a
+            // header short of room did to it.
+            .fixedSize()
             .foregroundStyle(session.state.tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
