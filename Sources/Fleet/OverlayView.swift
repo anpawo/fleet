@@ -608,8 +608,7 @@ struct SessionTile: View {
     private func glyph(for kind: PreviewLine.Kind) -> String {
         switch kind {
         case .user: return ">"
-        // No mark, but the column kept, so a reply lines up with the question above it.
-        case .assistant: return " "
+        case .assistant: return "↳"
         case .tool: return "-"
         }
     }
@@ -656,8 +655,14 @@ struct SessionTile: View {
     @ViewBuilder private var subagent: some View {
         if let line = session.subagentLine {
             HStack(alignment: .top, spacing: 6) {
-                Text("↳")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                // A mark that breathes — star, dot, nothing, star — because this is the one line
+                // on the tile describing work still going on. A monospaced space keeps its width.
+                TimelineView(.periodic(from: .now, by: 0.4)) { context in
+                    let frames = ["*", "·", " "]
+                    let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.4)
+                    Text(frames[tick % frames.count])
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                }
                 Text(line)
                     .font(.system(size: 10.5, design: .monospaced))
                     .lineLimit(1)
