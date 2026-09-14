@@ -238,7 +238,7 @@ struct ControlCenterView: View {
     private static let meanings: [(state: SessionState, meaning: String)] = [
         (.ready, "Finished its turn. Yours to type into."),
         (.awaitingAnswer, "A question or a permission is on screen."),
-        (.delegated, "Sub-agents working, the session is free."),
+        (.delegated, "Agents or shells working, the session is free."),
         (.running, "A tool is in flight."),
         (.apiError, "The request failed. It is retrying."),
         (.paused, "Held until the machine has room again."),

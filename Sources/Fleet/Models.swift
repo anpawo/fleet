@@ -180,7 +180,7 @@ enum SessionState {
     case ready          // green — finished its turn, waiting for a new prompt
     case awaitingAnswer // blue  — blocked on a question or a permission approval
     case apiError       // amber — the request failed and Claude Code is retrying it
-    case delegated      // purple — sub-agents are working and the main thread is free
+    case delegated      // purple — sub-agents or background shells are working, the main thread is free
     case paused         // yellow — held by Fleet at a tool call until the machine has room
 
     /// How much a state wants you, most first. The tiles are laid out by number rather than by
@@ -263,6 +263,8 @@ struct TranscriptInfo {
     /// arrive, when the agent stops, is a `<task-notification>` naming the call that spawned
     /// it, so a spawn with no notification after it is an agent still out.
     var unfinishedAgentIDs: [String] = []
+    /// When each background shell still running was started — see `TranscriptStore`.
+    var backgroundShellsStartedAt: [Date] = []
     /// Name of the most recent tool that actually finished — the last completed step. Nil
     /// when nothing in the parsed tail ran to completion.
     var lastCompletedTool: String?

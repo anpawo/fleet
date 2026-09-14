@@ -25,7 +25,7 @@ extension SessionState {
         case .ready: return "READY"
         case .awaitingAnswer: return "NEEDS YOU"
         case .apiError: return "API ERROR"
-        case .delegated: return "AGENTS OUT"
+        case .delegated: return "BACKGROUND"
         case .paused: return "PAUSED"
         }
     }

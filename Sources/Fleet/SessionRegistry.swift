@@ -49,9 +49,12 @@ final class SessionRegistry {
             // moment it launched, the turn closed, and the hook said `ready` — all true of the
             // main thread, and all beside the point while three agents are still out. Only
             // over `ready`: a session that is working, or owes you an answer, is that first.
+            // A background shell likewise — a transcription, a long build — as long as it was
+            // started by this process: shells die with the session, so one from before a
+            // restart that never reported back is not running, whatever the transcript says.
             if state == .ready, info?.subagents.contains(where: {
                 now.timeIntervalSince($0.lastActivity) < Config.subagentStaleAfter
-            }) == true {
+            }) == true || info?.backgroundShellsStartedAt.contains(where: { $0 > proc.startedAt }) == true {
                 state = .delegated
             }
             if let path = bindings[proc.pid],

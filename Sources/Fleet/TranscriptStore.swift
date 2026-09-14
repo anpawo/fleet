@@ -294,6 +294,10 @@ private struct ParseState {
     /// be a quarter of an hour and several turns apart.
     var agentSpawnedAt: [String: Date] = [:]
     var agentEndedAt: [String: Date] = [:]
+    /// Shell commands running in the background, by the `tool_use` that started them. Their
+    /// call is answered at once too, and ended the same way: a `<task-notification>` naming it,
+    /// recorded in `agentEndedAt` like an agent's.
+    var shellSpawnedAt: [String: Date] = [:]
 
     mutating func ingest(_ obj: [String: Any]) {
         guard let type = obj["type"] as? String else { return }
@@ -415,6 +419,15 @@ private struct ParseState {
                    let done = pending.removeValue(forKey: id) {
                     lastCompleted = done.name
                 }
+                // `run_in_background`, or a command that outlived its timeout and was moved
+                // there: the result says so in its first words, either way.
+                if let id = block["tool_use_id"] as? String,
+                   Self.resultText(block["content"]).contains(where: {
+                       $0.hasPrefix("Command running in background with ID")
+                           || $0.contains("and was moved to the background")
+                   }) {
+                    shellSpawnedAt[id] = lastMessageAt ?? Date()
+                }
             default:
                 continue
             }
@@ -443,6 +456,9 @@ private struct ParseState {
             unfinishedAgentIDs: agentSpawnedAt
                 .filter { (agentEndedAt[$0.key] ?? .distantPast) < $0.value }
                 .map(\.key),
+            backgroundShellsStartedAt: shellSpawnedAt
+                .filter { (agentEndedAt[$0.key] ?? .distantPast) < $0.value }
+                .map(\.value),
             lastCompletedTool: lastCompleted,
             cwd: cwd,
             turnOpen: turnOpen,
@@ -450,6 +466,12 @@ private struct ParseState {
             lastMessageAt: lastMessageAt,
             preview: preview
         )
+    }
+
+    /// A tool result's text, whether Claude Code wrote it as a string or as text blocks.
+    static func resultText(_ content: Any?) -> [String] {
+        if let text = content as? String { return [text] }
+        return ((content as? [[String: Any]]) ?? []).compactMap { $0["text"] as? String }
     }
 
     /// What spawns a sub-agent. "Task" is what it was called before 2.1 and still answers to.
