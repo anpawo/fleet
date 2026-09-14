@@ -125,7 +125,7 @@ struct ControlCenterView: View {
     private var fleetSummary: String {
         let sessions = controller.sessions
         guard !sessions.isEmpty else { return "No Claude Code sessions running" }
-        let parts = [SessionState.awaitingAnswer, .apiError, .delegated, .ready, .running]
+        let parts = [SessionState.awaitingAnswer, .apiError, .delegated, .paused, .ready, .running]
             .compactMap {
             state -> String? in
             let n = sessions.filter { $0.state == state }.count
@@ -233,7 +233,7 @@ struct ControlCenterView: View {
         }
     }
 
-    /// Green, blue, purple, red, orange — his order. One line each: this column is 262 points
+    /// Green, blue, purple, red, orange, yellow — his order. One line each: this column is 262 points
     /// wide and a description that wraps turns the key into a paragraph.
     private static let meanings: [(state: SessionState, meaning: String)] = [
         (.ready, "Finished its turn. Yours to type into."),
@@ -241,6 +241,7 @@ struct ControlCenterView: View {
         (.delegated, "Sub-agents working, the session is free."),
         (.running, "A tool is in flight."),
         (.apiError, "The request failed. It is retrying."),
+        (.paused, "Held until the machine has room again."),
     ]
 
     @ViewBuilder private var hooks: some View {

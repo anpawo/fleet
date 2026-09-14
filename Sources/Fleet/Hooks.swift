@@ -152,6 +152,20 @@ enum Hooks {
 
     /// `pause` names, by session id, the sessions the hook holds at their next tool call until
     /// the machine recovers — see `AppController.sessionsToPause`.
+    /// Sessions the hook is holding right now, by session id. The hook leaves a `<id>.held`
+    /// stamp for the length of the hold; one only counts while the verdict still names that
+    /// session, because a hold cut short by Esc kills the hook before it can clear its stamp.
+    static func heldSessions() -> Set<String> {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: stateDirectory),
+              names.contains(where: { $0.hasSuffix(".held") }),
+              let machine = machineState(), machine["struggling"] as? Bool == true,
+              let pause = machine["pause"] as? String else { return [] }
+        let listed = Set(pause.split(separator: ",").map(String.init))
+        return Set(names.filter { $0.hasSuffix(".held") }
+            .map { ($0 as NSString).deletingPathExtension }
+            .filter { listed.contains($0) })
+    }
+
     static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog], pause: [String] = []) {
         // Each hog carries WHERE it works and HOW LONG it has run, so a session can tell
         // whether the load is its own. "java 2.7 GB" is unactionable in every session;
@@ -186,7 +200,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 7
+    static let version = 8
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -360,7 +374,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 7
+    # fleet-hook-version: 8
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -376,7 +390,7 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held"
         exit 0
     fi
 
@@ -395,6 +409,8 @@ enum Hooks {
         event=$(printf '%s' "$input" | sed -n \\
             's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
         reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
+        # Any other event means no hold is running, whatever a hold killed by Esc left behind.
+        [ "$event" = "PreToolUse" ] || rm -f "$dir/$sid.held"
         # When you last spoke to this session, which is what exempts it from a hold.
         [ "$event" = "UserPromptSubmit" ] && mkdir -p "$dir" && echo "$now" > "$dir/$sid.prompted"
 
@@ -437,6 +453,7 @@ enum Hooks {
             prompted=$(cat "$dir/$sid.prompted" 2>/dev/null || echo 0)
             [ "${prompted:-0}" -lt "${at:-0}" ] || return 0
             p="$payload"
+            mkdir -p "$dir" && echo "$now" > "$dir/$sid.held"
             while :; do
                 case "$p" in *'"struggling":true'*) ;; *) break ;; esac
                 case "$p" in *"$sid"*) ;; *) break ;; esac
@@ -446,6 +463,7 @@ enum Hooks {
                 sleep 5
                 p=$(cat "$machine" 2>/dev/null) || break
             done
+            rm -f "$dir/$sid.held"
             held=$(( $(date +%s) - now ))
             [ "$held" -ge 5 ] && printf '{"systemMessage":"Fleet: held %ss while the machine was struggling"}\\n' "$held"
             return 0

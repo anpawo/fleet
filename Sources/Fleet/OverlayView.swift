@@ -13,6 +13,9 @@ extension SessionState {
         // it says the session is nonetheless yours to type into — the work is happening on
         // threads that are not the one you would be talking to.
         case .delegated: return Color(red: 0.70, green: 0.48, blue: 1.00)
+        // Yellow, not the amber beside it: amber is a request failing, yellow is Fleet holding
+        // the session on purpose until memory frees up.
+        case .paused: return Color(red: 1.00, green: 0.88, blue: 0.20)
         }
     }
 
@@ -23,6 +26,7 @@ extension SessionState {
         case .awaitingAnswer: return "NEEDS YOU"
         case .apiError: return "API ERROR"
         case .delegated: return "AGENTS OUT"
+        case .paused: return "PAUSED"
         }
     }
 }
@@ -257,6 +261,7 @@ struct OverlayView: View {
                 legend(.delegated)
                 legend(.running)
                 legend(.apiError)
+                legend(.paused)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)

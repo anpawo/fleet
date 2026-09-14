@@ -181,6 +181,7 @@ enum SessionState {
     case awaitingAnswer // blue  — blocked on a question or a permission approval
     case apiError       // amber — the request failed and Claude Code is retrying it
     case delegated      // purple — sub-agents are working and the main thread is free
+    case paused         // yellow — held by Fleet at a tool call until the machine has room
 
     /// How much a state wants you, most first. The tiles are laid out by number rather than by
     /// this — a grid that rearranges itself as sessions finish their turns is a grid you cannot
@@ -199,7 +200,9 @@ enum SessionState {
         // session mid-turn this one can be typed into — the thread doing the work is not the
         // one you would be talking to.
         case .delegated: return 3
-        case .running: return 4
+        // Nothing to answer and it resumes by itself; stuck, but not on anything of yours.
+        case .paused: return 4
+        case .running: return 5
         }
     }
 }

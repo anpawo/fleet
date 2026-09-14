@@ -29,6 +29,7 @@ final class SessionRegistry {
         bind(procs)
         store.retain(paths: Set(bindings.values))
 
+        let held = Hooks.heldSessions()
         var sessions: [Session] = []
         for proc in procs {
             let cpu = cpuPercent(for: proc, now: now)
@@ -52,6 +53,10 @@ final class SessionRegistry {
                 now.timeIntervalSince($0.lastActivity) < Config.subagentStaleAfter
             }) == true {
                 state = .delegated
+            }
+            if let path = bindings[proc.pid],
+               held.contains(((path as NSString).lastPathComponent as NSString).deletingPathExtension) {
+                state = .paused
             }
             if state == .awaitingAnswer {
                 switch screens.verdict(proc, now: now) {
