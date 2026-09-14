@@ -503,9 +503,13 @@ struct SessionTile: View {
                     // low in the tile — anchored near the bottom edge rather than centred
                     // between it and the name.
                     Spacer(minLength: 8)
-                    rail
-                    subagent
-                    step
+                    // One stack at the rail's own spacing: in the outer one, which has none, the
+                    // sub-agent and step lines sat three points closer than the lines above them.
+                    VStack(alignment: .leading, spacing: 3) {
+                        rail
+                        subagent
+                        step
+                    }
                     Spacer().frame(height: 12)
                 }
                 .padding(12)
