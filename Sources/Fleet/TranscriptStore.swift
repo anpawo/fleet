@@ -286,6 +286,8 @@ private struct ParseState {
     /// ends, so the mtime of a session that has finished keeps moving while nothing is being
     /// said. Every "has it gone quiet" question here means this, not the file.
     var lastMessageAt: Date?
+    /// When you last sent this session a prompt. A task notification waking it up is not you.
+    var lastPromptAt: Date?
     /// Agent spawns and endings, by the `tool_use` id that started them. A spawn whose id has
     /// no later ending is an agent still working — see `TranscriptInfo.unfinishedAgentIDs`.
     /// Both outlive the entries they came from: an async agent's spawn and its notification can
@@ -366,6 +368,8 @@ private struct ParseState {
             // A user entry carrying real text is a prompt: the window between sending it and
             // Claude's first token.
             turnOpen = !Self.isInterruption(blocks)
+            let text = blocks.compactMap { $0["text"] as? String }.joined()
+            if !text.contains("<task-notification>") { lastPromptAt = lastMessageAt }
         } else if blocks.contains(where: { $0["type"] as? String == "tool_result" }) {
             // A tool result is also a "user" entry, and it ends nothing: the protocol requires
             // Claude to answer it, so the turn is still running. Missing this was why a session
@@ -430,6 +434,7 @@ private struct ParseState {
             path: path,
             title: title,
             lastPrompt: lastPrompt,
+            lastPromptAt: lastPromptAt,
             permissionMode: permissionMode,
             hasPendingTool: !pending.isEmpty,
             pendingToolNames: inFlight.map(\.name),

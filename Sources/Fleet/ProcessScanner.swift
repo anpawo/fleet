@@ -209,13 +209,25 @@ enum ProcessScanner {
     /// Full argv via `sysctl(KERN_PROCARGS2)`. Used to read `--resume <sessionId>`, which
     /// binds a resumed session to its transcript exactly.
     static func arguments(_ pid: pid_t) -> [String] {
+        let (argc, strings) = procArgs(pid)
+        return Array(strings.prefix(argc))
+    }
+
+    /// The environment a process was started with, as `KEY=value` lines. It follows argv in the
+    /// same buffer, up to the first empty string.
+    static func environment(_ pid: pid_t) -> [String] {
+        let (argc, strings) = procArgs(pid)
+        return Array(strings.dropFirst(argc).prefix { !$0.isEmpty })
+    }
+
+    private static func procArgs(_ pid: pid_t) -> (argc: Int, strings: [String]) {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
-        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return (0, []) }
 
         var buf = [CChar](repeating: 0, count: size)
         guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
-            return []
+            return (0, [])
         }
 
         // Layout: [argc: Int32][exec path\0][padding \0s][argv[0]\0][argv[1]\0]...
@@ -225,7 +237,7 @@ enum ProcessScanner {
                 dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src.prefix(4)))
             }
         }
-        guard argc > 0 else { return [] }
+        guard argc > 0 else { return (0, []) }
 
         var args: [String] = []
         var index = MemoryLayout<Int32>.size
@@ -235,7 +247,7 @@ enum ProcessScanner {
         while index < size, buf[index] == 0 { index += 1 }
 
         var current = [CChar]()
-        while index < size, args.count < Int(argc) {
+        while index < size {
             let c = buf[index]
             if c == 0 {
                 current.append(0)
@@ -246,7 +258,7 @@ enum ProcessScanner {
             }
             index += 1
         }
-        return args
+        return (Int(argc), args)
     }
 
     /// pid -> ppid for every process on the machine.

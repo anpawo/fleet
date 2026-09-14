@@ -214,12 +214,13 @@ final class Reaper: ObservableObject {
             return
         }
 
-        let ripe = candidates.filter { isIdle($0.pid) }
+        let ripe = candidates.filter { $0.kind == .ghost ? Reaper.ownerGone($0.pid) : isIdle($0.pid) }
         hogs = Reaper.topHogs(reapable: Set(ripe.map(\.pid)))
-        // Only the kernel's own verdict licenses killing anything. A machine that is merely
-        // late might be late for a reason that has nothing to do with memory — a build, a
-        // backup, a video export — and none of those are Fleet's to end.
-        if pressure.isTight { reap(ripe) }
+        // Only the kernel's own verdict licenses killing anything in use by someone. A machine
+        // that is merely late might be late for a reason that has nothing to do with memory — a
+        // build, a backup, a video export — and none of those are Fleet's to end. A ghost is the
+        // exception: whoever started it is gone, so there is no one left to be using it.
+        reap(pressure.isTight ? ripe : ripe.filter { $0.kind == .ghost })
     }
 
     // MARK: - Fluidity
@@ -400,6 +401,8 @@ final class Reaper: ObservableObject {
     /// when its shell dies, without the process itself changing. The reverse never happens —
     /// nothing gets its parent back — so an orphan verdict, once taken, holds.
     private nonisolated(unsafe) static var kinds: [pid_t: (started: UInt64, kind: Reapable.Kind?)] = [:]
+    /// For each `.ghost` candidate, the pid of the Claude Code session that started it.
+    private nonisolated(unsafe) static var owners: [pid_t: pid_t] = [:]
 
     private static func classify(_ pid: pid_t) -> Reapable.Kind? {
         guard let bsd = ProcessScanner.bsdInfo(pid) else { return nil }
@@ -415,6 +418,7 @@ final class Reaper: ObservableObject {
         if kinds.count > 2048 {
             let live = Set(ProcessScanner.allPIDs())
             kinds = kinds.filter { live.contains($0.key) }
+            owners = owners.filter { live.contains($0.key) }
         }
         return kind
     }
@@ -449,10 +453,29 @@ final class Reaper: ObservableObject {
         // A Claude Code session whose shell died — a terminal window closed on it, a crash —
         // gets reparented to launchd. A live session always has its shell in between, so this
         // is a session that is talking to nobody and can never be answered.
-        if ProcessScanner.isClaudeSession(pid), ppid == 1 {
-            return .orphanSession
+        if ProcessScanner.isClaudeSession(pid) {
+            return ppid == 1 ? .orphanSession : nil
+        }
+
+        // Everything a session runs from its tools carries the session's pid in its environment.
+        // Only a candidate here: whether that session is still there is the half that changes,
+        // and it is asked at reap time — see `ownerGone`.
+        if let owner = ProcessScanner.environment(pid).lazy
+            .compactMap({ $0.hasPrefix("CLAUDE_PID=") ? pid_t($0.dropFirst(11)) : nil }).first {
+            owners[pid] = owner
+            return .ghost
         }
         return nil
+    }
+
+    /// Whether the session that started this process has ended: its pid is free, or it now
+    /// belongs to something that started after this process did. Not "is it a Claude session":
+    /// a headless `claude -p` run by launchd is not one Fleet lists, and its children are not
+    /// ghosts while it runs.
+    nonisolated static func ownerGone(_ pid: pid_t) -> Bool {
+        guard let owner = owners[pid], let me = ProcessScanner.bsdInfo(pid) else { return false }
+        guard kill(owner, 0) == 0, let them = ProcessScanner.bsdInfo(owner) else { return true }
+        return them.pbi_start_tvsec > me.pbi_start_tvsec
     }
 
     /// The second gate: is anything actually using this? Runs off the main actor; may fork.
@@ -492,6 +515,9 @@ final class Reaper: ObservableObject {
         case .orphanSession:
             // Being orphaned is the whole test, and it was established in `classify`.
             return true
+
+        case .ghost:
+            return ownerGone(candidate.pid)
         }
     }
 
@@ -597,6 +623,9 @@ struct Reapable {
         case androidEmulator
         case dockerDesktop
         case orphanSession
+        /// Left running by a Claude Code session that has since ended — a background command,
+        /// a dev server, a headless browser nobody closed.
+        case ghost
     }
 
     var pid: pid_t
@@ -610,6 +639,7 @@ struct Reapable {
         case .androidEmulator: return "Android emulator"
         case .dockerDesktop: return "Docker"
         case .orphanSession: return "orphaned Claude session"
+        case .ghost: return ProcessScanner.displayName(pid)
         }
     }
 
@@ -619,6 +649,7 @@ struct Reapable {
         case .androidEmulator: return "idle; the AVD keeps its state"
         case .dockerDesktop: return "no containers running"
         case .orphanSession: return "its terminal is gone"
+        case .ghost: return "the session that started it is gone"
         }
     }
 

@@ -150,7 +150,9 @@ enum Hooks {
         try? data.write(to: URL(fileURLWithPath: machinePath), options: .atomic)
     }
 
-    static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog]) {
+    /// `pause` names, by session id, the sessions the hook holds at their next tool call until
+    /// the machine recovers — see `AppController.sessionsToPause`.
+    static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog], pause: [String] = []) {
         // Each hog carries WHERE it works and HOW LONG it has run, so a session can tell
         // whether the load is its own. "java 2.7 GB" is unactionable in every session;
         // "nuit 1 core, 60 h, ~/self/finance/crypto/simu" is actionable in exactly one.
@@ -168,6 +170,7 @@ enum Hooks {
             "struggling": struggling,
             "reason": reason,
             "hogs": names,
+            "pause": pause.joined(separator: ","),
             "at": Int(Date().timeIntervalSince1970),
         ]
         // A stop pressed a moment ago outlives the verdict that prompted it: the machine
@@ -183,7 +186,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 6
+    static let version = 7
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -290,7 +293,10 @@ enum Hooks {
                 "hooks": [[
                     "type": "command",
                     "command": "sh \"$HOME/.claude/fleet/session-state.sh\" \(argument)",
-                    "timeout": 5,
+                    // PreToolUse is where a paused session waits for the machine, so it gets
+                    // longer than the hold the script allows itself; a timeout would only let
+                    // the tool through early.
+                    "timeout": event == "PreToolUse" ? 900 : 5,
                 ]],
             ])
             hooks[event] = groups
@@ -354,7 +360,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 6
+    # fleet-hook-version: 7
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -370,14 +376,14 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted"
         exit 0
     fi
 
     # The one message that travels towards the session rather than away from it: when Fleet
     # has decided the machine has stopped keeping up, the agent is told so in its own context,
-    # at the next tool result or prompt. It is told, not stopped — a run that is halfway
-    # through something expensive is the agent's call, not this script's.
+    # at the next tool result or prompt — and a session Fleet names as one you are not driving
+    # is held at its next tool call until the machine recovers.
     #
     # Rate-limited per session, because PostToolUse fires on every single tool call and an
     # instruction repeated forty times in a row is an instruction that crowds out the work.
@@ -389,6 +395,8 @@ enum Hooks {
         event=$(printf '%s' "$input" | sed -n \\
             's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
         reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
+        # When you last spoke to this session, which is what exempts it from a hold.
+        [ "$event" = "UserPromptSubmit" ] && mkdir -p "$dir" && echo "$now" > "$dir/$sid.prompted"
 
         # The panel's stop button, read ahead of every other condition in this function. A stop
         # is something the user pressed, not a symptom of the machine: it has to outlive the
@@ -416,6 +424,33 @@ enum Hooks {
             fi
         fi
 
+        # The hold. The tool waits here while the machine struggles, then runs as if nothing
+        # happened: no turn lost, nothing to answer. It lets go when the machine recovers, when
+        # Fleet drops this session from the list, when the verdict stops being rewritten — Fleet
+        # refreshes it every tick while it stands, so a still one is a Fleet that died — or after
+        # fourteen minutes, inside the hook's timeout; the next tool call is held again if need
+        # be. A prompt you typed after the verdict exempts the session: that is the one you want.
+        if [ "$event" = "PreToolUse" ]; then
+            pause=$(printf '%s' "$payload" | sed -n 's/.*"pause":"\\([^"]*\\)".*/\\1/p' | head -1)
+            case ",${pause:-}," in *",$sid,"*) ;; *) return 0 ;; esac
+            at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+            prompted=$(cat "$dir/$sid.prompted" 2>/dev/null || echo 0)
+            [ "${prompted:-0}" -lt "${at:-0}" ] || return 0
+            p="$payload"
+            while :; do
+                case "$p" in *'"struggling":true'*) ;; *) break ;; esac
+                case "$p" in *"$sid"*) ;; *) break ;; esac
+                a=$(printf '%s' "$p" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+                t=$(date +%s)
+                [ $((t - ${a:-0})) -lt 60 ] && [ $((t - now)) -lt 840 ] || break
+                sleep 5
+                p=$(cat "$machine" 2>/dev/null) || break
+            done
+            held=$(( $(date +%s) - now ))
+            [ "$held" -ge 5 ] && printf '{"systemMessage":"Fleet: held %ss while the machine was struggling"}\\n' "$held"
+            return 0
+        fi
+
         # Everything below is the advisory nudge, which IS a report about the machine: it only
         # makes sense while the machine is still struggling, from a verdict recent enough to
         # have come from a Fleet that is still running, and on the two events whose stdout
@@ -435,15 +470,14 @@ enum Hooks {
         hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
         note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now, \\
     each with how long it has run and the directory it works in: ${hogs:-unknown}. \\
-    FIRST, check whether any of them is YOURS: a process whose directory is your working \\
-    directory, or below it, is your load — a container mounting your repo included. If one \\
-    is yours, you are the only session that can act on it: decide whether to stop it, and \\
-    say in one line what you stopped or why you kept it. A process that has run for hours \\
-    at full tilt is usually something a past session forgot to stop. If NONE of them is \\
-    yours, do not stop anything you do not own; just wind down until the machine recovers: \\
-    no new subagents, no new builds, servers or watchers, finish or checkpoint what is \\
-    already in flight, and read one file at a time rather than fanning out. If the heavy \\
-    thing is the task the user asked for, say so in one line and let them decide."
+    A process whose directory is your working directory, or below it, is YOUR load — a \\
+    container mounting your repo included — and you are the only session that can free it: \\
+    stop it now, unless it is the very task the user is waiting on, in which case keep it and \\
+    start nothing else heavy. One that has run for hours is a leftover: stop it. Do not ask \\
+    the user; act, and name what you stopped in one line. If none is yours, touch nothing you \\
+    do not own and wind down: no new subagents, builds, servers or watchers, checkpoint what \\
+    is in flight, read one file at a time. Sessions the user is not driving are held by \\
+    Fleet at their next tool call and resume by themselves once memory frees up."
         note=$(printf '%s' "$note" | tr -s ' \\n' ' ')
         printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' \\
             "$event" "$note"

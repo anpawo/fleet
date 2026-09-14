@@ -32,12 +32,6 @@ enum Config {
     /// How many late ticks in a row before saying so. One is a hiccup — a Spotlight index, a
     /// wake, a big app launching. Three is a machine that has stopped keeping up.
     static let stallStreak = 3
-    /// How long the panel waits before it is allowed to interrupt you about slowness again.
-    static let stallAlertCooldown: TimeInterval = 10 * 60
-    /// How long an alert panel ignores clicks. Only the click you were already making when it
-    /// appeared: after that a click is aimed at it, and a panel that will not go away is worse
-    /// than an alert lost.
-    static let alertClickGrace: TimeInterval = 1.5
 
     /// A tick later than this was not a stall: the machine was asleep, or the process was
     /// suspended. Nothing that takes this long is a scheduling delay.
@@ -248,6 +242,7 @@ struct TranscriptInfo {
     var path: String
     var title: String?        // Claude Code's own "ai-title"
     var lastPrompt: String?
+    var lastPromptAt: Date?
     var permissionMode: String?
     var hasPendingTool: Bool
     /// Tools in flight, most recently started first.

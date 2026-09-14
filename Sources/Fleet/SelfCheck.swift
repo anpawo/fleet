@@ -17,6 +17,7 @@ enum SelfCheck {
 
         numbering(expect)
         subagents(expect)
+        ghosts(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
@@ -122,5 +123,30 @@ enum SelfCheck {
                "a task-notification ends it")
         expect(done?.subagents.count ?? -1, 0,
                "and the tile stops counting it")
+    }
+
+    // MARK: - Ghosts
+
+    /// Two real processes, told apart only by the `CLAUDE_PID` they were started with: one names
+    /// a pid nothing holds, the other names this process, which is alive and started first.
+    private static func ghosts(_ expect: (Bool, Bool, String) -> Void) {
+        var dead: pid_t = 99_000
+        while kill(dead, 0) == 0 { dead += 1 }
+        func spawn(owner: pid_t) -> Process {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+            p.arguments = ["30"]
+            p.environment = ["CLAUDE_PID": String(owner)]
+            try? p.run()
+            return p
+        }
+        let orphan = spawn(owner: dead), child = spawn(owner: getpid())
+        defer { orphan.terminate(); child.terminate() }
+        usleep(200_000)
+
+        let found = Dictionary(uniqueKeysWithValues: Reaper.candidates().map { ($0.pid, $0.kind) })
+        expect(found[orphan.processIdentifier] == .ghost, true, "ghosts: a tool process is a candidate")
+        expect(Reaper.ownerGone(orphan.processIdentifier), true, "its session gone, it is a ghost")
+        expect(Reaper.ownerGone(child.processIdentifier), false, "its session alive, it is left alone")
     }
 }

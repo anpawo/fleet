@@ -360,7 +360,7 @@ après kill 68540 + install :            un seul Fleet, XPC_SERVICE_NAME=com.mr.
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
-        <span class="chip chip-where">AppController.fluidityChanged</span>
+        <span class="chip chip-where">AppController.fluidityChanged · hook PreToolUse · Reaper</span>
         <span class="chip chip-sha">4a4f5da</span>
       </div>
       <h3>L'alerte « machine à la peine » ignorait le clavier</h3>
@@ -379,14 +379,23 @@ après kill 68540 + install :            un seul Fleet, XPC_SERVICE_NAME=com.mr.
         </dd>
         <dt>Correctif</dt>
         <dd>
-          L'alerte attend le même seuil d'inactivité que le déclencheur normal, et elle est
-          retentée à chaque tick&nbsp;: elle s'affiche quand on s'arrête, au lieu d'être perdue.
+          D'abord (<code>4a4f5da</code>) l'alerte attendait le seuil d'inactivité. Puis elle a
+          disparu&nbsp;: une machine à la peine n'ouvre plus rien. Les sessions sont prévenues dans
+          leur contexte, sans qu'on leur demande d'avis&nbsp;; celles qu'on ne pilote pas — toutes
+          sauf la dernière à qui on a écrit, et sauf celle dont le dossier héberge un des gros
+          processus — sont retenues par le hook <code>PreToolUse</code> jusqu'au retour de la
+          mémoire, puis reprennent seules. Les processus laissés par une session terminée
+          (<code>CLAUDE_PID</code> qui ne répond plus) sont arrêtés.
         </dd>
         <dt>Mesure</dt>
         <dd>
-          Lecture du code et des bascules de <code>machine.json</code>. Pas reproduit en
-          direct&nbsp;: provoquer une surcharge pour voir surgir le panneau, c'est justement ce
-          qu'il fallait éviter.
+          <pre>hook sur un machine.json factice, HOME jetable :
+  session hors liste          →  0 s
+  session listée              →  retenue, relâchée au retour de la machine (10 s)
+  listée, promptée depuis     →  0 s
+  verdict figé depuis 120 s   →  0 s   (un Fleet mort ne retient personne)
+fleet --selftest             →  un sleep à CLAUDE_PID mort = fantôme, à CLAUDE_PID vivant = laissé
+scan de la machine           →  16 processus lancés par des sessions, 3 fantômes (tail | ugrep, 6 h)</pre>
         </dd>
       </dl>
     </article>

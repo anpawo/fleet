@@ -98,7 +98,7 @@ struct OverlayView: View {
         // alert you will lose without noticing, and the click that loses it is the one you were
         // already making when it appeared.
         .contentShape(Rectangle())
-        .onTapGesture { if !controller.alerting { controller.hidePanel() } }
+        .onTapGesture { controller.hidePanel() }
     }
 
     /// Flexible space of a given weight. Adjacent `Spacer`s in an HStack split the slack
@@ -113,7 +113,7 @@ struct OverlayView: View {
     private var dismissLayer: some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture { if !controller.alerting { controller.hidePanel() } }
+            .onTapGesture { controller.hidePanel() }
     }
 
     private func rows(of sessions: [Session]) -> [[Session]] {
@@ -164,7 +164,7 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
-                           onDismiss: { if !controller.alerting { controller.hidePanel() } })
+                           onDismiss: { controller.hidePanel() })
                     .frame(width: sideWidth)
                     // No podium here: the todos start on the fleet's own line. They are the
                     // other list you are answerable to, and a step below the sessions read as

@@ -23,19 +23,6 @@ final class AppController: ObservableObject {
         }
     }
     @Published private(set) var isPanelVisible = false
-    /// When this panel came up by itself, because the machine stopped keeping up.
-    private var alertedAt: Date?
-    /// Whether a click should be ignored right now.
-    ///
-    /// A panel you opened is dismissed by a click anywhere — that is its whole contract, you
-    /// get out of it without aiming. One that arrived on its own is not the same object: you
-    /// were typing when it appeared, and the stray click already on its way would take it away
-    /// along with the only thing on screen that said why. So it holds against that one click,
-    /// and only that one: a second later you are aiming at it, and a panel that swallows every
-    /// click looks broken.
-    var alerting: Bool {
-        Date().timeIntervalSince(alertedAt ?? .distantPast) < Config.alertClickGrace
-    }
     /// Whether ⌘ is down right now. The todo column grows a ✕ on every row while it is, so a
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
@@ -58,9 +45,6 @@ final class AppController: ObservableObject {
     /// two are is Fleet's own punctuality, which is the machine's — see `Reaper.tick`.
     private var lastTickAt = Date()
     private var lastTickInterval: TimeInterval = 0
-    /// When the machine last dropped a panel in front of you for being slow. An alert that can
-    /// fire every tick is an alert you learn to dismiss without reading.
-    private var lastStallAlert = Date.distantPast
     private var currentInterval: TimeInterval = 0
     private var suspended = false
 
@@ -93,9 +77,8 @@ final class AppController: ObservableObject {
         reaper.onReaped = { [weak self] summary in
             self?.notifier.announce(title: "Fleet freed some memory", body: summary)
         }
-        // The machine has stopped keeping up. Two things happen, in this order: every Claude
-        // Code session on the machine is told, and then the panel comes up in front of you
-        // with what is holding the memory and a ✕ on each line.
+        // The machine has stopped keeping up: the sessions hear about it, you do not — see
+        // `fluidityChanged`.
         reaper.onFluidity = { [weak self] struggling, reason in
             MainActor.assumeIsolated { self?.fluidityChanged(struggling, reason) }
         }
@@ -212,7 +195,7 @@ final class AppController: ObservableObject {
         lastTickAt = now
         lastTickInterval = currentInterval
         reaper.tick(lateness: lateness, allowed: currentInterval * Config.timerTolerance)
-        showStallAlertIfQuiet()
+        if reaper.struggling { publishMachineState() }
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
         statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
@@ -297,7 +280,6 @@ final class AppController: ObservableObject {
     func hidePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
-        alertedAt = nil
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
         // somebody who is not holding anything.
         commandHeld = false
@@ -309,33 +291,39 @@ final class AppController: ObservableObject {
 
     // MARK: - Not keeping up
 
-    /// What Fleet does when the machine stops being fluid.
-    ///
-    /// The agents are told first and unconditionally — that write is what reaches a session
-    /// running unattended in another Space, and it costs nothing. The panel is the part with
-    /// manners: it does not appear while you have muted Fleet, it does not appear twice in ten
-    /// minutes, and it does not appear if it is already up.
+    /// What Fleet does when the machine stops being fluid: nothing on screen. Every session is
+    /// told in its own context, the ones you are not driving are held at their next tool call
+    /// until it recovers, and the Reaper clears what dead sessions left running. The panel used
+    /// to come up as well, and it was the one reaction that cost you something — mid-sentence.
     private func fluidityChanged(_ struggling: Bool, _ reason: String) {
-        Hooks.writeMachineState(struggling: struggling, reason: reason, hogs: reaper.hogs)
         NSLog("Fleet: machine \(struggling ? "struggling — \(reason)" : "keeping up again")")
-        stallPending = struggling
-        showStallAlertIfQuiet()
+        publishMachineState()
     }
 
-    /// Set while the machine is struggling and the panel has not yet said so.
-    private var stallPending = false
+    /// Rewritten on every tick while the machine struggles, not only on the crossing: a hook
+    /// reads a verdict that has stopped moving as a Fleet that died, and who is held has to
+    /// follow the sessions as they come and go during a hold that can last minutes.
+    private func publishMachineState() {
+        Hooks.writeMachineState(struggling: reaper.struggling, reason: reaper.struggleReason,
+                                hogs: reaper.hogs, pause: reaper.struggling ? sessionsToPause() : [])
+    }
 
-    /// The stall alert waits for the same quiet as the idle trigger. It used to open the moment
-    /// the machine tipped over, and on a loaded afternoon that is every ten minutes, mid-sentence.
-    /// Tried again on every tick, so the alert lands once you stop rather than being dropped.
-    private func showStallAlertIfQuiet() {
-        guard stallPending, muteRemaining == nil, !isPanelVisible,
-              IdleWatcher.idleSeconds() >= Settings.idleThreshold,
-              Date().timeIntervalSince(lastStallAlert) > Config.stallAlertCooldown else { return }
-        stallPending = false
-        lastStallAlert = Date()
-        forceShow()
-        alertedAt = isPanelVisible ? Date() : nil
+    /// Every session but the one you last prompted — and never a session whose directory one of
+    /// the heavy processes runs in: that is the session able to free the memory, so it keeps its
+    /// hands. Home is no one's directory; every hog on the machine is under it.
+    private func sessionsToPause() -> [String] {
+        let home = NSHomeDirectory()
+        let lead = sessions.max {
+            ($0.transcript?.lastPromptAt ?? .distantPast) < ($1.transcript?.lastPromptAt ?? .distantPast)
+        }
+        return sessions.compactMap { session in
+            guard session.id != lead?.id, let path = session.transcript?.path else { return nil }
+            let cwd = session.cwd
+            let owns = cwd != home && reaper.hogs.contains {
+                $0.cwd == cwd || $0.cwd?.hasPrefix(cwd + "/") == true
+            }
+            return owns ? nil : ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        }
     }
 
     /// Return, while the panel is up: it belongs to the todo column's own field when the caret
@@ -377,7 +365,6 @@ final class AppController: ObservableObject {
     private func dismissForHandoff() {
         guard isPanelVisible else { return }
         isPanelVisible = false
-        alertedAt = nil
         overlay?.dismissForHandoff()
         schedule(Config.idlePollActive)
     }
