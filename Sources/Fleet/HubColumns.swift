@@ -143,6 +143,7 @@ struct TodoColumn: View {
                              // line tall.
                              expanded: commandHeld && hovered == todo.id && dragging == nil,
                              lifted: dragging?.id == todo.id,
+                             spotlit: hub.spotlightID == todo.id,
                              onFinish: { hub.markDone(todo) },
                              onHover: { inside in
                                  guard dragging == nil else { return }
@@ -375,6 +376,9 @@ struct TodoCard: View {
     /// Whether this is the row being dragged. Off the page a little, and lit — a card that has
     /// been picked up has to be told apart from the ones sliding around underneath it.
     var lifted = false
+    /// This opening's reminder — see `HubStore.spotlightID`. White, not a tint: every colour on
+    /// the panel already means a state or a deadline.
+    var spotlit = false
     /// The ✕: finished, not deleted. The row leaves the column either way, and only one of the
     /// two can be taken back from the phone.
     let onFinish: () -> Void
@@ -508,7 +512,8 @@ struct TodoCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, Self.verticalPadding)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .background(spotlit ? Color(red: 0.15, green: 0.15, blue: 0.18)
+                            : Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -518,7 +523,7 @@ struct TodoCard: View {
                 //
                 // One row *being dragged* is the exception: that one is answering your hand,
                 // and it is the only thing on the panel that is.
-                .strokeBorder(.white.opacity(lifted ? 0.34 : 0.07), lineWidth: 1)
+                .strokeBorder(.white.opacity(lifted ? 0.34 : spotlit ? 0.4 : 0.07), lineWidth: 1)
         )
         .shadow(color: .black.opacity(lifted ? 0.55 : 0), radius: lifted ? 12 : 0, y: 4)
         .contentShape(Rectangle())

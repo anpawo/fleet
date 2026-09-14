@@ -258,6 +258,25 @@ final class HubStore: ObservableObject {
 
     var isConfigured: Bool { Firestore.isConfigured }
 
+    // MARK: - Spotlight
+
+    /// The one todo lit up this time the panel opened. The next row down on every opening, so
+    /// a line nobody reads comes round as surely as the ones at the top.
+    @Published private(set) var spotlightID: String?
+    private static let spotlightKey = "spotlightIndex"
+
+    /// A position rather than an id, and kept across launches: finishing the lit todo would
+    /// otherwise lose the place and send the rotation back to the first row, and so would a
+    /// restart. Rows added or finished shift it by one, which a rotation does not notice.
+    func advanceSpotlight() {
+        guard !todos.isEmpty else { spotlightID = nil; return }
+        let defaults = UserDefaults.standard
+        let next = defaults.object(forKey: Self.spotlightKey) == nil
+            ? 0 : (defaults.integer(forKey: Self.spotlightKey) + 1) % todos.count
+        defaults.set(next, forKey: Self.spotlightKey)
+        spotlightID = todos[next].id
+    }
+
     // MARK: - Writing
 
     /// The + on the TODO heading.
@@ -539,6 +558,8 @@ final class HubStore: ObservableObject {
             showingSeen = fresh.isEmpty && !mail.isEmpty
             let all = todoPage.map(Todo.init)
             todos = all.filter(\.open).sorted(by: Self.before)
+            // The first opening after a launch has nothing to light until this lands.
+            if spotlightID == nil { advanceSpotlight() }
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
