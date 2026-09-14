@@ -616,7 +616,7 @@ struct SessionTile: View {
     private func tint(for kind: PreviewLine.Kind) -> Color {
         switch kind {
         case .user: return Color(red: 0.42, green: 0.70, blue: 1.00)
-        case .assistant: return .white.opacity(0.5)
+        case .assistant: return SessionState.ready.tint
         case .tool: return .white.opacity(0.3)
         }
     }
