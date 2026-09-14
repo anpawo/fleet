@@ -594,9 +594,21 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // so we never end up with two agents scanning in parallel.
 if let bundleID = Bundle.main.bundleIdentifier {
     let mine = ProcessInfo.processInfo.processIdentifier
-    let resident = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-        .contains { $0.processIdentifier != mine }
-    if resident {
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .map(\.processIdentifier).filter { $0 != mine }
+    // Unless this *is* launchd's copy. A `fleet` or an `open` landing in the second an install
+    // has the agent down starts a copy launchd does not own, and from then on the agent found
+    // it at every KeepAlive respawn, handed it a show request and exited — the panel toggling
+    // every ten seconds, mid-sentence, on a binary no install could replace (14/09, 44 runs).
+    // launchd's copy is the resident, so the other one goes.
+    if !others.isEmpty, ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == bundleID {
+        others.forEach { kill($0, SIGTERM) }
+        let deadline = Date().addingTimeInterval(3)
+        while others.contains(where: { kill($0, 0) == 0 }), Date() < deadline {
+            usleep(50_000)
+        }
+        others.forEach { kill($0, SIGKILL) }
+    } else if !others.isEmpty {
         ShowRequest.post()
         // Distributed delivery needs a turn of the run loop before we can safely exit.
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))

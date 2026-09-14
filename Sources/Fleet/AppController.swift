@@ -212,6 +212,7 @@ final class AppController: ObservableObject {
         lastTickAt = now
         lastTickInterval = currentInterval
         reaper.tick(lateness: lateness, allowed: currentInterval * Config.timerTolerance)
+        showStallAlertIfQuiet()
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
         statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
@@ -317,10 +318,21 @@ final class AppController: ObservableObject {
     private func fluidityChanged(_ struggling: Bool, _ reason: String) {
         Hooks.writeMachineState(struggling: struggling, reason: reason, hogs: reaper.hogs)
         NSLog("Fleet: machine \(struggling ? "struggling — \(reason)" : "keeping up again")")
-        guard struggling else { return }
+        stallPending = struggling
+        showStallAlertIfQuiet()
+    }
 
-        guard muteRemaining == nil, !isPanelVisible,
+    /// Set while the machine is struggling and the panel has not yet said so.
+    private var stallPending = false
+
+    /// The stall alert waits for the same quiet as the idle trigger. It used to open the moment
+    /// the machine tipped over, and on a loaded afternoon that is every ten minutes, mid-sentence.
+    /// Tried again on every tick, so the alert lands once you stop rather than being dropped.
+    private func showStallAlertIfQuiet() {
+        guard stallPending, muteRemaining == nil, !isPanelVisible,
+              IdleWatcher.idleSeconds() >= Settings.idleThreshold,
               Date().timeIntervalSince(lastStallAlert) > Config.stallAlertCooldown else { return }
+        stallPending = false
         lastStallAlert = Date()
         forceShow()
         alertedAt = isPanelVisible ? Date() : nil
