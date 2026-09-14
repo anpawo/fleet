@@ -572,9 +572,15 @@ struct SessionTile: View {
             // What was said, not what was run: the grey tool lines crowded out the sentences.
             // One exception — the call a session is blocked on, which is why it needs you.
             let steps = session.steps
-            let lines = steps.enumerated().filter { index, line in
+            let said = steps.enumerated().filter { index, line in
                 line.kind != .tool || (session.state == .awaitingAnswer && index == steps.count - 1)
-            }.map(\.element).suffix(room)
+            }.map(\.element)
+            // From your last message on, not the tail of the whole conversation: the line above
+            // the question was the answer to the one before it. The question stays put when the
+            // replies to it run past the room; they give up their oldest line instead.
+            let lines: [PreviewLine] = said.lastIndex(where: { $0.kind == .user }).map { ask in
+                [said[ask]] + said[(ask + 1)...].suffix(room - 1)
+            } ?? Array(said.suffix(room))
             if lines.isEmpty {
                 Text("No conversation yet")
                     .font(.system(size: 10.5, design: .monospaced))
@@ -602,7 +608,8 @@ struct SessionTile: View {
     private func glyph(for kind: PreviewLine.Kind) -> String {
         switch kind {
         case .user: return ">"
-        case .assistant: return "*"
+        // No mark, but the column kept, so a reply lines up with the question above it.
+        case .assistant: return " "
         case .tool: return "-"
         }
     }
