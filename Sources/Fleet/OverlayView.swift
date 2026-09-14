@@ -153,7 +153,7 @@ struct OverlayView: View {
                 // than a height — under pressure the hogs need more rows, and an alert that
                 // shoves the column down is an alert doing its job.
                 VStack(alignment: .leading, spacing: 0) {
-                    MemoryStrip(reaper: controller.reaper)
+                    MemoryStrip(reaper: controller.reaper, commandHeld: controller.commandHeld)
                         // Air under it in the state where it outgrows the step and pushes the
                         // mail down itself, rather than landing on the MAIL heading.
                         .padding(.bottom, 34)
@@ -716,6 +716,10 @@ struct AnyInsettableShape: InsettableShape {
 /// were going to look at the panel anyway.
 struct MemoryStrip: View {
     @ObservedObject var reaper: Reaper
+    /// The processes holding the memory are listed only while ⌘ is down, like the todo column's
+    /// controls: each carries a ✕, and a list of kill buttons is not something to leave lying
+    /// on a panel you glance at.
+    let commandHeld: Bool
 
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
@@ -772,10 +776,20 @@ struct MemoryStrip: View {
                     // the only thing to do about it.
                     VStack(alignment: .leading, spacing: 4) {
                         ramReading
-                        ForEach(reaper.hogs) { hog in
-                            HogPill(hog: hog, tint: amber)
+                        if commandHeld {
+                            // One after the other, each easing down out of the bar, so the eye
+                            // follows the list as it forms rather than finding it there. Gone at
+                            // once when ⌘ comes up: there is nothing to watch on the way out.
+                            ForEach(Array(reaper.hogs.enumerated()), id: \.element.id) { index, hog in
+                                HogPill(hog: hog, tint: amber)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .offset(y: -8))
+                                            .animation(.easeOut(duration: 0.4).delay(Double(index) * 0.09)),
+                                        removal: .opacity.animation(.easeIn(duration: 0.12))))
+                            }
                         }
                     }
+                    .animation(.easeOut(duration: 0.4), value: commandHeld)
                 } else {
                     let ram = reaper.footprint
                     ramReading
