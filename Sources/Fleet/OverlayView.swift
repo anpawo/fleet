@@ -771,14 +771,14 @@ struct MemoryStrip: View {
                     // Under pressure the pills are the processes holding the memory, which is
                     // the only thing to do about it.
                     VStack(alignment: .leading, spacing: 4) {
+                        ramReading
                         ForEach(reaper.hogs) { hog in
                             HogPill(hog: hog, tint: amber)
                         }
                     }
                 } else {
                     let ram = reaper.footprint
-                    Reading("RAM", percent(share(ram.used)), trailing: gigabytes(ram.total),
-                            accent: Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                    ramReading
                     // Not "when there is any". Swap used never comes back down — a page that
                     // has been written to disk stays counted until the machine reboots — so
                     // "> 0" meant "from the first time it ever paged until you restart", which
@@ -795,6 +795,16 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
         }
+    }
+
+    /// Red whenever the sessions have been told to wind down and the ones you are not driving
+    /// are held, whatever the share says: the bar is where you look to know that is happening,
+    /// and a blue 75% beside a machine Fleet has put on pause says the opposite.
+    private var ramReading: some View {
+        let ram = reaper.footprint
+        return Reading("RAM", percent(share(ram.used)), trailing: gigabytes(ram.total),
+                       accent: reaper.struggling ? SessionState.running.tint
+                                                 : Self.scale(share(ram.used), 0.60, 0.75, 0.88))
     }
 
     private func share(_ bytes: UInt64) -> Double {
