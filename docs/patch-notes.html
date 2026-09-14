@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>10</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>12</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">a218c46</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">4a4f5da</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,78 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">main.swift · garde d'instance unique</span>
+        <span class="chip chip-sha">4a4f5da</span>
+      </div>
+      <h3>Le panneau qui s'ouvre et se ferme toutes les dix secondes</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le panneau apparaît en pleine frappe, sans rapport avec le délai d'inactivité. Et les
+          installations du jour ne changent rien&nbsp;: la tuile ne montre pas ce qui vient
+          d'être livré.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Un Fleet lancé hors launchd (<code>open</code> ou <code>fleet</code> tombé pendant
+          qu'une installation avait arrêté l'agent) était devenu le résident à 12:10. La copie
+          de launchd le trouvait à chaque relance <code>KeepAlive</code>, lui envoyait une
+          demande d'affichage — c'est ce que fait la garde pour un <code>fleet</code> tapé à la
+          main — et sortait en 0. Chaque relance basculait le panneau. <code>install.sh</code>
+          tue le job launchd, pas ce processus-là&nbsp;: il tournait l'ancien binaire.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La copie lancée par launchd (<code>XPC_SERVICE_NAME = com.mr.fleet</code>) est le
+          résident&nbsp;: elle termine l'autre et prend la place. Tout autre lancement passe
+          toujours sa demande d'affichage et sort.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>launchctl print gui/501/com.mr.fleet   runs = 40 → 44 en 25 s, last exit code = 0
+ps  68540  ppid 1  démarré 12:10:51    (pas de XPC_SERVICE_NAME)
+après kill 68540 + install :            un seul Fleet, XPC_SERVICE_NAME=com.mr.fleet, runs figé à 48</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">AppController.fluidityChanged</span>
+        <span class="chip chip-sha">4a4f5da</span>
+      </div>
+      <h3>L'alerte « machine à la peine » ignorait le clavier</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Sur un après-midi chargé (whisper, un script Python de 1&nbsp;Go), le panneau surgit
+          pendant qu'on tape, jusqu'à une fois toutes les dix minutes.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          L'alerte appelait <code>forceShow()</code> à l'instant où la machine basculait, sans
+          regarder <code>IdleWatcher</code>. Seul frein&nbsp;: le délai de dix minutes entre deux
+          alertes. <code>machine.json</code> a basculé à 13:20 et à 15:31 pendant des sessions
+          actives.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'alerte attend le même seuil d'inactivité que le déclencheur normal, et elle est
+          retentée à chaque tick&nbsp;: elle s'affiche quand on s'arrête, au lieu d'être perdue.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          Lecture du code et des bascules de <code>machine.json</code>. Pas reproduit en
+          direct&nbsp;: provoquer une surcharge pour voir surgir le panneau, c'est justement ce
+          qu'il fallait éviter.
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
