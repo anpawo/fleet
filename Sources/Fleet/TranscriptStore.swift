@@ -393,7 +393,13 @@ private struct ParseState {
                    let call = Self.tagged("tool-use-id", in: raw) {
                     agentEndedAt[call] = lastMessageAt ?? Date()
                 }
-                if let t = (block["text"] as? String)?.plainProse, !t.isEmpty {
+                // Not the entries Claude Code writes on your behalf — a pasted image's
+                // "[Image: source: <path>]", hook output, a skill's instructions. None of it is
+                // anything you said, and a cache path is all a tile row had room for.
+                if obj["isMeta"] as? Bool != true,
+                   let t = (block["text"] as? String)?.plainProse
+                       .replacingOccurrences(of: #"\[Image #(\d+)\]"#, with: "image$1",
+                                             options: .regularExpression), !t.isEmpty {
                     // Capped: this state outlives a single read now, and a reply runs for pages.
                     preview.append(PreviewLine(kind: type == "user" ? .user : .assistant,
                                                text: String(t.prefix(200))))
