@@ -564,7 +564,12 @@ struct SessionTile: View {
             // bottom edge. What a sub-agent is doing now beats one more finished step.
             let room = session.subagentLine == nil ? Config.railLineCount
                                                    : Config.railLineCount - 1
-            let lines = session.steps.suffix(room)
+            // What was said, not what was run: the grey tool lines crowded out the sentences.
+            // One exception — the call a session is blocked on, which is why it needs you.
+            let steps = session.steps
+            let lines = steps.enumerated().filter { index, line in
+                line.kind != .tool || (session.state == .awaitingAnswer && index == steps.count - 1)
+            }.map(\.element).suffix(room)
             if lines.isEmpty {
                 Text("No conversation yet")
                     .font(.system(size: 10.5, design: .monospaced))
