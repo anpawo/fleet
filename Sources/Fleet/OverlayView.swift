@@ -521,7 +521,6 @@ struct SessionTile: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 HStack(alignment: .top, spacing: 7) {
-                    number
                     Spacer(minLength: 6)
                     subagentPill
                     statePill
@@ -621,17 +620,6 @@ struct SessionTile: View {
         }
     }
 
-    /// The session's number, top left. Two sessions in the same directory are told apart by
-    /// their tiles' contents and nothing else; this is the one thing on a tile that is short
-    /// enough to say out loud and belongs to that session alone.
-    @ViewBuilder private var number: some View {
-        if session.number > 0 {
-            Text("\(session.number)")
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.38))
-        }
-    }
-
     /// Pinned under the rail: the step still in flight, which by definition has no result yet
     /// and so never appears in the history above it.
     @ViewBuilder private var step: some View {
@@ -655,14 +643,8 @@ struct SessionTile: View {
     @ViewBuilder private var subagent: some View {
         if let line = session.subagentLine {
             HStack(alignment: .top, spacing: 6) {
-                // A mark that breathes — star, dot, nothing, star — because this is the one line
-                // on the tile describing work still going on. A monospaced space keeps its width.
-                TimelineView(.periodic(from: .now, by: 0.4)) { context in
-                    let frames = ["*", "·", " "]
-                    let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.4)
-                    Text(frames[tick % frames.count])
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                }
+                Text("*")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                 Text(line)
                     .font(.system(size: 10.5, design: .monospaced))
                     .lineLimit(1)
@@ -678,7 +660,7 @@ struct SessionTile: View {
     @ViewBuilder private var subagentPill: some View {
         let running = session.subagents.count
         if running > 0 {
-            Text(running == 1 ? "SUB-AGENT" : "SUB-AGENTS ×\(running)")
+            Text("SUB-AGENTS: \(running)")
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)
                 .foregroundStyle(Self.subagentTint)

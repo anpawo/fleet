@@ -125,6 +125,12 @@ final class AppController: ObservableObject {
         HotKey.register(Settings.muteChord, id: 2) { [weak self] in
             MainActor.assumeIsolated { self?.toggleMute() }
         }
+        HotKey.register(Settings.newDesktopChord, id: 3) {
+            MainActor.assumeIsolated { _ = Spaces.addDesktop(switchingTo: true) }
+        }
+        HotKey.register(Settings.closeDesktopChord, id: 4) {
+            MainActor.assumeIsolated { _ = Spaces.removeDesktop() }
+        }
     }
 
     // MARK: - Mute
@@ -342,17 +348,6 @@ final class AppController: ObservableObject {
         if hub.stopEditing() { return }
         if hub.stopComposing() { return }
         hidePanel()
-    }
-
-    /// ⌘ and a digit, while the panel is up: the same thing as clicking the tile wearing that
-    /// number. Returns whether anything wore it, so an unclaimed number falls through to
-    /// whatever else wants the key rather than being swallowed.
-    func activate(number: Int) -> Bool {
-        guard isPanelVisible, let session = sessions.first(where: { $0.number == number }) else {
-            return false
-        }
-        activate(session)
-        return true
     }
 
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately

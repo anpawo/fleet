@@ -12,8 +12,6 @@ final class SessionRegistry {
     /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
     private var lastWideScan = Date.distantPast
     private let screens = TerminalWatch()
-    /// pid -> the number its tile wears. See `assignNumbers`.
-    private var numbers: [pid_t: Int] = [:]
 
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
@@ -76,63 +74,10 @@ final class SessionRegistry {
             ))
         }
 
-        assignNumbers(&sessions, pins: Slots.pins)
-
-        // By number, so tile three is always tile three. Sorting by state used to put the
-        // sessions you could pick up first, and it meant the grid rearranged itself under you
-        // every time one of them finished a turn — you would go to click a tile and it would
-        // have moved. A number is worth nothing if the thing wearing it wanders.
-        return sessions.sorted { $0.number < $1.number }
-    }
-
-    /// Pinned projects first, then the lowest number nobody is using.
-    ///
-    /// Lowest free rather than ever-increasing, because the number is meant to be said out loud
-    /// and pointed at — six sessions should be one to six, not thirty-one to thirty-six because
-    /// of everything that ran this morning. A number is a session's for as long as it lives and
-    /// goes back in the pot the moment it exits.
-    ///
-    /// Handed out oldest first, so on a cold start the numbers follow the order the sessions
-    /// were actually started in rather than whatever order the process table came back in —
-    /// and so that two sessions in one pinned project have a settled answer to which of them
-    /// gets the pin.
-    ///
-    /// Recomputed from scratch every pass rather than only for new pids: that is what lets an
-    /// edit to `slots.txt` move a running session's tile without restarting anything.
-    func assignNumbers(_ sessions: inout [Session], pins: [String: Int]) {
-        // A pin is a claim, not a reservation: the project takes its number back the moment it
-        // starts, and while it is away the number is free like any other. Pins are handed out
-        // before the free-for-all below, so the squatter is the one that moves.
-        let order = sessions.indices.sorted {
-            sessions[$0].proc.startedAt < sessions[$1].proc.startedAt
-        }
-
-        var taken = Set<Int>()
-        var assigned: [pid_t: Int] = [:]
-        func give(_ number: Int, to index: Int) {
-            assigned[sessions[index].proc.pid] = number
-            taken.insert(number)
-        }
-
-        for i in order {
-            guard let pin = pins[sessions[i].dirName], !taken.contains(pin) else { continue }
-            give(pin, to: i)
-        }
-        // Then everyone who can keep what they wore last pass. Ahead of the free-for-all on
-        // purpose: a session that has lost its number to a pin must not take a number off a
-        // tile that was sitting still, or one pinned project starting renumbers the whole grid.
-        for i in order where assigned[sessions[i].proc.pid] == nil {
-            guard let last = numbers[sessions[i].proc.pid], !taken.contains(last) else { continue }
-            give(last, to: i)
-        }
-        for i in order where assigned[sessions[i].proc.pid] == nil {
-            var free = 1
-            while taken.contains(free) { free += 1 }
-            give(free, to: i)
-        }
-
-        numbers = assigned
-        for i in sessions.indices { sessions[i].number = assigned[sessions[i].proc.pid] ?? 0 }
+        // The one you have left alone longest first, top left, and so on across the grid: the
+        // panel is for picking a session back up, so the most neglected is the nearest to hand.
+        // A tile moves only when you prompt it, which is the one moment you know where it is.
+        return sessions.sorted { $0.lastTouched < $1.lastTouched }
     }
 
     // MARK: - Process to transcript binding

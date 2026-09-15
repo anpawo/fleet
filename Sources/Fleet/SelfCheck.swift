@@ -1,8 +1,8 @@
 import Foundation
 
-/// `fleet --selftest`. The two pieces of this app whose rules only ever meet at runtime: which
-/// number a tile wears, and whether a sub-agent is still working. Both are read from files
-/// written by something else, so both are checked against files rather than mocks.
+/// `fleet --selftest`. The pieces of this app whose rules only ever meet at runtime — whether a
+/// sub-agent is still working, which sessions are ghosts — read from files written by something
+/// else, so checked against files rather than mocks.
 @MainActor
 enum SelfCheck {
 
@@ -15,53 +15,11 @@ enum SelfCheck {
             }
         }
 
-        numbering(expect)
         subagents(expect)
         ghosts(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
-    }
-
-    // MARK: - Tile numbers
-
-    private static func numbering(_ expect: ([String: Int], [String: Int], String) -> Void) {
-        func numbers(_ registry: SessionRegistry,
-                     _ names: [String], pins: [String: Int]) -> [String: Int] {
-            var sessions = DemoFleet.sessions(names.count)
-            for (i, name) in names.enumerated() {
-                let dir = NSHomeDirectory() + "/self/" + name
-                sessions[i].proc.cwd = dir
-                sessions[i].transcript?.cwd = dir
-                sessions[i].proc.startedAt = Date(timeIntervalSince1970: Double(1000 + i))
-            }
-            registry.assignNumbers(&sessions, pins: pins)
-            return Dictionary(uniqueKeysWithValues: sessions.map { ($0.dirName, $0.number) })
-        }
-
-        // One registry per story, because what a pass does depends on what the last one left.
-        let cold = SessionRegistry()
-        expect(numbers(cold, ["a", "b", "c"], pins: [:]), ["a": 1, "b": 2, "c": 3],
-               "no pins: oldest first, one to three")
-        expect(numbers(cold, ["a", "b", "c"], pins: ["b": 1]), ["b": 1, "a": 2, "c": 3],
-               "a pin outranks start order")
-        expect(numbers(cold, ["a", "b", "c"], pins: [:]), ["b": 1, "a": 2, "c": 3],
-               "dropping the pin does not reshuffle the tiles already up")
-
-        let away = SessionRegistry()
-        expect(numbers(away, ["a", "b"], pins: ["gone": 1]), ["a": 1, "b": 2],
-               "a pinned project that is away leaves its number open")
-        expect(numbers(away, ["a", "b", "gone"], pins: ["gone": 1]),
-               ["gone": 1, "b": 2, "a": 3],
-               "and takes it back when it starts — only the squatter moves")
-
-        expect(Slots.parse("""
-        # 9 commented
-        2 my-hub
-        3\tfleet     # trailing comment
-        12 too-high
-        rubbish
-        """), ["my-hub": 2, "fleet": 3], "slots: comments, tabs and junk lines")
     }
 
     // MARK: - Sub-agents

@@ -155,7 +155,7 @@ if CommandLine.arguments.contains("--bench") {
         time("Reaper.topHogs") { _ = Reaper.topHogs(reapable: []) }
         time("MemoryPressure.footprint") { _ = MemoryPressure.footprint() }
         for session in sessions {
-            time("AX read #\(session.number) \(session.dirName)") {
+            time("AX read \(session.dirName)") {
                 _ = TerminalFocus.visibleText(pid: session.proc.pid, tty: session.proc.tty,
                                               cwd: session.proc.cwd)
             }
@@ -224,7 +224,7 @@ if CommandLine.arguments.contains("--scan") {
         for s in sessions {
             let file = s.transcript.map { ($0.path as NSString).lastPathComponent } ?? "—"
             print("  [\(s.state.label.padding(toLength: 9, withPad: " ", startingAt: 0))] "
-                  + "#\(s.number)  \(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
+                  + "\(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
                   + String(format: "cpu=%.1f%%", s.cpuPercent))
             print("      path:  \(s.displayPath)")
             print("      topic: \(s.topic)")

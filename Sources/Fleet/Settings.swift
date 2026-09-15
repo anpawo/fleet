@@ -25,6 +25,7 @@ enum Settings {
         private static let keyNames: [UInt16: String] = [
             UInt16(kVK_ANSI_L): "L", UInt16(kVK_ANSI_F): "F", UInt16(kVK_ANSI_M): "M",
             UInt16(kVK_Space): "Space", UInt16(kVK_Escape): "⎋",
+            UInt16(kVK_ANSI_N): "N", UInt16(kVK_ANSI_K): "K",
         ]
     }
 
@@ -46,6 +47,16 @@ enum Settings {
         Chord(keyCode: UInt16(kVK_ANSI_M), modifiers: UInt32(controlKey | optionKey)),
     ]
 
+    static let newDesktopChoices = [
+        Chord(keyCode: UInt16(kVK_ANSI_N), modifiers: UInt32(cmdKey | optionKey)),
+        Chord(keyCode: UInt16(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey | cmdKey)),
+    ]
+
+    static let closeDesktopChoices = [
+        Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey)),
+        Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey | cmdKey)),
+    ]
+
     /// Offered idle delays, in seconds. `.infinity` is "never on its own" — the panel then only
     /// ever appears because you asked for it.
     static let idleChoices: [TimeInterval] = [15, 30, 45, 60, 120, 300, .infinity]
@@ -58,6 +69,16 @@ enum Settings {
     static var muteChord: Chord {
         get { chord(forKey: "muteChord") ?? muteChoices[0] }
         set { store(newValue, forKey: "muteChord") }
+    }
+
+    static var newDesktopChord: Chord {
+        get { chord(forKey: "newDesktopChord") ?? newDesktopChoices[0] }
+        set { store(newValue, forKey: "newDesktopChord") }
+    }
+
+    static var closeDesktopChord: Chord {
+        get { chord(forKey: "closeDesktopChord") ?? closeDesktopChoices[0] }
+        set { store(newValue, forKey: "closeDesktopChord") }
     }
 
     /// How long the machine must be untouched before the panel shows itself.

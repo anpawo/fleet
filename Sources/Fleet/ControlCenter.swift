@@ -72,6 +72,8 @@ struct ControlCenterView: View {
     @State private var idle = Settings.idleThreshold
     @State private var panelChord = Settings.panelChord
     @State private var muteChord = Settings.muteChord
+    @State private var newDesktopChord = Settings.newDesktopChord
+    @State private var closeDesktopChord = Settings.closeDesktopChord
 
     static let background = Color(red: 0.055, green: 0.055, blue: 0.07)
 
@@ -93,7 +95,18 @@ struct ControlCenterView: View {
                                 Settings.muteChord = $0
                                 controller.bindHotKeys()
                             }))
-                tileNumbers
+                chordPicker("New desktop", choices: Settings.newDesktopChoices,
+                            selection: Binding(get: { newDesktopChord }, set: {
+                                newDesktopChord = $0
+                                Settings.newDesktopChord = $0
+                                controller.bindHotKeys()
+                            }))
+                chordPicker("Close desktop", choices: Settings.closeDesktopChoices,
+                            selection: Binding(get: { closeDesktopChord }, set: {
+                                closeDesktopChord = $0
+                                Settings.closeDesktopChord = $0
+                                controller.bindHotKeys()
+                            }))
             }
             section("SESSION STATE") {
                 legend
@@ -188,24 +201,6 @@ struct ControlCenterView: View {
             // recorder is a window's worth of code, and these are the combinations that are
             // actually free.
             menu(choices, label: \.label, selection: selection)
-        }
-    }
-
-    /// ⌘-digit is only worth learning if the digit holds still, and it only holds still if you
-    /// say which project owns it. The list is a text file — see `Slots`.
-    private var tileNumbers: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            row("Tile numbers") {
-                wideButton("Edit…") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: Slots.path))
-                }
-            }
-            Text("⌘1 to ⌘9 open the tile wearing that number while the panel is up. A project "
-                 + "pinned to a number takes it back whenever it is running; while it is away "
-                 + "the number is free like any other.")
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.4))
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -84,6 +84,35 @@ enum Spaces {
         return pressed
     }
 
+    /// Removes the desktop you are standing on — the `×` on its Mission Control thumbnail,
+    /// which the Dock exposes as the `AXRemoveDesktop` action. Its windows go where macOS
+    /// sends them (the desktop to the left), the same as clicking the `×`.
+    ///
+    /// The current desktop is the one thumbnail Mission Control marks `AXSelected`; nothing is
+    /// removed when none is, or when it is the last one, which macOS would refuse anyway.
+    @discardableResult
+    static func removeDesktop(on display: CGDirectDisplayID = CGMainDisplayID()) -> Bool {
+        guard Desktop.accessibilityTrusted() else { return false }
+
+        let opened = missionControl() == nil
+        if opened { toggleMissionControl() }
+        defer { if opened { usleep(250_000); toggleMissionControl() } }
+
+        // The `+` is the last thing drawn, so once it is there the thumbnails are too.
+        guard waitForAddButton(on: display) != nil else { return false }
+        let desktops = desktops(on: display)
+        guard desktops.count > 1,
+              let current = desktops.first(where: {
+                  (attribute($0, kAXSelectedAttribute as String) as? Bool) == true
+              }) else {
+            NSLog("Fleet: no removable desktop — \(desktops.count) on the bar, none selected")
+            return false
+        }
+        let removed = AXUIElementPerformAction(current, "AXRemoveDesktop" as CFString) == .success
+        if !removed { NSLog("Fleet: the desktop refused AXRemoveDesktop") }
+        return removed
+    }
+
     /// The thumbnail of the desktop the `+` has just made, once the Spaces bar has grown it.
     ///
     /// The last one, and identified as such rather than by name: the tiles carry no

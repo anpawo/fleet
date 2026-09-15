@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// is a C function pointer and so may not capture anything — including an actor-isolated static.
 private nonisolated(unsafe) var hotKeyActions: [UInt32: @Sendable () -> Void] = [:]
 
-/// The system-wide chords: one raises the panel, one mutes the idle trigger.
+/// The system-wide chords: the panel, the mute, and a desktop made or closed.
 ///
 /// Carbon's `RegisterEventHotKey` rather than `NSEvent.addGlobalMonitorForEvents`, because the
 /// monitor API needs Accessibility permission — a TCC prompt for a background agent that has
