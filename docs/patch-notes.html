@@ -322,6 +322,41 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore · shellCallByTask</span>
+        <span class="chip chip-sha">165ea71</span>
+      </div>
+      <h3>Violet alors que plus rien ne tourne</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Une tuile reste <code>BACKGROUND-TASK</code> après que Claude a répondu, sans agent ni
+          commande en cours. Elle ne redevient verte qu'au prochain prompt.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Un shell passé en arrière-plan est clos par la <code>&lt;task-notification&gt;</code>
+          qui le nomme. Arrêté à la main par <code>TaskStop</code>, il n'en envoie jamais&nbsp;:
+          le résultat dit « Successfully stopped task: b…&nbsp;» avec l'id de <em>tâche</em>, que
+          Fleet ne savait pas relier au <code>tool_use</code> qui l'avait lancé.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'id de tâche est lu dans le message de mise en arrière-plan et gardé avec l'appel.
+          Le résultat d'un <code>TaskStop</code> le retrouve et ferme le shell comme une
+          notification l'aurait fait. Cas ajouté au <code>--selftest</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>session 0ecbd8e5 : moved to the background (ID: brkt1a5h0) … Successfully stopped task: brkt1a5h0
+0 task-notification pour cet id ; tuile violette 09:58 → 11:07
+fleet --selftest : « a shell moved to the background is a shell out », « and TaskStop ends it » ok</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
         <span class="chip chip-where">main.swift · garde d'instance unique</span>
         <span class="chip chip-sha">4a4f5da</span>
       </div>
