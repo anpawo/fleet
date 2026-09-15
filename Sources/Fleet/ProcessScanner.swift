@@ -47,13 +47,18 @@ enum ProcessScanner {
         if let known = claudeVerdicts[pid], known.started == started { return known.is }
 
         let path = executablePath(pid)
+        let args = arguments(pid)
         var verdict = isClaudeCodePath(path)
         if !verdict {
             // Last resort: argv[0] keeps the name "claude" even when the exec path is a version
             // file, covering install layouts we do not know about yet.
-            let base = (arguments(pid).first as NSString?)?.lastPathComponent
+            let base = (args.first as NSString?)?.lastPathComponent
             verdict = base == "claude" || base == "claude.exe"
         }
+        // A `claude -p` is a tool some other program is driving — video-code's Agent pane,
+        // a script — not a conversation you can pick back up. It usually has no tty, but an
+        // app launched from a terminal hands its own down to every child, tty included.
+        if verdict, args.contains("-p") || args.contains("--print") { verdict = false }
         claudeVerdicts[pid] = (started, verdict)
         // Bounded by the process table: a machine that has churned through thousands of shells
         // would otherwise keep a row for every one of them.
