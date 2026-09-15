@@ -320,6 +320,9 @@ private struct ParseState {
         case "permission-mode":
             if let m = obj["permissionMode"] as? String { permissionMode = m }
             return
+        case "attachment":
+            ingestQueued(obj)
+            return
         case "assistant", "user":
             break
         default:
@@ -459,6 +462,29 @@ private struct ParseState {
         // unbounded preview would grow for as long as the session lives.
         if preview.count > Config.previewLineCount {
             preview.removeFirst(preview.count - Config.previewLineCount)
+        }
+    }
+
+    /// Anything that arrives while a turn is running — a prompt you typed over a working
+    /// session, a task's completion — is queued and written as an `attachment` of type
+    /// `queued_command`, never as a `user` entry. Read only from there, a prompt sent mid-turn
+    /// never counts as a prompt and a shell that finished mid-turn never finishes.
+    private mutating func ingestQueued(_ obj: [String: Any]) {
+        guard let queued = obj["attachment"] as? [String: Any],
+              queued["type"] as? String == "queued_command" else { return }
+        let at = (obj["timestamp"] as? String).flatMap(Self.date) ?? Date()
+        let text = queued["prompt"] as? String
+            ?? Self.contentBlocks(queued["prompt"]).compactMap { $0["text"] as? String }.joined()
+        if text.contains("<task-notification>") {
+            if let call = Self.tagged("tool-use-id", in: text) { agentEndedAt[call] = at }
+        } else if queued["commandMode"] as? String == "prompt" {
+            lastPromptAt = at
+            let t = text.plainProse.collapsedWhitespace
+                .replacingOccurrences(of: #"\[Image #(\d+)\]"#, with: "image$1", options: .regularExpression)
+            if !t.isEmpty {
+                preview.append(PreviewLine(kind: .user, text: String(t.prefix(200))))
+                if preview.count > Config.previewLineCount { preview.removeFirst() }
+            }
         }
     }
 

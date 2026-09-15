@@ -91,6 +91,23 @@ enum SelfCheck {
         append(#"{"type":"user","timestamp":"\#(stamp(1))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_stop","content":"{\"message\":\"Successfully stopped task: b1x2y3z (sleep 99)\",\"task_id\":\"b1x2y3z\"}"}]}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
                "and TaskStop ends it")
+
+        // Finished while a turn was running: the notification is queued, and written as an
+        // attachment rather than a user entry. A prompt typed over a working session, likewise.
+        append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m6","content":[{"type":"tool_use","id":"toolu_sh2","name":"Bash","input":{"command":"sleep 99"}}]}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_sh2","content":"Command running in background with ID: b2x2y2z. Output is being written to: /tmp/y"}]}}"#)
+        expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 1,
+               "a shell started in the background is a shell out")
+        append(#"{"type":"attachment","timestamp":"\#(stamp(2))","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>b2x2y2z</task-id>\n<tool-use-id>toolu_sh2</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
+        expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
+               "and a queued task-notification ends it")
+        let before = store.info(for: session)?.lastPromptAt
+        append(#"{"type":"attachment","timestamp":"\#(stamp(1))","attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"and the icons"}]}}"#)
+        let after = store.info(for: session)
+        expect(after?.lastPromptAt != nil && after?.lastPromptAt != before ? 1 : 0, 1,
+               "a prompt queued over a running turn counts as a prompt")
+        expect(after?.preview.last?.text == "and the icons" ? 1 : 0, 1,
+               "and shows on the tile")
     }
 
     // MARK: - Ghosts

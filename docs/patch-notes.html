@@ -322,6 +322,82 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">AppController · tick</span>
+        <span class="chip chip-sha">HEAD</span>
+      </div>
+      <h3>Un rectangle blanc en haut à gauche, sur un écran à moitié voilé</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          En plein travail dans Ghostty, tout l'écran sous la barre de menus passe à 50&nbsp;%
+          et un rectangle net, non voilé, apparaît en haut à gauche — à l'emplacement de la
+          colonne MEMORY + MAIL. Aucune tuile visible.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Probable, pas reproduite&nbsp;: le panneau s'est ouvert de lui-même (minuterie
+          d'inactivité) pendant que la machine saturait — journal à 13:57:07 « every core is
+          busy (load 2.0 per core) », tick de Fleet 6,8&nbsp;s en retard à 13:52. La fenêtre
+          monte à l'écran, mais le rendu SwiftUI derrière n'arrive pas&nbsp;: voile partiel,
+          colonne gauche vide, pas de tuiles. L'activation étant refusée hors geste
+          utilisateur, Ghostty gardait le clavier sous le panneau.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'ouverture automatique attend que la machine soit fluide, comme elle attend déjà
+          la fin d'une vidéo ou d'un enregistrement micro. Le raccourci et la barre de menus
+          ouvrent toujours. Si le rectangle revient hors saturation, cette entrée est fausse.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>capture 13:57 : fond Ghostty (255) → 128, feux de fenêtre → moitié, barre de menus intacte
+dans le rectangle : 255 et vert de diff (215,237,212) non voilés
+/tmp/fleet.log : 13:57:07 machine struggling — load 2.0 per core ; 13:57:59 panel lost key focus to Ghostty</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore · ingestQueued</span>
+        <span class="chip chip-sha">HEAD</span>
+      </div>
+      <h3>Ce qui arrive pendant un tour n'est jamais lu</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Deux visages du même bug. Une tuile reste <code>BACKGROUND-TASK</code> alors que la
+          commande de fond a fini et que la session est au prompt. Et une session à qui on
+          vient d'écrire reste en tête de grille, comme si on ne l'avait pas touchée.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Quand la session est en plein tour, Claude Code met en file ce qui arrive — la
+          <code>&lt;task-notification&gt;</code> d'un shell, le prompt tapé par-dessus — et
+          l'écrit comme entrée <code>attachment</code> de type <code>queued_command</code>,
+          jamais comme entrée <code>user</code>. Fleet ne lisait que <code>user</code> et
+          <code>assistant</code>&nbsp;: la notification ne fermait rien, le prompt ne comptait pas.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Les <code>queued_command</code> sont lus&nbsp;: une notification ferme l'appel qu'elle
+          nomme, un prompt met à jour la date du dernier prompt et s'affiche sur la tuile. Deux
+          cas ajoutés au <code>--selftest</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>session 0ecbd8e5 : l.351 tool_result « moved to the background (ID: b0gljzrhb) »
+l.354 queue-operation enqueue, l.359 attachment queued_command task-notification — aucune entrée user
+session 96271dae : « videocode est tjrs nb1 » → attachment queued_command commandMode=prompt
+fleet --selftest : « a queued task-notification ends it », « a prompt queued over a running turn counts as a prompt » ok</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
         <span class="chip chip-where">TranscriptStore · shellCallByTask</span>
         <span class="chip chip-sha">165ea71</span>
       </div>
