@@ -322,44 +322,6 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
-        <span class="chip chip-where">AppController · tick</span>
-        <span class="chip chip-sha">HEAD</span>
-      </div>
-      <h3>Un rectangle blanc en haut à gauche, sur un écran à moitié voilé</h3>
-      <dl class="facts">
-        <dt>Symptôme</dt>
-        <dd>
-          En plein travail dans Ghostty, tout l'écran sous la barre de menus passe à 50&nbsp;%
-          et un rectangle net, non voilé, apparaît en haut à gauche — à l'emplacement de la
-          colonne MEMORY + MAIL. Aucune tuile visible.
-        </dd>
-        <dt>Cause</dt>
-        <dd>
-          Probable, pas reproduite&nbsp;: le panneau s'est ouvert de lui-même (minuterie
-          d'inactivité) pendant que la machine saturait — journal à 13:57:07 « every core is
-          busy (load 2.0 per core) », tick de Fleet 6,8&nbsp;s en retard à 13:52. La fenêtre
-          monte à l'écran, mais le rendu SwiftUI derrière n'arrive pas&nbsp;: voile partiel,
-          colonne gauche vide, pas de tuiles. L'activation étant refusée hors geste
-          utilisateur, Ghostty gardait le clavier sous le panneau.
-        </dd>
-        <dt>Correctif</dt>
-        <dd>
-          L'ouverture automatique attend que la machine soit fluide, comme elle attend déjà
-          la fin d'une vidéo ou d'un enregistrement micro. Le raccourci et la barre de menus
-          ouvrent toujours. Si le rectangle revient hors saturation, cette entrée est fausse.
-        </dd>
-        <dt>Mesure</dt>
-        <dd>
-          <pre>capture 13:57 : fond Ghostty (255) → 128, feux de fenêtre → moitié, barre de menus intacte
-dans le rectangle : 255 et vert de diff (215,237,212) non voilés
-/tmp/fleet.log : 13:57:07 machine struggling — load 2.0 per core ; 13:57:59 panel lost key focus to Ghostty</pre>
-        </dd>
-      </dl>
-    </article>
-
-    <article class="entry">
-      <div class="entry-head">
-        <span class="chip chip-ok">Corrigé</span>
         <span class="chip chip-where">TranscriptStore · ingestQueued</span>
         <span class="chip chip-sha">HEAD</span>
       </div>

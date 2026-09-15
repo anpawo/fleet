@@ -255,16 +255,6 @@ final class AppController: ObservableObject {
             return
         }
 
-        // A machine that is not keeping up cannot draw the panel either: the window goes up
-        // and its content arrives seconds later, or not at all — a half-dimmed screen with a
-        // blank rectangle where the memory column should be, over whatever you were reading.
-        // Seen 2026-09-15 13:57, load 2.0 per core. Left armed: the next quiet tick once the
-        // machine is fluid again shows it as usual.
-        if reaper.struggling {
-            NSLog("Fleet: not showing — \(reaper.struggleReason)")
-            return
-        }
-
         armed = false
         showPanel()
     }
