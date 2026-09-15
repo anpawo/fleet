@@ -298,6 +298,9 @@ private struct ParseState {
     /// call is answered at once too, and ended the same way: a `<task-notification>` naming it,
     /// recorded in `agentEndedAt` like an agent's.
     var shellSpawnedAt: [String: Date] = [:]
+    /// Task id → the `tool_use` that started that shell. `TaskStop` names the task, not the
+    /// call, and a stopped shell sends no notification — this is the only way to close it.
+    var shellCallByTask: [String: String] = [:]
 
     mutating func ingest(_ obj: [String: Any]) {
         guard let type = obj["type"] as? String else { return }
@@ -427,12 +430,24 @@ private struct ParseState {
                 }
                 // `run_in_background`, or a command that outlived its timeout and was moved
                 // there: the result says so in its first words, either way.
-                if let id = block["tool_use_id"] as? String,
-                   Self.resultText(block["content"]).contains(where: {
-                       $0.hasPrefix("Command running in background with ID")
-                           || $0.contains("and was moved to the background")
-                   }) {
-                    shellSpawnedAt[id] = lastMessageAt ?? Date()
+                if let id = block["tool_use_id"] as? String {
+                    let texts = Self.resultText(block["content"])
+                    if texts.contains(where: {
+                        $0.hasPrefix("Command running in background with ID")
+                            || $0.contains("and was moved to the background")
+                    }) {
+                        shellSpawnedAt[id] = lastMessageAt ?? Date()
+                        if let task = texts.lazy.compactMap(Self.taskID(in:)).first {
+                            shellCallByTask[task] = id
+                        }
+                    }
+                    // Stopped by hand: no notification will ever come for it.
+                    for t in texts {
+                        if let r = t.range(of: "Successfully stopped task: "),
+                           let call = shellCallByTask[Self.token(t, from: r.upperBound)] {
+                            agentEndedAt[call] = lastMessageAt ?? Date()
+                        }
+                    }
                 }
             default:
                 continue
@@ -491,6 +506,18 @@ private struct ParseState {
         else { return nil }
         return String(text[open.upperBound ..< close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The task id in "…background with ID: b1x2y3z" or "…background (ID: b1x2y3z)".
+    static func taskID(in text: String) -> String? {
+        guard let r = text.range(of: "ID: ") else { return nil }
+        let id = token(text, from: r.upperBound)
+        return id.isEmpty ? nil : id
+    }
+
+    /// The word starting at `from`, up to the first character no task id contains.
+    static func token(_ text: String, from: String.Index) -> String {
+        String(text[from...].prefix { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "@" })
     }
 
     /// "Bash" says a command ran; "Bash ./install.sh" says which. The argument that identifies
