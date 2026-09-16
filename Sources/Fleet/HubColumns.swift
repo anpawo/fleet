@@ -675,12 +675,26 @@ enum FirstLine {
         }
     }
 
-    /// A line of this font, ascender to descender plus leading — what SwiftUI gives a plain
-    /// `Text`, and what a row of the todo column is tall.
+    /// A line of this font as SwiftUI lays it: what a plain multi-line `Text` advances by, and
+    /// what a row of the todo column is tall.
+    ///
+    /// Measured, not computed. Every formula from the font's own numbers was tried against
+    /// `NSHostingView` at seven sizes — the rounded sum, the parts rounded one by one, TextKit's
+    /// default line height, the bounding rect — and none matched at every size; the rounded sum
+    /// gave 13 at 11pt where the text takes 14, and the Reels card folded half a line short.
+    /// Two lines in a hosting view, halved, once per size, is the answer by construction.
     static func lineHeight(size: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: size)
-        return ceil(font.ascender - font.descender + font.leading)
+        measuredLock.lock()
+        defer { measuredLock.unlock() }
+        if let height = measured[size] { return height }
+        let view = NSHostingView(rootView: Text("a\nb").font(.system(size: size)).fixedSize())
+        let height = view.fittingSize.height / 2
+        measured[size] = height
+        return height
     }
+
+    private static let measuredLock = NSLock()
+    private nonisolated(unsafe) static var measured: [CGFloat: CGFloat] = [:]
 
     static func metrics(_ text: String, width: CGFloat, size: CGFloat) -> Metrics {
         let font = NSFont.systemFont(ofSize: size)
@@ -845,9 +859,10 @@ struct ReelsBlock: View {
         .animation(TodoColumn.unroll, value: hub.reelIndex)
     }
 
-    /// The room the text has to wrap in, for the curtain below. Seeded with roughly the right
-    /// number so the first frame is not laid out against a width of zero.
-    @State private var textWidth: CGFloat = 190
+    /// The room the text has to wrap in, for the curtain below. Seeded with the width the
+    /// column actually gives it, so the first frame — and an offscreen render, which never
+    /// gets the preference back — folds where the window will.
+    @State private var textWidth: CGFloat = 266
     private static let textSize: CGFloat = 11
 
     /// The todo row's curtain, on a paragraph: the text is laid out once at its full height
