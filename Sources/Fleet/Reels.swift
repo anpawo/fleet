@@ -69,7 +69,10 @@ struct Reel: Identifiable {
         let ia = categories.firstIndex(of: a.category) ?? categories.count
         let ib = categories.firstIndex(of: b.category) ?? categories.count
         if ia != ib { return ia < ib }
-        return a.createdAt > b.createdAt
+        // The id last: `sorted` is not stable, and half the phone's rows carry no date at all.
+        // Two equal keys reordered on every sync was the card changing under a held ⌘.
+        if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
+        return a.id < b.id
     }
 
     var checked: Bool { status == "done" }

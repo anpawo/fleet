@@ -563,7 +563,13 @@ final class HubStore: ObservableObject {
             let all = try await Firestore.collection("factcheck").map(Reel.init)
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
+            // The card you are reading stays the card you are reading: every finished check
+            // lands here, and the index is a position in a list that has just been rebuilt.
+            let showing = currentReel?.id
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
+            if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
+                reelIndex = index
+            }
             guard reelCheck == nil, mayCheck(),
                   let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt })
             else { return }
