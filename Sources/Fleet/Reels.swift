@@ -15,6 +15,7 @@ struct Reel: Identifiable {
     var caption: String
     var verdict: String
     var summary: String
+    var transcript: String
     /// `pending`, `done` or `failed` — the phone's own three, see its `FactCheckRepo`.
     var status: String
     var error: String
@@ -36,6 +37,7 @@ struct Reel: Identifiable {
         caption = doc.string("caption")
         verdict = doc.string("verdict")
         summary = doc.string("summary")
+        transcript = doc.string("transcript")
         status = doc.fields["status"]?.stringValue ?? "done"
         error = doc.string("error")
         // The phone writes epoch milliseconds, not a timestamp.

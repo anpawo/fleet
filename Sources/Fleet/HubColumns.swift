@@ -713,7 +713,8 @@ enum FirstLine {
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
 /// is to be read. A click turns to the next one, ⌘← and ⌘→ go either way, both wrap; a
 /// right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
-/// Reel away without deleting it, the ✕ deletes it everywhere.
+/// sparkle asks whether the Reel is something to do and files it as a todo if so, the ✕
+/// deletes it everywhere.
 ///
 /// The one card on the panel a plain click does not dismiss. The panel's contract is that a
 /// click anywhere puts it away, and this breaks it on purpose: turning pages is what you do
@@ -722,10 +723,10 @@ struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
     let commandHeld: Bool
 
-    @State private var hoveringSeen = false
+    @State private var hoveringFile = false
     @State private var hoveringDelete = false
 
-    private static let seenTint = Color(red: 0.27, green: 0.62, blue: 1.00)
+    private static let fileTint = Color(red: 0.27, green: 0.62, blue: 1.00)
     private static let deleteTint = Color(red: 1.00, green: 0.35, blue: 0.32)
 
     private static func tint(_ reel: Reel) -> Color {
@@ -768,7 +769,7 @@ struct ReelsBlock: View {
                         .foregroundStyle(.white.opacity(0.28))
                         .opacity(commandHeld ? 0 : 1)
                     if commandHeld {
-                        HStack(spacing: 6) { seen(reel); delete(reel) }
+                        HStack(spacing: 6) { file(reel); delete(reel) }
                     }
                 }
                 .frame(height: 12, alignment: .trailing)
@@ -777,7 +778,11 @@ struct ReelsBlock: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(2)
-            if hub.checkingReel == reel.id {
+            if hub.filingReel == reel.id {
+                Text("Reading it for something to do\u{2026}")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.4))
+            } else if hub.checkingReel == reel.id {
                 Text(hub.checkingStep.isEmpty ? "Checking\u{2026}" : hub.checkingStep)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
@@ -813,17 +818,18 @@ struct ReelsBlock: View {
         .animation(TodoColumn.unroll, value: hub.reelIndex)
     }
 
-    private func seen(_ reel: Reel) -> some View {
-        Button { hub.markSeen(reel) } label: {
-            Image(systemName: "eye.slash")
+    private func file(_ reel: Reel) -> some View {
+        Button { hub.fileReel(reel) } label: {
+            Image(systemName: "sparkles")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Self.seenTint.opacity(hoveringSeen ? 1 : 0.75))
+                .foregroundStyle(Self.fileTint.opacity(hoveringFile ? 1 : 0.75))
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(Self.seenTint.opacity(hoveringSeen ? 0.22 : 0.10)))
+                .background(Circle().fill(Self.fileTint.opacity(hoveringFile ? 0.22 : 0.10)))
         }
         .buttonStyle(.plain)
-        .onHover { hoveringSeen = $0 }
-        .help("Seen — put away, kept on the phone")
+        .disabled(hub.filingReel != nil)
+        .onHover { hoveringFile = $0 }
+        .help("Something to do? Then it becomes a todo. Either way the Reel is put away")
     }
 
     private func delete(_ reel: Reel) -> some View {

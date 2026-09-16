@@ -199,6 +199,21 @@ if CommandLine.arguments.contains("--reels") {
     RunLoop.main.run()
 }
 
+// `--reel-todo <shortcode>` prints what the sparkle would file for one Reel, writing nothing.
+if let i = CommandLine.arguments.firstIndex(of: "--reel-todo"),
+   i + 1 < CommandLine.arguments.count {
+    let id = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        do {
+            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
+            else { print("no such reel"); exit(1) }
+            print(try await Claude.todo(from: Reel(doc)) ?? "(nothing to do)")
+        } catch { print(error.localizedDescription); exit(1) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // `--check-reel <shortcode>` runs the whole pipeline on one document and writes the verdict,
 // the way the timer would — the one way to watch a check happen.
 if let i = CommandLine.arguments.firstIndex(of: "--check-reel"),

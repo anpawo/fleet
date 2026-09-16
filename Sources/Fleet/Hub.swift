@@ -581,8 +581,29 @@ final class HubStore: ObservableObject {
         }
     }
 
-    /// The eye on a Reel, ⌘ held: put away, kept. On screen before it is on the network, like
-    /// every write here.
+    /// The Reel being turned into a todo, while the model reads it.
+    @Published private(set) var filingReel: String?
+
+    /// The sparkle on a Reel, ⌘ held: ask whether it is something to do. If it is, the todo
+    /// lands in the column on the right; either way the Reel leaves the card — kept on the
+    /// phone, see `markSeen`. Not on screen first, unlike the other writes here: a card that
+    /// vanishes before the model has answered would be a todo you have to hope for.
+    func fileReel(_ reel: Reel) {
+        guard filingReel == nil else { return }
+        filingReel = reel.id
+        Task {
+            defer { filingReel = nil }
+            do {
+                if let line = try await Claude.todo(from: reel) { add(line) }
+                markSeen(reel)
+            } catch {
+                NSLog("Fleet: could not file reel \(reel.id) — \(error.localizedDescription)")
+                failure = "not filed"
+            }
+        }
+    }
+
+    /// Put away, kept. On screen before it is on the network, like every write here.
     func markSeen(_ reel: Reel) {
         reels.removeAll { $0.id == reel.id }
         Task {
