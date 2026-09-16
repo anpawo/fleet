@@ -163,6 +163,9 @@ struct OverlayView: View {
                     MailColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
+                // The Reel unfolding under ⌘ pushes the mail down; without this the mail
+                // jumps to where the paragraph will end while the paragraph is still growing.
+                .animation(ReelsBlock.unfold, value: controller.commandHeld)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)

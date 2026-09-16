@@ -9,3 +9,11 @@ dans `~/Applications/Fleet.app` est celle qui tourne, pas `.build`.
 Donc : après **chaque** changement, lancer `./install.sh`. Il reconstruit, réinstalle et fait
 `launchctl kickstart -k`, ce qui termine l'app et la redémarre. Un `swift build` qui compile
 n'est pas une livraison.
+
+## The interface is in English
+
+Every word Fleet puts on screen — labels, headings, badges, category names, empty-state lines,
+tooltips — is English. Never French, whatever language the data underneath is in: the phone's
+verdicts and summaries are French because the phone writes them, and that stays in the card's
+body, not in Fleet's own chrome. Asked for on 2026-09-16, after "À LIRE" and French verdict
+badges shipped on the Reels card.

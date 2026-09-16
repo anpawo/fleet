@@ -57,8 +57,8 @@ struct Reel: Identifiable {
     /// The shelves a filed Reel goes on, in the order the card pages through them. The names
     /// are what the model is asked for and what the heading shows, so the list is the schema.
     static let categories = [
-        "politique", "fake news", "vraie info", "business / marketing", "tech", "santé",
-        "culture", "divertissement", "autre",
+        "politics", "fake news", "real info", "business / marketing", "tech", "health",
+        "culture", "entertainment", "other",
     ]
 
     var filed: Bool { !category.isEmpty }
@@ -115,18 +115,14 @@ struct Reel: Identifiable {
 
     /// The word under the dot, in the verdict's own colour.
     var badge: String {
-        switch status {
-        case "pending": return fleetTriedAt == nil ? "à vérifier" : "hors de portée"
-        case "failed": return fleetTriedAt == nil ? "à vérifier" : "hors de portée"
-        default:
-            switch verdict {
-            case "vrai": return "vrai"
-            case "plutot_vrai": return "plutôt vrai"
-            case "melange": return "mélangé"
-            case "plutot_faux": return "plutôt faux"
-            case "faux": return "faux"
-            default: return "invérifiable"
-            }
+        guard checked else { return fleetTriedAt == nil ? "to check" : "out of reach" }
+        switch verdict {
+        case "vrai": return "true"
+        case "plutot_vrai": return "mostly true"
+        case "melange": return "mixed"
+        case "plutot_faux": return "mostly false"
+        case "faux": return "false"
+        default: return "unverifiable"
         }
     }
 }

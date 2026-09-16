@@ -229,7 +229,7 @@ enum Claude {
         specific thing (the tool, the technique, the place) rather than "watch this Reel" — or \
         null when there is nothing to do. Be strict: most Reels are not todos.
         category: exactly one of \(Reel.categories.map { "\"\($0)\"" }.joined(separator: ", ")). \
-        "fake news" when the check found it mostly false, "vraie info" when it found a real, \
+        "fake news" when the check found it mostly false, "real info" when it found a real, \
         checked fact worth keeping.
         reminder: one line in \(Config.language), at most fifteen words, what this Reel was \
         about — enough to recognise it on a list a month from now.
@@ -249,7 +249,7 @@ enum Claude {
         let todo = (object["todo"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Filing(
             todo: todo.flatMap { $0.isEmpty ? nil : $0 + " — " + url },
-            category: Reel.categories.contains(category) ? category : "autre",
+            category: Reel.categories.contains(category) ? category : "other",
             reminder: (object["reminder"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 

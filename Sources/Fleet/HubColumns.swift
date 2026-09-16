@@ -728,6 +728,11 @@ struct ReelsBlock: View {
     @State private var hoveringDelete = false
 
     private static let fileTint = Color(red: 0.27, green: 0.62, blue: 1.00)
+
+    /// The text unfolding under ⌘, and the mail under it easing down to make room. One
+    /// animation for both, from here and from the column in `OverlayView`: two curves would
+    /// have the mail arrive before or after the paragraph that pushed it.
+    static let unfold: Animation = .easeOut(duration: 0.35)
     private static let deleteTint = Color(red: 1.00, green: 0.35, blue: 0.32)
 
     private static func tint(_ reel: Reel) -> Color {
@@ -755,13 +760,16 @@ struct ReelsBlock: View {
         let tint = Self.tint(reel)
         return VStack(alignment: .leading, spacing: 5) {
             // The shelf, over the card like a folder heading over the todos: the same 9pt
-            // capitals, and "À LIRE" for what the sparkle has not been through yet.
-            Text((reel.filed ? reel.category : "à lire").uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(1)
-                .foregroundStyle(.white.opacity(0.35))
-                .padding(.horizontal, 2)
-                .padding(.bottom, 3)
+            // capitals. None over a Reel the sparkle has not been through — the ones at the
+            // front, which need no name.
+            if reel.filed {
+                Text(reel.category.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(0.35))
+                    .padding(.horizontal, 2)
+                    .padding(.bottom, 3)
+            }
             VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle().fill(tint).frame(width: 5, height: 5)
@@ -828,7 +836,7 @@ struct ReelsBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { if commandHeld { file(reel) } }
-        .animation(TodoColumn.unroll, value: commandHeld)
+        .animation(Self.unfold, value: commandHeld)
         // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
         // macOS, so the panel window catches the button and asks the store whether the pointer
         // was over this card — the hover below is how it knows. ⌃-click is the same thing.
