@@ -711,12 +711,16 @@ enum FirstLine {
 /// own four colours, so a glance says which kind of thing you were sent before a word is read.
 ///
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
-/// is to be read; ⌘-click turns to the next one and wraps. ⌘ also brings the two controls: the
-/// eye puts a Reel away without deleting it, the ✕ deletes it everywhere.
+/// is to be read. A click turns to the next one, ⌘← and ⌘→ go either way, both wrap; a
+/// right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
+/// Reel away without deleting it, the ✕ deletes it everywhere.
+///
+/// The one card on the panel a plain click does not dismiss. The panel's contract is that a
+/// click anywhere puts it away, and this breaks it on purpose: turning pages is what you do
+/// here, and reaching for ⌘ on every one was the wrong price.
 struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
     let commandHeld: Bool
-    let onDismiss: () -> Void
 
     @State private var hoveringSeen = false
     @State private var hoveringDelete = false
@@ -736,8 +740,7 @@ struct ReelsBlock: View {
     var body: some View {
         HubColumn(title: "REELS",
                   count: hub.reels.count,
-                  note: hub.checkingReel != nil ? "checking\u{2026}"
-                      : hub.reels.count > 1 ? "\(hub.reelIndex % hub.reels.count + 1)/\(hub.reels.count)" : nil) {
+                  note: hub.checkingReel != nil ? "checking\u{2026}" : nil) {
             if let reel = hub.currentReel {
                 card(reel)
             } else {
@@ -756,10 +759,11 @@ struct ReelsBlock: View {
                     .tracking(0.6)
                     .foregroundStyle(tint)
                 Spacer(minLength: 4)
-                // The controls take the age's place, like the ✕ on a todo: nothing moves
-                // when ⌘ goes down.
+                // The controls take the place of the page number and the age, like the ✕ on
+                // a todo: nothing moves when ⌘ goes down.
                 ZStack(alignment: .trailing) {
-                    Text(shortAge(since: reel.createdAt))
+                    Text("\(hub.reelIndex % max(hub.reels.count, 1) + 1)/\(hub.reels.count) \u{00B7} "
+                         + shortAge(since: reel.createdAt))
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.28))
                         .opacity(commandHeld ? 0 : 1)
@@ -800,8 +804,12 @@ struct ReelsBlock: View {
                 .strokeBorder(tint.opacity(0.35), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        // ⌘-click turns the page; a plain click is the panel's own contract, and puts it away.
-        .onTapGesture { if commandHeld { hub.nextReel() } else { onDismiss() } }
+        .onTapGesture { hub.turnReel(1) }
+        // A right-click, or a ⌃-click, opens the Reel in Firefox. `.gesture` rather than
+        // `.simultaneousGesture` on the tap above: the two buttons are subviews and keep
+        // winning either way.
+        .gesture(TapGesture().modifiers(.control).onEnded { hub.openReel(reel) })
+        .overlay(RightClick { hub.openReel(reel) })
         .animation(TodoColumn.unroll, value: hub.reelIndex)
     }
 
@@ -829,5 +837,25 @@ struct ReelsBlock: View {
         .buttonStyle(.plain)
         .onHover { hoveringDelete = $0 }
         .help("Delete everywhere")
+    }
+}
+
+/// SwiftUI has no right-click gesture on macOS; this is the AppKit view that answers one and
+/// lets everything else through to whatever is underneath.
+private struct RightClick: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> Catcher { Catcher(action: action) }
+    func updateNSView(_ view: Catcher, context: Context) { view.action = action }
+
+    final class Catcher: NSView {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { nil }
+        override func rightMouseDown(with event: NSEvent) { action() }
+        // Only the right button lands here; a left click goes on to the SwiftUI card below.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
+        }
     }
 }

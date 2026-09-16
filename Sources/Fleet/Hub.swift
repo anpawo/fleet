@@ -519,9 +519,20 @@ final class HubStore: ObservableObject {
 
     var currentReel: Reel? { reels.isEmpty ? nil : reels[reelIndex % reels.count] }
 
-    func nextReel() {
+    /// One page along, either way, wrapping at both ends.
+    func turnReel(_ step: Int) {
         guard !reels.isEmpty else { return }
-        reelIndex = (reelIndex + 1) % reels.count
+        reelIndex = ((reelIndex + step) % reels.count + reels.count) % reels.count
+    }
+
+    /// The card's link, in the browser you use. Firefox by name rather than the default
+    /// handler: the default is whatever last claimed `https`, and that is not a choice.
+    func openReel(_ reel: Reel) {
+        let url = reel.url.isEmpty ? "https://www.instagram.com/reel/\(reel.id)/" : reel.url
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-a", "Firefox", url]
+        try? task.run()
     }
 
     /// From the controller's tick, panel or no panel: a Reel shared from the phone at lunch
