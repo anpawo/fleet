@@ -805,11 +805,11 @@ struct ReelsBlock: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { hub.turnReel(1) }
-        // A right-click, or a ⌃-click, opens the Reel in Firefox. `.gesture` rather than
-        // `.simultaneousGesture` on the tap above: the two buttons are subviews and keep
-        // winning either way.
+        // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
+        // macOS, so the panel window catches the button and asks the store whether the pointer
+        // was over this card — the hover below is how it knows. ⌃-click is the same thing.
         .gesture(TapGesture().modifiers(.control).onEnded { hub.openReel(reel) })
-        .overlay(RightClick { hub.openReel(reel) })
+        .onHover { hub.reelHovered = $0 }
         .animation(TodoColumn.unroll, value: hub.reelIndex)
     }
 
@@ -840,22 +840,3 @@ struct ReelsBlock: View {
     }
 }
 
-/// SwiftUI has no right-click gesture on macOS; this is the AppKit view that answers one and
-/// lets everything else through to whatever is underneath.
-private struct RightClick: NSViewRepresentable {
-    let action: () -> Void
-
-    func makeNSView(context: Context) -> Catcher { Catcher(action: action) }
-    func updateNSView(_ view: Catcher, context: Context) { view.action = action }
-
-    final class Catcher: NSView {
-        var action: () -> Void
-        init(action: @escaping () -> Void) { self.action = action; super.init(frame: .zero) }
-        required init?(coder: NSCoder) { nil }
-        override func rightMouseDown(with event: NSEvent) { action() }
-        // Only the right button lands here; a left click goes on to the SwiftUI card below.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
-        }
-    }
-}

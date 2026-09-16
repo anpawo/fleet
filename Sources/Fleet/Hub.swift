@@ -525,6 +525,17 @@ final class HubStore: ObservableObject {
         reelIndex = ((reelIndex + step) % reels.count + reels.count) % reels.count
     }
 
+    /// Whether the pointer is over the Reels card. Plain state, not published: nothing draws
+    /// it, the window reads it when the right button goes down.
+    var reelHovered = false
+
+    /// The right button, from the panel window: open the card under the pointer, if that is
+    /// what is under it.
+    func openHoveredReel() {
+        guard reelHovered, let reel = currentReel else { return }
+        openReel(reel)
+    }
+
     /// The card's link, in the browser you use. Firefox by name rather than the default
     /// handler: the default is whatever last claimed `https`, and that is not a choice.
     func openReel(_ reel: Reel) {

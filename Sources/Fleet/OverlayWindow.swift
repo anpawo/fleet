@@ -192,6 +192,7 @@ final class OverlayWindowController {
         window.onModifiers = { [weak self] flags in self?.controller.modifiersChanged(flags) }
         window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
         window.onArrow = { [weak self] step in self?.controller.hub.turnReel(step) }
+        window.onRightClick = { [weak self] in self?.controller.hub.openHoveredReel() }
 
         let root = OverlayView(controller: controller)
         let hosting = NSHostingView(rootView: root)
@@ -216,6 +217,9 @@ final class PanelWindow: NSWindow {
     /// ⌘← and ⌘→: the Reels card turns a page. Claimed here like Return, ahead of the field
     /// editor, which would otherwise take them for moving the caret to the line's ends.
     var onArrow: ((Int) -> Void)?
+    /// The right button, anywhere on the panel. Only the Reels card answers it — see
+    /// `HubStore.openHoveredReel`.
+    var onRightClick: (() -> Void)?
     private static let leftKeyCode: UInt16 = 123
     private static let rightKeyCode: UInt16 = 124
 
@@ -248,6 +252,9 @@ final class PanelWindow: NSWindow {
         switch event.type {
         case .flagsChanged:
             onModifiers?(event.modifierFlags)
+            super.sendEvent(event)
+        case .rightMouseDown:
+            onRightClick?()
             super.sendEvent(event)
         case .keyDown where event.keyCode == Self.escKeyCode:
             // Esc is taken here rather than in `cancelOperation` for the same reason as Space:
