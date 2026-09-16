@@ -159,6 +159,10 @@ struct OverlayView: View {
                         .padding(.bottom, 34)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     MailColumn(hub: controller.hub)
+                    ReelsBlock(hub: controller.hub,
+                               commandHeld: controller.commandHeld,
+                               onDismiss: { controller.hidePanel() })
+                        .padding(.top, 22)
                 }
                 .frame(width: sideWidth)
                 gap(Self.innerWeight)

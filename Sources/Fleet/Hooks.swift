@@ -433,7 +433,7 @@ enum Hooks {
             [ -f "$dir/$sid.stopped" ] && honoured=$(cat "$dir/$sid.stopped" 2>/dev/null || echo 0)
             if [ "$stop" != "$honoured" ]; then
                 mkdir -p "$dir" && echo "$stop" > "$dir/$sid.stopped"
-                printf '{"continue":false,"stopReason":"Fleet stopped this session: %s. '
+                printf '{"continue":false,"stopReason":"Fleet stopped this turn — the last prompt did NOT run: %s. '
                 printf 'Nothing is lost — say go when the machine has room again."}\\n' \\
                     "${reason:-you pressed stop on the panel}"
                 return 0

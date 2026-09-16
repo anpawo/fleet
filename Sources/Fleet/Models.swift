@@ -42,6 +42,11 @@ enum Config {
     /// memory: it is the longest interval that still keeps the strip's numbers alive.
     static let reapInterval: TimeInterval = 5
 
+    /// How often the `factcheck` collection is read for a Reel the phone has just been handed,
+    /// panel or no panel. One GET; the check it may start is the expensive part, and that is
+    /// gated on the machine having room.
+    static let reelPoll: TimeInterval = 300
+
     static let idlePollActive: TimeInterval = 5
     /// Poll cadence when no session is alive (pure "is anything running yet" check).
     static let idlePollDormant: TimeInterval = 60

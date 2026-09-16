@@ -184,6 +184,40 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
+// The Reels block without the panel: every Reel the phone was handed, its state, its verdict.
+if CommandLine.arguments.contains("--reels") {
+    Task { @MainActor in
+        let hub = HubStore()
+        await hub.syncReels()
+        for reel in hub.reels {
+            print("\(reel.id)  \(reel.badge.padding(toLength: 14, withPad: " ", startingAt: 0))  \(reel.label)")
+            if !reel.summary.isEmpty { print("    \(reel.summary)") }
+            if !reel.fleetError.isEmpty { print("    ! \(reel.fleetError)") }
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// `--check-reel <shortcode>` runs the whole pipeline on one document and writes the verdict,
+// the way the timer would — the one way to watch a check happen.
+if let i = CommandLine.arguments.firstIndex(of: "--check-reel"),
+   i + 1 < CommandLine.arguments.count {
+    let id = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        do {
+            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
+            else { print("no such reel"); exit(1) }
+            let reel = Reel(doc)
+            await ReelCheck.run(reel)
+            let after = try await Firestore.collection("factcheck").first(where: { $0.id == id }).map(Reel.init)
+            print(after.map { "\($0.badge)  \($0.summary)\n\($0.fleetError)" } ?? "gone")
+        } catch { print(error.localizedDescription); exit(1) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // `--render-settings <path.png>` draws the settings window offscreen, controls and all. The
 // panel has `--render` for the same reason: the only honest way to look at this window is a
 // picture of it, because opening it lands it on whatever desktop is in front of you.
@@ -485,7 +519,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         // the main actor, and a blocked main thread would never let it finish.
         controller.hub.refresh()
         let deadline = Date().addingTimeInterval(8)
-        while controller.hub.isConfigured, !controller.hub.loaded,
+        while controller.hub.isConfigured,
+              !controller.hub.loaded || controller.hub.reelsFetchedAt == .distantPast,
               controller.hub.failure == nil, Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }

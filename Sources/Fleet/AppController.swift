@@ -58,6 +58,7 @@ final class AppController: ObservableObject {
     @Published private(set) var mutedUntil: Date?
 
     func start() {
+        hub.mayCheck = { [weak self] in self?.reaper.struggling == false }
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
         bindHotKeys()
@@ -202,6 +203,8 @@ final class AppController: ObservableObject {
         lastTickInterval = currentInterval
         reaper.tick(lateness: lateness, allowed: currentInterval * Config.timerTolerance)
         if reaper.struggling { publishMachineState() }
+        // Ahead of the dormant gate too: a Reel arrives from the phone, not from a session.
+        hub.pollReelsIfDue()
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
         statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)

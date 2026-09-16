@@ -705,3 +705,129 @@ enum FirstLine {
         return Metrics(lineHeight: lineHeight, lineCount: max(lines, 1), firstLineWidth: firstWidth)
     }
 }
+
+/// Under the mail: the Reels the phone was handed, one at a time, with the verdict this Mac or
+/// the phone reached. Red, green, amber, blue — false, true, mixed, not known — in the panel's
+/// own four colours, so a glance says which kind of thing you were sent before a word is read.
+///
+/// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
+/// is to be read; ⌘-click turns to the next one and wraps. ⌘ also brings the two controls: the
+/// eye puts a Reel away without deleting it, the ✕ deletes it everywhere.
+struct ReelsBlock: View {
+    @ObservedObject var hub: HubStore
+    let commandHeld: Bool
+    let onDismiss: () -> Void
+
+    @State private var hoveringSeen = false
+    @State private var hoveringDelete = false
+
+    private static let seenTint = Color(red: 0.27, green: 0.62, blue: 1.00)
+    private static let deleteTint = Color(red: 1.00, green: 0.35, blue: 0.32)
+
+    private static func tint(_ reel: Reel) -> Color {
+        switch reel.kind {
+        case .yes: return SessionState.ready.tint
+        case .no: return SessionState.running.tint
+        case .mixed: return SessionState.apiError.tint
+        case .unknown: return SessionState.awaitingAnswer.tint
+        }
+    }
+
+    var body: some View {
+        HubColumn(title: "REELS",
+                  count: hub.reels.count,
+                  note: hub.checkingReel != nil ? "checking\u{2026}"
+                      : hub.reels.count > 1 ? "\(hub.reelIndex % hub.reels.count + 1)/\(hub.reels.count)" : nil) {
+            if let reel = hub.currentReel {
+                card(reel)
+            } else {
+                HubEmptyLine(text: "Nothing sent")
+            }
+        }
+    }
+
+    private func card(_ reel: Reel) -> some View {
+        let tint = Self.tint(reel)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Circle().fill(tint).frame(width: 5, height: 5)
+                Text(reel.badge)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(tint)
+                Spacer(minLength: 4)
+                // The controls take the age's place, like the ✕ on a todo: nothing moves
+                // when ⌘ goes down.
+                ZStack(alignment: .trailing) {
+                    Text(shortAge(since: reel.createdAt))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.28))
+                        .opacity(commandHeld ? 0 : 1)
+                    if commandHeld {
+                        HStack(spacing: 6) { seen(reel); delete(reel) }
+                    }
+                }
+                .frame(height: 12, alignment: .trailing)
+            }
+            Text(reel.label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(2)
+            if hub.checkingReel == reel.id {
+                Text("Transcribing and checking\u{2026}")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.4))
+            } else if !reel.summary.isEmpty {
+                Text(reel.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(8)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !reel.fleetError.isEmpty {
+                Text(reel.fleetError)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .lineLimit(3)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        // ⌘-click turns the page; a plain click is the panel's own contract, and puts it away.
+        .onTapGesture { if commandHeld { hub.nextReel() } else { onDismiss() } }
+        .animation(TodoColumn.unroll, value: hub.reelIndex)
+    }
+
+    private func seen(_ reel: Reel) -> some View {
+        Button { hub.markSeen(reel) } label: {
+            Image(systemName: "eye.slash")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Self.seenTint.opacity(hoveringSeen ? 1 : 0.75))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Self.seenTint.opacity(hoveringSeen ? 0.22 : 0.10)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveringSeen = $0 }
+        .help("Seen — put away, kept on the phone")
+    }
+
+    private func delete(_ reel: Reel) -> some View {
+        Button { hub.deleteReel(reel) } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Self.deleteTint.opacity(hoveringDelete ? 1 : 0.75))
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Self.deleteTint.opacity(hoveringDelete ? 0.22 : 0.10)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveringDelete = $0 }
+        .help("Delete everywhere")
+    }
+}

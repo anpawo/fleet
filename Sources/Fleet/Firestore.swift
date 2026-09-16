@@ -135,6 +135,15 @@ enum Firestore {
         return try await send(request, decoding: Document.self)
     }
 
+    /// Gone for good, on every device. The only write here the phone cannot take back.
+    static func delete(_ path: String) async throws {
+        var request = URLRequest(url: Firestore.documents.appending(path: path))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
+                         forHTTPHeaderField: "Authorization")
+        _ = try await send(request)
+    }
+
     /// Firestore's wire form for a timestamp. The phone writes a server timestamp, which over
     /// REST would need a commit with a field transform; the clock on this Mac is close enough
     /// for a field that only ever decides whether two weeks have passed.

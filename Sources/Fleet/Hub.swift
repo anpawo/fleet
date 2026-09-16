@@ -493,6 +493,93 @@ final class HubStore: ObservableObject {
         }
     }
 
+    // MARK: - Reels
+
+    /// The Reels the phone was handed, newest first, minus the ones put away. Every one is on
+    /// the panel one at a time — see `currentReel` — so a verdict gets read rather than
+    /// scrolled past.
+    @Published private(set) var reels: [Reel] = []
+    /// Which of them is showing. ⌘-click moves it along and it wraps: the list is short and a
+    /// place you cannot get back to from the end is a place you stop going.
+    @Published private(set) var reelIndex = 0
+    /// The Reel a check is running on right now, when one is. One at a time — whisper takes
+    /// every core it is given, and two of them is the machine Fleet exists to prevent.
+    @Published private(set) var checkingReel: String?
+    /// Whether the machine has room for a check. Set by the controller from the reaper; a
+    /// transcription started on a struggling machine is the wrong kind of help. Off until it
+    /// is set: every `fleet --something` builds a store too, and none of them should start a
+    /// two-minute pipeline on the way to printing a list.
+    var mayCheck: () -> Bool = { false }
+
+    private(set) var reelsFetchedAt = Date.distantPast
+    private var reelCheck: Task<Void, Never>?
+
+    var currentReel: Reel? { reels.isEmpty ? nil : reels[reelIndex % reels.count] }
+
+    func nextReel() {
+        guard !reels.isEmpty else { return }
+        reelIndex = (reelIndex + 1) % reels.count
+    }
+
+    /// From the controller's tick, panel or no panel: a Reel shared from the phone at lunch
+    /// should have its verdict by the time you sit back down.
+    func pollReelsIfDue() {
+        guard isConfigured, Date().timeIntervalSince(reelsFetchedAt) > Config.reelPoll else { return }
+        reelsFetchedAt = Date()
+        Task { await syncReels() }
+    }
+
+    /// Read the collection, show what is worth showing, and start a check on the newest Reel
+    /// nobody has managed yet. A finished check calls this again, which is how the backlog
+    /// drains one Reel at a time without a queue of its own.
+    func syncReels() async {
+        do {
+            let all = try await Firestore.collection("factcheck").map(Reel.init)
+            guard !Task.isCancelled else { return }
+            reelsFetchedAt = Date()
+            reels = all.filter { !$0.seen }.sorted { $0.createdAt > $1.createdAt }
+            guard reelCheck == nil, mayCheck(),
+                  let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt })
+            else { return }
+            checkingReel = next.id
+            reelCheck = Task {
+                await ReelCheck.run(next)
+                reelCheck = nil
+                checkingReel = nil
+                await syncReels()
+            }
+        } catch {
+            NSLog("Fleet: reels fetch failed — \(error.localizedDescription)")
+        }
+    }
+
+    /// The eye on a Reel, ⌘ held: put away, kept. On screen before it is on the network, like
+    /// every write here.
+    func markSeen(_ reel: Reel) {
+        reels.removeAll { $0.id == reel.id }
+        Task {
+            do {
+                try await Firestore.patch("factcheck/\(reel.id)", fields: ["seen": ["booleanValue": true]])
+            } catch {
+                NSLog("Fleet: could not mark reel \(reel.id) seen — \(error.localizedDescription)")
+                await syncReels()
+            }
+        }
+    }
+
+    /// The ✕ on a Reel, ⌘ held: gone, on the phone too.
+    func deleteReel(_ reel: Reel) {
+        reels.removeAll { $0.id == reel.id }
+        Task {
+            do {
+                try await Firestore.delete("factcheck/\(reel.id)")
+            } catch {
+                NSLog("Fleet: could not delete reel \(reel.id) — \(error.localizedDescription)")
+                await syncReels()
+            }
+        }
+    }
+
     // MARK: - Reading
 
     /// Called when the panel appears. Cheap to call — it does nothing at all most times.
@@ -564,6 +651,9 @@ final class HubStore: ObservableObject {
             failure = nil
             loaded = true
             fetchedAt = Date()
+            // Its own fetch, after the two the panel is waiting on: a verdict is not what the
+            // panel opened for, and a check it may start must not hold the columns up.
+            Task { await syncReels() }
         } catch {
             guard !Task.isCancelled else { return }
             NSLog("Fleet: hub fetch failed — \(error.localizedDescription)")
