@@ -207,7 +207,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--reel-todo"),
         do {
             guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
             else { print("no such reel"); exit(1) }
-            print(try await Claude.todo(from: Reel(doc)) ?? "(nothing to do)")
+            let filing = try await Claude.file(Reel(doc))
+            print(filing.todo ?? "(nothing to do)")
+            print("\(filing.category)  ·  \(filing.reminder)")
         } catch { print(error.localizedDescription); exit(1) }
         exit(0)
     }

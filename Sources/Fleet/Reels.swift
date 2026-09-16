@@ -28,6 +28,10 @@ struct Reel: Identifiable {
     /// from costing a download attempt every five minutes.
     var fleetTriedAt: Date?
     var fleetError: String
+    /// Written by the sparkle, for a Reel that was not something to do: what kind of thing it
+    /// was, from `Category`, and the one line worth remembering it by. Both absent until then.
+    var category: String
+    var reminder: String
 
     init(_ doc: Firestore.Document) {
         id = doc.id
@@ -46,6 +50,26 @@ struct Reel: Identifiable {
         seen = doc.bool("seen")
         fleetTriedAt = doc.date("fleetTriedAt")
         fleetError = doc.string("fleetError")
+        category = doc.string("category")
+        reminder = doc.string("reminder")
+    }
+
+    /// The shelves a filed Reel goes on, in the order the card pages through them. The names
+    /// are what the model is asked for and what the heading shows, so the list is the schema.
+    static let categories = [
+        "politique", "fake news", "vraie info", "business / marketing", "tech", "santé",
+        "culture", "divertissement", "autre",
+    ]
+
+    var filed: Bool { !category.isEmpty }
+
+    /// Unfiled first, newest first — those are the ones to read — then shelf by shelf.
+    static func before(_ a: Reel, _ b: Reel) -> Bool {
+        if a.filed != b.filed { return !a.filed }
+        let ia = categories.firstIndex(of: a.category) ?? categories.count
+        let ib = categories.firstIndex(of: b.category) ?? categories.count
+        if ia != ib { return ia < ib }
+        return a.createdAt > b.createdAt
     }
 
     var checked: Bool { status == "done" }

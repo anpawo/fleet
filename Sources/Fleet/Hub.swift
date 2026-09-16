@@ -562,7 +562,7 @@ final class HubStore: ObservableObject {
             let all = try await Firestore.collection("factcheck").map(Reel.init)
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
-            reels = all.filter { !$0.seen }.sorted { $0.createdAt > $1.createdAt }
+            reels = all.filter { !$0.seen }.sorted(by: Reel.before)
             guard reelCheck == nil, mayCheck(),
                   let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt })
             else { return }
@@ -585,17 +585,32 @@ final class HubStore: ObservableObject {
     @Published private(set) var filingReel: String?
 
     /// The sparkle on a Reel, ⌘ held: ask whether it is something to do. If it is, the todo
-    /// lands in the column on the right; either way the Reel leaves the card — kept on the
-    /// phone, see `markSeen`. Not on screen first, unlike the other writes here: a card that
-    /// vanishes before the model has answered would be a todo you have to hope for.
+    /// lands in the column on the right and the Reel leaves the card — kept on the phone, see
+    /// `markSeen`. If not, the Reel stays, shelved: one line to remember it by, on a shelf
+    /// with the others of its kind, behind the ones still to read. Not on screen first, unlike
+    /// the other writes here: a card that changes before the model has answered would be a
+    /// todo you have to hope for.
     func fileReel(_ reel: Reel) {
         guard filingReel == nil else { return }
         filingReel = reel.id
         Task {
             defer { filingReel = nil }
             do {
-                if let line = try await Claude.todo(from: reel) { add(line) }
-                markSeen(reel)
+                let filing = try await Claude.file(reel)
+                if let line = filing.todo {
+                    add(line)
+                    markSeen(reel)
+                    return
+                }
+                if let index = reels.firstIndex(where: { $0.id == reel.id }) {
+                    reels[index].category = filing.category
+                    reels[index].reminder = filing.reminder
+                    reels.sort(by: Reel.before)
+                }
+                try await Firestore.patch("factcheck/\(reel.id)", fields: [
+                    "category": ["stringValue": filing.category],
+                    "reminder": ["stringValue": filing.reminder],
+                ])
             } catch {
                 NSLog("Fleet: could not file reel \(reel.id) — \(error.localizedDescription)")
                 failure = "not filed"

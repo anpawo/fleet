@@ -753,6 +753,15 @@ struct ReelsBlock: View {
     private func card(_ reel: Reel) -> some View {
         let tint = Self.tint(reel)
         return VStack(alignment: .leading, spacing: 5) {
+            // The shelf, over the card like a folder heading over the todos: the same 9pt
+            // capitals, and "À LIRE" for what the sparkle has not been through yet.
+            Text((reel.filed ? reel.category : "à lire").uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1)
+                .foregroundStyle(.white.opacity(0.35))
+                .padding(.horizontal, 2)
+                .padding(.bottom, 3)
+            VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle().fill(tint).frame(width: 5, height: 5)
                 Text(reel.badge)
@@ -786,6 +795,12 @@ struct ReelsBlock: View {
                 Text(hub.checkingStep.isEmpty ? "Checking\u{2026}" : hub.checkingStep)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
+            } else if reel.filed {
+                Text(reel.reminder.isEmpty ? reel.summary : reel.reminder)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if !reel.summary.isEmpty {
                 Text(reel.summary)
                     .font(.system(size: 11))
@@ -798,16 +813,18 @@ struct ReelsBlock: View {
                     .foregroundStyle(.white.opacity(0.4))
                     .lineLimit(3)
             }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
-        )
         .contentShape(Rectangle())
         .onTapGesture { hub.turnReel(1) }
         // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
