@@ -711,9 +711,9 @@ enum FirstLine {
 /// own four colours, so a glance says which kind of thing you were sent before a word is read.
 ///
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
-/// is to be read. ⌘← and ⌘→ turn the page either way and wrap; a ⌘-click unfolds the text
-/// when there is more of it; a right-click opens the Reel itself in Firefox. ⌘ brings the two
-/// controls: the eye puts a
+/// is to be read. Holding ⌘ unfolds the text to its full length; ⌘← and ⌘→ turn the page
+/// either way and wrap; a ⌘-click is the sparkle — file it, move on, let the model work behind
+/// the next card; a right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
 /// sparkle asks whether the Reel is something to do and files it as a todo if so, the ✕
 /// deletes it everywhere.
 ///
@@ -725,8 +725,6 @@ struct ReelsBlock: View {
     let commandHeld: Bool
 
     @State private var hoveringFile = false
-    /// Whether the text is unfolded past its usual few lines. Folds again on the next page.
-    @State private var expanded = false
     @State private var hoveringDelete = false
 
     private static let fileTint = Color(red: 0.27, green: 0.62, blue: 1.00)
@@ -781,7 +779,7 @@ struct ReelsBlock: View {
                         .foregroundStyle(.white.opacity(0.28))
                         .opacity(commandHeld ? 0 : 1)
                     if commandHeld {
-                        HStack(spacing: 6) { file(reel); delete(reel) }
+                        HStack(spacing: 6) { fileButton(reel); delete(reel) }
                     }
                 }
                 .frame(height: 12, alignment: .trailing)
@@ -790,7 +788,7 @@ struct ReelsBlock: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(2)
-            if hub.filingReel == reel.id {
+            if hub.filingReels.contains(reel.id) {
                 Text("Reading it for something to do\u{2026}")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
@@ -802,13 +800,13 @@ struct ReelsBlock: View {
                 Text(reel.reminder.isEmpty ? reel.summary : reel.reminder)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(expanded ? nil : 3)
+                    .lineLimit(commandHeld ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.summary.isEmpty {
                 Text(reel.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(expanded ? nil : 8)
+                    .lineLimit(commandHeld ? nil : 8)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.fleetError.isEmpty {
                 Text(reel.fleetError)
@@ -829,8 +827,8 @@ struct ReelsBlock: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { if commandHeld { withAnimation(TodoColumn.unroll) { expanded.toggle() } } }
-        .onChange(of: hub.reelIndex) { expanded = false }
+        .onTapGesture { if commandHeld { file(reel) } }
+        .animation(TodoColumn.unroll, value: commandHeld)
         // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
         // macOS, so the panel window catches the button and asks the store whether the pointer
         // was over this card — the hover below is how it knows. ⌃-click is the same thing.
@@ -839,8 +837,15 @@ struct ReelsBlock: View {
         .animation(TodoColumn.unroll, value: hub.reelIndex)
     }
 
-    private func file(_ reel: Reel) -> some View {
-        Button { hub.fileReel(reel) } label: {
+    /// The sparkle, and the ⌘-click: the model reads this one while you are already on the
+    /// next. A card that waits for an answer is a card you sit in front of.
+    private func file(_ reel: Reel) {
+        hub.fileReel(reel)
+        hub.turnReel(1)
+    }
+
+    private func fileButton(_ reel: Reel) -> some View {
+        Button { file(reel) } label: {
             Image(systemName: "sparkles")
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(Self.fileTint.opacity(hoveringFile ? 1 : 0.75))
@@ -848,7 +853,7 @@ struct ReelsBlock: View {
                 .background(Circle().fill(Self.fileTint.opacity(hoveringFile ? 0.22 : 0.10)))
         }
         .buttonStyle(.plain)
-        .disabled(hub.filingReel != nil)
+        .disabled(hub.filingReels.contains(reel.id))
         .onHover { hoveringFile = $0 }
         .help("Something to do? Then it becomes a todo. Either way the Reel is put away")
     }

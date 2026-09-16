@@ -581,8 +581,9 @@ final class HubStore: ObservableObject {
         }
     }
 
-    /// The Reel being turned into a todo, while the model reads it.
-    @Published private(set) var filingReel: String?
+    /// The Reels the model is reading right now. Several at once: each is a headless turn of
+    /// its own, and you have already moved on to the next card.
+    @Published private(set) var filingReels: Set<String> = []
 
     /// The sparkle on a Reel, ⌘ held: ask whether it is something to do. If it is, the todo
     /// lands in the column on the right and the Reel leaves the card — kept on the phone, see
@@ -591,10 +592,10 @@ final class HubStore: ObservableObject {
     /// the other writes here: a card that changes before the model has answered would be a
     /// todo you have to hope for.
     func fileReel(_ reel: Reel) {
-        guard filingReel == nil else { return }
-        filingReel = reel.id
+        guard !filingReels.contains(reel.id) else { return }
+        filingReels.insert(reel.id)
         Task {
-            defer { filingReel = nil }
+            defer { filingReels.remove(reel.id) }
             do {
                 let filing = try await Claude.file(reel)
                 if let line = filing.todo {
@@ -618,9 +619,18 @@ final class HubStore: ObservableObject {
         }
     }
 
+    /// Take a Reel off the card without the page turning under you: one gone before the one
+    /// on show shifts the index back by one, so the same card stays in front.
+    private func drop(_ reel: Reel) {
+        guard let index = reels.firstIndex(where: { $0.id == reel.id }) else { return }
+        reels.remove(at: index)
+        if index < reelIndex { reelIndex -= 1 }
+        if !reels.isEmpty { reelIndex %= reels.count } else { reelIndex = 0 }
+    }
+
     /// Put away, kept. On screen before it is on the network, like every write here.
     func markSeen(_ reel: Reel) {
-        reels.removeAll { $0.id == reel.id }
+        drop(reel)
         Task {
             do {
                 try await Firestore.patch("factcheck/\(reel.id)", fields: ["seen": ["booleanValue": true]])
@@ -633,7 +643,7 @@ final class HubStore: ObservableObject {
 
     /// The ✕ on a Reel, ⌘ held: gone, on the phone too.
     func deleteReel(_ reel: Reel) {
-        reels.removeAll { $0.id == reel.id }
+        drop(reel)
         Task {
             do {
                 try await Firestore.delete("factcheck/\(reel.id)")
