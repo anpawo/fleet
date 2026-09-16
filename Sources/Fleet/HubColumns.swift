@@ -662,10 +662,17 @@ enum FirstLine {
         var lineCount: Int
         /// How wide the first line's text is, from the leading edge — where the ellipsis goes.
         var firstLineWidth: CGFloat
+        /// The same for every line, first included; the Reels card folds lower than the first.
+        var lineWidths: [CGFloat] = []
 
         var fullHeight: CGFloat { lineHeight * CGFloat(lineCount) }
         /// Whether anything is below the fold.
         var truncated: Bool { lineCount > 1 }
+
+        /// Where a fold `lines` deep ends: the width of the last line above it.
+        func lastShownLineWidth(_ lines: Int) -> CGFloat {
+            lineWidths.indices.contains(lines - 1) ? lineWidths[lines - 1] : firstLineWidth
+        }
     }
 
     /// A line of this font, ascender to descender plus leading — what SwiftUI gives a plain
@@ -687,22 +694,20 @@ enum FirstLine {
 
         var start = 0
         var lines = 0
-        var firstWidth: CGFloat = 0
+        var widths: [CGFloat] = []
         // The bound is a runaway guard, not a policy: a todo is occasionally a pasted receipt,
         // and the column sits in a scroll view that can take it.
         while start < attributed.length, lines < 60 {
             let fits = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
             guard fits > 0 else { break }
-            if lines == 0 {
-                let head = ns.substring(with: NSRange(location: start, length: Int(fits)))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                firstWidth = NSAttributedString(string: head,
-                                                attributes: [.font: font]).size().width
-            }
+            let line = ns.substring(with: NSRange(location: start, length: Int(fits)))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            widths.append(NSAttributedString(string: line, attributes: [.font: font]).size().width)
             start += Int(fits)
             lines += 1
         }
-        return Metrics(lineHeight: lineHeight, lineCount: max(lines, 1), firstLineWidth: firstWidth)
+        return Metrics(lineHeight: lineHeight, lineCount: max(lines, 1),
+                       firstLineWidth: widths.first ?? 0, lineWidths: widths)
     }
 }
 
@@ -808,17 +813,9 @@ struct ReelsBlock: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
             } else if reel.filed {
-                Text(reel.reminder.isEmpty ? reel.summary : reel.reminder)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(expanded ? nil : 3)
-                    .fixedSize(horizontal: false, vertical: true)
+                curtain(reel.reminder.isEmpty ? reel.summary : reel.reminder, folded: 3)
             } else if !reel.summary.isEmpty {
-                Text(reel.summary)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(expanded ? nil : 8)
-                    .fixedSize(horizontal: false, vertical: true)
+                curtain(reel.summary, folded: 8)
             } else if !reel.fleetError.isEmpty {
                 Text(reel.fleetError)
                     .font(.system(size: 10.5))
@@ -846,6 +843,41 @@ struct ReelsBlock: View {
         .gesture(TapGesture().modifiers(.control).onEnded { hub.openReel(reel) })
         .onHover { hub.reelHovered = $0 }
         .animation(TodoColumn.unroll, value: hub.reelIndex)
+    }
+
+    /// The room the text has to wrap in, for the curtain below. Seeded with roughly the right
+    /// number so the first frame is not laid out against a width of zero.
+    @State private var textWidth: CGFloat = 190
+    private static let textSize: CGFloat = 11
+
+    /// The todo row's curtain, on a paragraph: the text is laid out once at its full height
+    /// and what moves is the edge it is clipped to, so the lines below the fold come into view
+    /// one after another rather than the whole thing appearing at once. Both heights are
+    /// numbers — see `FirstLine` — which is what makes there be something to animate between.
+    private func curtain(_ text: String, folded lines: Int) -> some View {
+        let metrics = FirstLine.metrics(text, width: textWidth, size: Self.textSize)
+        let shown = min(metrics.lineCount, lines)
+        return Text(text)
+            .font(.system(size: Self.textSize))
+            .foregroundStyle(.white.opacity(0.78))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: TextWidth.self, value: proxy.size.width)
+            })
+            .overlay(alignment: .topLeading) {
+                if !expanded, metrics.lineCount > lines {
+                    Text("\u{2026}")
+                        .font(.system(size: Self.textSize))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .offset(x: metrics.lastShownLineWidth(lines) + 1,
+                                y: metrics.lineHeight * CGFloat(lines - 1))
+                }
+            }
+            .frame(height: expanded ? metrics.fullHeight : metrics.lineHeight * CGFloat(shown),
+                   alignment: .top)
+            .clipped()
+            .onPreferenceChange(TextWidth.self) { if $0 > 24 { textWidth = $0 } }
     }
 
     /// The sparkle, and the ⌘-click: the model reads this one while you are already on the
