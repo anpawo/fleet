@@ -711,19 +711,22 @@ enum FirstLine {
 /// own four colours, so a glance says which kind of thing you were sent before a word is read.
 ///
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
-/// is to be read. A click turns to the next one, ⌘← and ⌘→ go either way, both wrap; a
-/// right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
+/// is to be read. ⌘← and ⌘→ turn the page either way and wrap; a ⌘-click unfolds the text
+/// when there is more of it; a right-click opens the Reel itself in Firefox. ⌘ brings the two
+/// controls: the eye puts a
 /// sparkle asks whether the Reel is something to do and files it as a todo if so, the ✕
 /// deletes it everywhere.
 ///
-/// The one card on the panel a plain click does not dismiss. The panel's contract is that a
-/// click anywhere puts it away, and this breaks it on purpose: turning pages is what you do
-/// here, and reaching for ⌘ on every one was the wrong price.
+/// The one card on the panel a plain click does nothing to — not even dismiss it. Everything
+/// here is behind ⌘, and a click that missed the key must not throw the panel away with the
+/// paragraph you were reading.
 struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
     let commandHeld: Bool
 
     @State private var hoveringFile = false
+    /// Whether the text is unfolded past its usual few lines. Folds again on the next page.
+    @State private var expanded = false
     @State private var hoveringDelete = false
 
     private static let fileTint = Color(red: 0.27, green: 0.62, blue: 1.00)
@@ -799,13 +802,13 @@ struct ReelsBlock: View {
                 Text(reel.reminder.isEmpty ? reel.summary : reel.reminder)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(3)
+                    .lineLimit(expanded ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.summary.isEmpty {
                 Text(reel.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(8)
+                    .lineLimit(expanded ? nil : 8)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.fleetError.isEmpty {
                 Text(reel.fleetError)
@@ -826,7 +829,8 @@ struct ReelsBlock: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { hub.turnReel(1) }
+        .onTapGesture { if commandHeld { withAnimation(TodoColumn.unroll) { expanded.toggle() } } }
+        .onChange(of: hub.reelIndex) { expanded = false }
         // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
         // macOS, so the panel window catches the button and asks the store whether the pointer
         // was over this card — the hover below is how it knows. ⌃-click is the same thing.
