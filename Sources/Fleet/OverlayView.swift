@@ -158,11 +158,11 @@ struct OverlayView: View {
                         // mail down itself, rather than landing on the MAIL heading.
                         .padding(.bottom, 34)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
-                    MailColumn(hub: controller.hub)
                     ReelsBlock(hub: controller.hub,
                                commandHeld: controller.commandHeld,
                                onDismiss: { controller.hidePanel() })
-                        .padding(.top, 22)
+                        .padding(.bottom, 22)
+                    MailColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
                 gap(Self.innerWeight)

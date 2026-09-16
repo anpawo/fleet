@@ -505,6 +505,9 @@ final class HubStore: ObservableObject {
     /// The Reel a check is running on right now, when one is. One at a time — whisper takes
     /// every core it is given, and two of them is the machine Fleet exists to prevent.
     @Published private(set) var checkingReel: String?
+    /// Which step that check is on, in words. A card that says "checking" for two minutes
+    /// looks stuck; one that says what it is doing does not.
+    @Published private(set) var checkingStep = ""
     /// Whether the machine has room for a check. Set by the controller from the reaper; a
     /// transcription started on a struggling machine is the wrong kind of help. Off until it
     /// is set: every `fleet --something` builds a store too, and none of them should start a
@@ -543,9 +546,12 @@ final class HubStore: ObservableObject {
             else { return }
             checkingReel = next.id
             reelCheck = Task {
-                await ReelCheck.run(next)
+                await ReelCheck.run(next) { step in
+                    Task { @MainActor in self.checkingStep = step }
+                }
                 reelCheck = nil
                 checkingReel = nil
+                checkingStep = ""
                 await syncReels()
             }
         } catch {

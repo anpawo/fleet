@@ -133,13 +133,13 @@ enum ReelCheck {
 
     /// Run the whole thing on one Reel and write the outcome to its document, whichever way it
     /// went. Never throws: the caller is a timer, and the document is where the answer goes.
-    static func run(_ reel: Reel) async {
+    static func run(_ reel: Reel, progress: @escaping (String) -> Void = { _ in }) async {
         let dir = FileManager.default.temporaryDirectory
             .appending(path: "fleet-reels").appending(path: reel.id)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSLog("Fleet: checking reel \(reel.id) in \(dir.path)")
         do {
-            let fields = try await check(reel, in: dir)
+            let fields = try await check(reel, in: dir, progress: progress)
             try await Firestore.patch("factcheck/\(reel.id)", fields: fields)
             NSLog("Fleet: reel \(reel.id) — \(fields["verdict"].map { "\($0)" } ?? "?")")
         } catch {
@@ -153,8 +153,10 @@ enum ReelCheck {
 
     /// The fields a finished check writes — the same ones the phone writes, so its own screen
     /// shows this verdict like any of its own, plus two that say who did it.
-    static func check(_ reel: Reel, in dir: URL) async throws -> [String: Any] {
+    static func check(_ reel: Reel, in dir: URL,
+                      progress: (String) -> Void = { _ in }) async throws -> [String: Any] {
         let url = reel.url.isEmpty ? "https://www.instagram.com/reel/\(reel.id)/" : reel.url
+        progress("Downloading\u{2026}")
         try await exec(ytdlp, ["-q", "--no-warnings", "--socket-timeout", "20", "--no-playlist",
                                "-o", "reel.%(ext)s",
                                "--print-to-file", "%(uploader)s\n%(description)s", "meta.txt",
@@ -169,6 +171,7 @@ enum ReelCheck {
             .first(where: { $0.hasPrefix("reel.") }) else {
             throw Failure.step("yt-dlp", "no video written")
         }
+        progress("Transcribing\u{2026}")
         try await exec(ffmpeg, ["-loglevel", "error", "-y", "-i", video, "-vn", "-ac", "1",
                                 "-ar", "16000", "-c:a", "pcm_s16le", "audio.wav"],
                        in: dir, step: "ffmpeg", timeout: 120)
@@ -184,6 +187,7 @@ enum ReelCheck {
             throw Failure.step("whisper", "nothing spoken and no caption")
         }
 
+        progress("Checking on the web\u{2026}")
         let verdict = try await Claude.factCheck(transcript: transcript, caption: caption,
                                                  author: author)
         try? JSONSerialization.data(withJSONObject: verdict, options: .prettyPrinted)

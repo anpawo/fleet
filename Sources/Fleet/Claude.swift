@@ -259,7 +259,9 @@ enum Claude {
                 return
             }
 
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [timeout] in
+            // Wall clock, not uptime: a turn that spans the lid closing must still be cut
+            // off on waking, not seven minutes after it.
+            DispatchQueue.global().asyncAfter(wallDeadline: .now() + timeout) { [timeout] in
                 guard process.isRunning else { return }
                 process.terminate()
                 guard done.claim() else { return }

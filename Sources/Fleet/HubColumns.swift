@@ -774,7 +774,7 @@ struct ReelsBlock: View {
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(2)
             if hub.checkingReel == reel.id {
-                Text("Transcribing and checking\u{2026}")
+                Text(hub.checkingStep.isEmpty ? "Checking\u{2026}" : hub.checkingStep)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
             } else if !reel.summary.isEmpty {
