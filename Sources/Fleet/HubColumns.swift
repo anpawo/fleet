@@ -711,7 +711,8 @@ enum FirstLine {
 /// own four colours, so a glance says which kind of thing you were sent before a word is read.
 ///
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
-/// is to be read. Holding ⌘ unfolds the text to its full length; ⌘← and ⌘→ turn the page
+/// is to be read. Holding ⌘ over the card unfolds the text to its full length, the way a
+/// todo row opens under the pointer; ⌘← and ⌘→ turn the page
 /// either way and wrap; a ⌘-click is the sparkle — file it, move on, let the model work behind
 /// the next card; a right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
 /// sparkle asks whether the Reel is something to do and files it as a todo if so, the ✕
@@ -755,6 +756,8 @@ struct ReelsBlock: View {
             }
         }
     }
+
+    private var expanded: Bool { commandHeld && hub.reelHovered }
 
     private func card(_ reel: Reel) -> some View {
         let tint = Self.tint(reel)
@@ -808,13 +811,13 @@ struct ReelsBlock: View {
                 Text(reel.reminder.isEmpty ? reel.summary : reel.reminder)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(commandHeld ? nil : 3)
+                    .lineLimit(expanded ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.summary.isEmpty {
                 Text(reel.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(commandHeld ? nil : 8)
+                    .lineLimit(expanded ? nil : 8)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !reel.fleetError.isEmpty {
                 Text(reel.fleetError)
@@ -836,7 +839,7 @@ struct ReelsBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { if commandHeld { file(reel) } }
-        .animation(Self.unfold, value: commandHeld)
+        .animation(Self.unfold, value: expanded)
         // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
         // macOS, so the panel window catches the button and asks the store whether the pointer
         // was over this card — the hover below is how it knows. ⌃-click is the same thing.

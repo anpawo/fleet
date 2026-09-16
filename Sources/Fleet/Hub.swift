@@ -525,9 +525,10 @@ final class HubStore: ObservableObject {
         reelIndex = ((reelIndex + step) % reels.count + reels.count) % reels.count
     }
 
-    /// Whether the pointer is over the Reels card. Plain state, not published: nothing draws
-    /// it, the window reads it when the right button goes down.
-    var reelHovered = false
+    /// Whether the pointer is over the Reels card. The window reads it when the right button
+    /// goes down, and the card unfolds on it while ⌘ is held — like a todo row, which opens
+    /// under the pointer and not all down the column at once.
+    @Published var reelHovered = false
 
     /// The right button, from the panel window: open the card under the pointer, if that is
     /// what is under it.
