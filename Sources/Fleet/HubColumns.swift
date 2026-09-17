@@ -766,7 +766,7 @@ struct ReelsBlock: View {
 
     var body: some View {
         HubColumn(title: "REELS",
-                  count: hub.reels.count,
+                  count: hub.reelsRemaining,
                   note: hub.checkingReel != nil ? "checking\u{2026}" : nil) {
             if let reel = hub.currentReel {
                 card(reel)

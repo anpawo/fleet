@@ -518,6 +518,9 @@ final class HubStore: ObservableObject {
     private var reelCheck: Task<Void, Never>?
 
     var currentReel: Reel? { reels.isEmpty ? nil : reels[reelIndex % reels.count] }
+    /// How many are still waiting on you — the number on the heading. The shelves behind them
+    /// are not a backlog.
+    var reelsRemaining: Int { reels.filter { !$0.filed }.count }
 
     /// One page along, either way, wrapping at both ends.
     func turnReel(_ step: Int) {
@@ -566,7 +569,9 @@ final class HubStore: ObservableObject {
             // The card you are reading stays the card you are reading: every finished check
             // lands here, and the index is a position in a list that has just been rebuilt.
             let showing = currentReel?.id
-            reels = all.filter { !$0.seen }.sorted(by: Reel.before)
+            // Waiting on you, then the shelves: a shelved Reel is seen on the phone and out of
+            // the count, and still one page back for the day it comes up.
+            reels = all.filter { !$0.seen || $0.filed }.sorted(by: Reel.before)
             if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
                 reelIndex = index
             }
@@ -610,14 +615,24 @@ final class HubStore: ObservableObject {
                     markSeen(reel)
                     return
                 }
+                // Shelved: handled, so no longer one of the ones waiting on you — `seen` on
+                // the phone like a todo'd one — but kept on the card, behind them, to page
+                // back to.
+                let showing = currentReel?.id
                 if let index = reels.firstIndex(where: { $0.id == reel.id }) {
                     reels[index].category = filing.category
                     reels[index].reminder = filing.reminder
+                    reels[index].seen = true
                     reels.sort(by: Reel.before)
+                }
+                if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
+                    reelIndex = index
                 }
                 try await Firestore.patch("factcheck/\(reel.id)", fields: [
                     "category": ["stringValue": filing.category],
                     "reminder": ["stringValue": filing.reminder],
+                    "seen": ["booleanValue": true],
+                    "seenAt": Firestore.timestamp(Date()),
                 ])
             } catch {
                 NSLog("Fleet: could not file reel \(reel.id) — \(error.localizedDescription)")
@@ -640,7 +655,10 @@ final class HubStore: ObservableObject {
         drop(reel)
         Task {
             do {
-                try await Firestore.patch("factcheck/\(reel.id)", fields: ["seen": ["booleanValue": true]])
+                try await Firestore.patch("factcheck/\(reel.id)", fields: [
+                    "seen": ["booleanValue": true],
+                    "seenAt": Firestore.timestamp(Date()),
+                ])
             } catch {
                 NSLog("Fleet: could not mark reel \(reel.id) seen — \(error.localizedDescription)")
                 await syncReels()
