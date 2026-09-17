@@ -173,7 +173,8 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
-                           onDismiss: { controller.hidePanel() })
+                           onDismiss: { controller.hidePanel() },
+                           scrolling: !eagerLayout)
                     .frame(width: sideWidth)
                     // No podium here: the todos start on the fleet's own line. They are the
                     // other list you are answerable to, and a step below the sessions read as

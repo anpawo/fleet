@@ -41,6 +41,9 @@ struct TodoColumn: View {
     /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
     /// notification board, and getting out of it must never take aim.
     let onDismiss: () -> Void
+    /// Off for an offscreen render: `ImageRenderer` draws nothing inside a `ScrollView`, and a
+    /// screenshot of the panel showed an empty column under a count of 21.
+    var scrolling = true
 
     /// The row under the pointer, which is the only one that opens. Held here rather than on
     /// the row, because a row is rebuilt from scratch every time the fleet refreshes — once a
@@ -82,13 +85,17 @@ struct TodoColumn: View {
             // move at all — the fleet either side has its own scroll for the same reason.
             // The horizontal padding is the room a lifted card's shadow needs, taken inside
             // and given back outside, so the clip lands out of its reach.
-            ScrollView(.vertical) {
-                VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
+            if scrolling {
+                ScrollView(.vertical) {
+                    VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .padding(.horizontal, -Self.glowRoom)
+                .frame(maxHeight: Self.maxHeight, alignment: .top)
+            } else {
+                VStack(spacing: 8) { rows }
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .padding(.horizontal, -Self.glowRoom)
-            .frame(maxHeight: Self.maxHeight, alignment: .top)
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
         // so it needs its own animation or the whole column snaps.
