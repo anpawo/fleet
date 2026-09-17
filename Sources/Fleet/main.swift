@@ -189,9 +189,8 @@ if CommandLine.arguments.contains("--reels") {
     Task { @MainActor in
         let hub = HubStore()
         await hub.syncReels()
-        print("\(hub.reelsRemaining) waiting, \(hub.reels.count - hub.reelsRemaining) shelved")
         for reel in hub.reels {
-            print("\(reel.id)  \(reel.badge.padding(toLength: 14, withPad: " ", startingAt: 0))  \(reel.filed ? "[\(reel.category)] " : "")\(reel.label)")
+            print("\(reel.id)  \(reel.badge.padding(toLength: 14, withPad: " ", startingAt: 0))  \(reel.label)")
             if !reel.summary.isEmpty { print("    \(reel.summary)") }
             if !reel.fleetError.isEmpty { print("    ! \(reel.fleetError)") }
         }

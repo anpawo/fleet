@@ -518,9 +518,6 @@ final class HubStore: ObservableObject {
     private var reelCheck: Task<Void, Never>?
 
     var currentReel: Reel? { reels.isEmpty ? nil : reels[reelIndex % reels.count] }
-    /// How many are still waiting on you — the number on the heading. The shelves behind them
-    /// are not a backlog.
-    var reelsRemaining: Int { reels.filter { !$0.filed }.count }
 
     /// One page along, either way, wrapping at both ends.
     func turnReel(_ step: Int) {
@@ -569,9 +566,7 @@ final class HubStore: ObservableObject {
             // The card you are reading stays the card you are reading: every finished check
             // lands here, and the index is a position in a list that has just been rebuilt.
             let showing = currentReel?.id
-            // Waiting on you, then the shelves: a shelved Reel is seen on the phone and out of
-            // the count, and still one page back for the day it comes up.
-            reels = all.filter { !$0.seen || $0.filed }.sorted(by: Reel.before)
+            reels = all.filter { !$0.seen }.sorted(by: Reel.before)
             if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
                 reelIndex = index
             }
@@ -598,11 +593,10 @@ final class HubStore: ObservableObject {
     @Published private(set) var filingReels: Set<String> = []
 
     /// The sparkle on a Reel, ⌘ held: ask whether it is something to do. If it is, the todo
-    /// lands in the column on the right and the Reel leaves the card — kept on the phone, see
-    /// `markSeen`. If not, the Reel stays, shelved: one line to remember it by, on a shelf
-    /// with the others of its kind, behind the ones still to read. Not on screen first, unlike
-    /// the other writes here: a card that changes before the model has answered would be a
-    /// todo you have to hope for.
+    /// lands in the column on the right; if not, the Reel is shelved on its document — a kind
+    /// and one line to remember it by. Either way it leaves the deck, seen on the phone. Not
+    /// on screen first, unlike the other writes here: a card gone before the model has
+    /// answered would be a todo you have to hope for.
     func fileReel(_ reel: Reel) {
         guard !filingReels.contains(reel.id) else { return }
         filingReels.insert(reel.id)
@@ -615,19 +609,10 @@ final class HubStore: ObservableObject {
                     markSeen(reel)
                     return
                 }
-                // Shelved: handled, so no longer one of the ones waiting on you — `seen` on
-                // the phone like a todo'd one — but kept on the card, behind them, to page
-                // back to.
-                let showing = currentReel?.id
-                if let index = reels.firstIndex(where: { $0.id == reel.id }) {
-                    reels[index].category = filing.category
-                    reels[index].reminder = filing.reminder
-                    reels[index].seen = true
-                    reels.sort(by: Reel.before)
-                }
-                if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
-                    reelIndex = index
-                }
+                // Shelved: off the deck like a todo'd one, and seen on the phone. The shelf
+                // and the reminder go on the document for the phone, and for the day the
+                // Reel comes up again; the card does not keep them.
+                drop(reel)
                 try await Firestore.patch("factcheck/\(reel.id)", fields: [
                     "category": ["stringValue": filing.category],
                     "reminder": ["stringValue": filing.reminder],

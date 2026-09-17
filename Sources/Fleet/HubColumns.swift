@@ -732,17 +732,17 @@ enum FirstLine {
     }
 }
 
-/// Under the mail: the Reels the phone was handed, one at a time, with the verdict this Mac or
+/// Over the mail: the Reels the phone was handed, one at a time, with the verdict this Mac or
 /// the phone reached. Red, green, amber, blue — false, true, mixed, not known — in the panel's
 /// own four colours, so a glance says which kind of thing you were sent before a word is read.
 ///
 /// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
 /// is to be read. Holding ⌘ over the card unfolds the text to its full length, the way a
-/// todo row opens under the pointer; ⌘← and ⌘→ turn the page
-/// either way and wrap; a ⌘-click is the sparkle — file it, move on, let the model work behind
-/// the next card; a right-click opens the Reel itself in Firefox. ⌘ brings the two controls: the eye puts a
-/// sparkle asks whether the Reel is something to do and files it as a todo if so, the ✕
-/// deletes it everywhere.
+/// todo row opens under the pointer; ⌘← and ⌘→ turn the page either way and wrap; a ⌘-click
+/// is the sparkle — file it, move on, let the model work behind the next card; a right-click
+/// opens the Reel itself in Firefox. ⌘ brings the two controls: the sparkle files the Reel,
+/// as a todo when it is something to do and on a shelf on its document when not, and takes it
+/// off the deck either way; the ✕ deletes it everywhere.
 ///
 /// The one card on the panel a plain click does nothing to — not even dismiss it. Everything
 /// here is behind ⌘, and a click that missed the key must not throw the panel away with the
@@ -773,7 +773,7 @@ struct ReelsBlock: View {
 
     var body: some View {
         HubColumn(title: "REELS",
-                  count: hub.reelsRemaining,
+                  count: hub.reels.count,
                   note: hub.checkingReel != nil ? "checking\u{2026}" : nil) {
             if let reel = hub.currentReel {
                 card(reel)
@@ -788,17 +788,6 @@ struct ReelsBlock: View {
     private func card(_ reel: Reel) -> some View {
         let tint = Self.tint(reel)
         return VStack(alignment: .leading, spacing: 5) {
-            // The shelf, over the card like a folder heading over the todos: the same 9pt
-            // capitals. None over a Reel the sparkle has not been through — the ones at the
-            // front, which need no name.
-            if reel.filed {
-                Text(reel.category.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1)
-                    .foregroundStyle(.white.opacity(0.35))
-                    .padding(.horizontal, 2)
-                    .padding(.bottom, 3)
-            }
             VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle().fill(tint).frame(width: 5, height: 5)
@@ -833,8 +822,6 @@ struct ReelsBlock: View {
                 Text(hub.checkingStep.isEmpty ? "Checking\u{2026}" : hub.checkingStep)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
-            } else if reel.filed {
-                curtain(reel.reminder.isEmpty ? reel.summary : reel.reminder, folded: 3)
             } else if !reel.summary.isEmpty {
                 curtain(reel.summary, folded: 8)
             } else if !reel.fleetError.isEmpty {
