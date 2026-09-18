@@ -1,4 +1,5 @@
 import Foundation
+import Vision
 
 /// One Instagram Reel the phone was handed, and what became of it. A document of the
 /// `factcheck` collection, keyed by the Reel's shortcode.
@@ -133,6 +134,7 @@ struct Reel: Identifiable {
 /// Link in, verdict out — the phone's pipeline, run from this Mac.
 ///
 ///     yt-dlp → .mp4 → ffmpeg → .wav → whisper.cpp → transcript → claude -p (web search) → JSON
+///                  ↘ nothing said, or a photo slide → stills → Vision → the text on screen ↗
 ///
 /// Each step is a binary already installed for other reasons, called by absolute path because a
 /// LaunchAgent has no `PATH`. Everything a step writes lands in one directory under the temp
@@ -140,8 +142,9 @@ struct Reel: Identifiable {
 /// the diagnosis, and the phone's history of "The coroutine scope left the composition" is what
 /// a pipeline with no trace looks like.
 ///
-/// ponytail: audio only. A Reel with nothing spoken is handed over on its caption alone; the
-/// phone reads three stills with a vision model instead. Add that when a silent Reel matters.
+/// ponytail: the text on screen is read by Vision's OCR, which is sure of itself on type burnt
+/// into the picture and less so on a monitor filmed at an angle. The phone hands its stills to
+/// a vision model for that reason; do the same here if filmed screens start coming back as noise.
 enum ReelCheck {
     enum Failure: LocalizedError {
         case step(String, String)
@@ -182,34 +185,77 @@ enum ReelCheck {
                       progress: (String) -> Void = { _ in }) async throws -> [String: Any] {
         let url = reel.url.isEmpty ? "https://www.instagram.com/reel/\(reel.id)/" : reel.url
         progress("Downloading\u{2026}")
-        try await exec(ytdlp, ["-q", "--no-warnings", "--socket-timeout", "20", "--no-playlist",
-                               "-o", "reel.%(ext)s",
-                               "--print-to-file", "%(uploader)s\n%(description)s", "meta.txt",
-                               url], in: dir, step: "yt-dlp", timeout: 180)
-        let meta = (try? String(contentsOf: dir.appending(path: "meta.txt"), encoding: .utf8)) ?? ""
+        // What was written decides, not the exit code. A link is as often a carousel as a Reel,
+        // and yt-dlp exits 1 on every photo slide — "No video formats found" — having downloaded
+        // the videos beside them. `--write-thumbnail` is what brings the photo slides back: a
+        // slide's thumbnail is the slide.
+        var refused: Error?
+        do {
+            try await exec(ytdlp, ["-q", "--no-warnings", "--socket-timeout", "20",
+                                   "--ignore-no-formats-error", "--write-thumbnail",
+                                   "--convert-thumbnails", "jpg",
+                                   "-o", "reel-%(autonumber)s.%(ext)s",
+                                   "--print-to-file", "%(uploader)s\n%(description)s",
+                                   "meta-%(autonumber)s.txt",
+                                   url], in: dir, step: "yt-dlp", timeout: 300)
+        } catch { refused = error }
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
+        let meta = files.first { $0.hasPrefix("meta-") }
+            .flatMap { try? String(contentsOf: dir.appending(path: $0), encoding: .utf8) } ?? ""
         let author = reel.author.isEmpty
             ? String(meta.split(separator: "\n", maxSplits: 1).first ?? "") : reel.author
         let caption = reel.caption.isEmpty
             ? String(meta.split(separator: "\n", maxSplits: 1).dropFirst().first ?? "") : reel.caption
 
-        guard let video = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
-            .first(where: { $0.hasPrefix("reel.") }) else {
-            throw Failure.step("yt-dlp", "no video written")
+        let media = files.filter { $0.hasPrefix("reel-") && !$0.hasSuffix(".part") }
+        let videos = media.filter { !$0.hasSuffix(".jpg") }
+        // A video's thumbnail is a frame of it; a slide with no video beside it is a photo.
+        let stem = { (name: String) in (name as NSString).deletingPathExtension }
+        let photos = media.filter { $0.hasSuffix(".jpg") && !videos.map(stem).contains(stem($0)) }
+        guard !videos.isEmpty || !photos.isEmpty else {
+            throw refused ?? Failure.step("yt-dlp", "nothing written")
         }
-        progress("Transcribing\u{2026}")
-        try await exec(ffmpeg, ["-loglevel", "error", "-y", "-i", video, "-vn", "-ac", "1",
-                                "-ar", "16000", "-c:a", "pcm_s16le", "audio.wav"],
-                       in: dir, step: "ffmpeg", timeout: 120)
-        // Four threads: a Reel is a minute or two and takes a third of that to transcribe, and
-        // the machine has to stay usable while it does — this runs whether or not you are here.
-        let transcript = try await exec(whisper, ["-m", models + "/ggml-large-v3-q5_0.bin",
-                                                  "-f", "audio.wav", "-l", "auto",
-                                                  "--vad", "-vm", models + "/ggml-silero-v5.1.2.bin",
-                                                  "-t", "4", "-np", "-nt"],
-                                        in: dir, step: "whisper", timeout: 900)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var spoken: [String] = []
+        var stills = photos
+        for (index, video) in videos.enumerated() {
+            progress("Transcribing\u{2026}")
+            // A video with no audio track fails here, and that is an answer: nothing was said.
+            var said = ""
+            if (try? await exec(ffmpeg, ["-loglevel", "error", "-y", "-i", video, "-vn", "-ac", "1",
+                                         "-ar", "16000", "-c:a", "pcm_s16le", "audio.wav"],
+                                in: dir, step: "ffmpeg", timeout: 120)) != nil {
+                // Four threads: a Reel is a minute or two and takes a third of that to
+                // transcribe, and the machine has to stay usable while it does — this runs
+                // whether or not you are here.
+                said = try await exec(whisper, ["-m", models + "/ggml-large-v3-q5_0.bin",
+                                                "-f", "audio.wav", "-l", "auto",
+                                                "--vad", "-vm", models + "/ggml-silero-v5.1.2.bin",
+                                                "-t", "4", "-np", "-nt"],
+                                      in: dir, step: "whisper", timeout: 900)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !said.isEmpty { spoken.append(said) }
+            // Nothing said, or a "Thank you." heard over the music: the content is on the
+            // picture, so look at it — one still every `stillEvery` seconds.
+            guard said.split(separator: " ").count < spokenEnough else { continue }
+            progress("Reading the screen\u{2026}")
+            _ = try? await exec(ffmpeg, ["-loglevel", "error", "-y", "-i", video,
+                                     "-vf", "fps=1/\(stillEvery),scale=960:-2",
+                                     "-frames:v", String(maxStills), "-q:v", "3",
+                                     "still-\(index)-%03d.jpg"],
+                            in: dir, step: "stills", timeout: 120)
+            stills += ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+                .filter { $0.hasPrefix("still-\(index)-") }.sorted()
+        }
+        if !photos.isEmpty, videos.isEmpty { progress("Reading the screen\u{2026}") }
+        let seen = read(stills.map { dir.appending(path: $0) })
+        var transcript = spoken.joined(separator: "\n\n")
+        if !seen.isEmpty {
+            transcript += (transcript.isEmpty ? "" : "\n\n") + "[Texte lu à l'écran]\n" + seen
+        }
         guard !transcript.isEmpty || !caption.isEmpty else {
-            throw Failure.step("whisper", "nothing spoken and no caption")
+            throw Failure.step("whisper", "nothing spoken, nothing on screen and no caption")
         }
 
         progress("Checking on the web\u{2026}")
@@ -233,6 +279,7 @@ enum ReelCheck {
         return [
             "status": ["stringValue": "done"],
             "error": ["stringValue": ""],
+            "fleetError": ["stringValue": ""],
             "verdict": ["stringValue": verdictOf(verdict["verdict"])],
             "confidence": ["integerValue": String(confidence)],
             "summary": ["stringValue": (verdict["resume"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)],
@@ -243,6 +290,31 @@ enum ReelCheck {
             "checkedBy": ["stringValue": "fleet"],
             "checkedAt": Firestore.timestamp(Date()),
         ]
+    }
+
+    /// Seconds between two stills of a video that says nothing, and how many at most: a
+    /// minute of Reel is twenty pictures, and a slide of text stays up longer than three seconds.
+    private static let stillEvery = 3
+    private static let maxStills = 40
+    /// Fewer words than this and the transcript is not what the video is about.
+    private static let spokenEnough = 8
+
+    /// Every line of text on these pictures, in order, each once: a caption burnt into a video
+    /// is on twenty stills in a row.
+    static func read(_ images: [URL]) -> String {
+        var known = Set<String>()
+        var lines: [String] = []
+        for image in images {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["fr-FR", "en-US"]
+            try? VNImageRequestHandler(url: image).perform([request])
+            for line in (request.results ?? []).compactMap({ $0.topCandidates(1).first?.string }) {
+                let key = line.lowercased().filter(\.isLetter)
+                if key.count > 2, known.insert(key).inserted { lines.append(line) }
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// The phone's six verdicts and nothing else — an unknown word becomes "invérifiable"

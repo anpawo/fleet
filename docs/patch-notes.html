@@ -307,7 +307,7 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>13</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>14</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
     <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">4a4f5da</dd></div>
@@ -318,6 +318,45 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Reels · ReelCheck</span>
+        <span class="chip chip-sha">HEAD</span>
+      </div>
+      <h3>« Out of reach » sur un lien qui marche : c'était un carrousel</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          La carte REELS affiche <code>out of reach</code> avec
+          <code>yt-dlp: ERROR: [Instagram] … No video formats found</code> — et l'identifiant de
+          l'erreur n'est pas celui de la carte. Et un Reels où rien n'est dit partait à la
+          vérification sur sa seule légende.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le lien est un carrousel. yt-dlp sort en code 1 pour chaque diapo photo, après avoir
+          téléchargé les vidéos d'à côté, et Fleet jugeait sur le code de sortie&nbsp;: la vidéo
+          était sur le disque, et la vérification jetée. Les identifiants de l'erreur sont ceux
+          des diapos. Rien ne lisait l'image&nbsp;: ni les diapos, ni une vidéo muette.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Ce qui a été écrit décide, pas le code de sortie. <code>--write-thumbnail</code> ramène
+          les diapos photo. Une vidéo sans piste audio, ou dont la transcription fait moins de
+          huit mots, est lue à l'image&nbsp;: une capture toutes les trois secondes, quarante au
+          plus, passées à l'OCR de Vision avec les diapos, chaque ligne une seule fois. Un check
+          réussi efface <code>fleetError</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>DdaJQwmmrQh : 11 diapos, 2 vidéos, 9 photos — yt-dlp exit 1, 13 fichiers écrits
+avant : out of reach   après : fleet --check-reel → mixed, 16 captures lues sur la vidéo muette
+DdZz14knWs5 : reel.mp4 de 2,9 Mo déjà sur le disque sous l'erreur → mixed</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
