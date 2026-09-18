@@ -535,7 +535,16 @@ struct TodoCard: View {
                 // and it is the only thing on the panel that is.
                 .strokeBorder(.white.opacity(lifted ? 0.34 : spotlit ? 0.4 : 0.07), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(lifted ? 0.55 : 0), radius: lifted ? 12 : 0, y: 4)
+        // Cast only while lifted, and from a shape of its own. As a modifier on the row it was
+        // there at rest too, invisible — and a shadow taken from a group of layers is an
+        // offscreen pass per row, per frame, for as long as the column scrolls.
+        .background {
+            if lifted {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(.black)
+                    .shadow(color: .black.opacity(0.55), radius: 12, y: 4)
+            }
+        }
         .contentShape(Rectangle())
         // Every click puts the panel away, ⌘ or no ⌘. Opening a row is the pointer's job and
         // nothing else's, so there is nothing here a click could mean instead.
@@ -703,7 +712,27 @@ enum FirstLine {
     private static let measuredLock = NSLock()
     private nonisolated(unsafe) static var measured: [CGFloat: CGFloat] = [:]
 
+    /// Remembered, because a row asks three times per body and every row's body runs on every
+    /// tick: typesetting 29 unchanged todos was over half of what the panel cost each second.
     static func metrics(_ text: String, width: CGFloat, size: CGFloat) -> Metrics {
+        let key = "\(size)|\(width)|\(text)"
+        measuredLock.lock()
+        let known = remembered[key]
+        measuredLock.unlock()
+        if let known { return known }
+
+        let fresh = typeset(text, width: width, size: size)
+        measuredLock.lock()
+        // ponytail: emptied rather than evicted; an LRU if a list ever outgrows it.
+        if remembered.count > 512 { remembered.removeAll() }
+        remembered[key] = fresh
+        measuredLock.unlock()
+        return fresh
+    }
+
+    private nonisolated(unsafe) static var remembered: [String: Metrics] = [:]
+
+    private static func typeset(_ text: String, width: CGFloat, size: CGFloat) -> Metrics {
         let font = NSFont.systemFont(ofSize: size)
         let lineHeight = lineHeight(size: size)
         let single = Metrics(lineHeight: lineHeight, lineCount: 1, firstLineWidth: 0)

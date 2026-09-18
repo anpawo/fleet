@@ -296,7 +296,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Fleet · tenue à jour le 12 septembre 2026</p>
+    <p class="eyebrow">Fleet · tenue à jour le 18 septembre 2026</p>
     <h1>Journal de bord</h1>
     <p class="standfirst">
       Ce qui a cassé, ce qui est réparé, ce qui reste ouvert. Chaque entrée porte le symptôme
@@ -307,7 +307,7 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>12</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>13</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
     <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">4a4f5da</dd></div>
@@ -318,6 +318,54 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">HubColumns · TodoCard, FirstLine — OverlayView · SessionTile</span>
+        <span class="chip chip-sha">HEAD</span>
+      </div>
+      <h3>Le panneau rame, surtout quand la colonne des todos défile</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Le panneau saccade, et plus encore pendant le défilement de la colonne TODO.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Deux choses, toutes deux dans la colonne. Chaque rangée portait un
+          <code>.shadow</code> en permanence — rayon 0, opacité 0, invisible, allumé seulement
+          pendant un glisser — et une ombre prise sur un groupe de calques sans
+          <code>shadowPath</code> est une passe hors-écran par rangée et par image, dans une
+          fenêtre plein écran non opaque. Et chaque rangée appelait
+          <code>FirstLine.metrics</code> trois fois par <code>body</code>, à chaque tick d'une
+          seconde, pour un texte qui n'avait pas changé. Les halos des tuiles étaient pris de la
+          même façon sur le groupe entier.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'ombre d'une rangée n'existe que pendant qu'elle est soulevée, et vient d'une forme
+          seule&nbsp;; le halo d'une tuile vient du fond de la carte, une forme seule aussi&nbsp;;
+          <code>FirstLine.metrics</code> se souvient de ses réponses. Rendu identique au pixel
+          près sur <code>--render</code>. Nouveau <code>fleet --bench-panel</code>&nbsp;: le vrai
+          panneau dans une fenêtre jamais affichée, tické, défilé, survolé.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>fleet --bench-panel, 5 sessions, 29 todos
+avant : layers 484, shadows 63 (34 sans chemin, groupes de 7 à 11 calques) · tick 14.9 ms
+après : layers 460, shadows  5 ( 5 sans chemin, calques feuilles)          · tick  8.3 ms
+sample pendant le tick : 334 échantillons sur 590 dans TodoCard.body, tous dans FirstLine.metrics
+défilement todo côté CPU : 0.19 ms/pas avant comme après — le coût était au compositeur</pre>
+        </dd>
+        <dt>Reste</dt>
+        <dd>
+          Le coût côté WindowServer n'est pas mesuré&nbsp;: une fenêtre hors écran ne lui coûte
+          rien, et aucune fenêtre n'a été ouverte pour le voir. La cause est établie par le
+          décompte des calques, pas par un chronomètre du compositeur.
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">

@@ -534,20 +534,20 @@ struct SessionTile: View {
                 .padding(11)
             }
             .frame(height: Self.height, alignment: .top)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // The glow is cast by the card's own ground, a single shape, rather than by the
+            // card as a group: a shadow taken from a group of layers is an offscreen pass per
+            // tile on every frame anything on the panel moves — a todo column scrolling included.
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                    .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
+                            radius: hovering ? 16 : 8)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(session.state.tint, lineWidth: 2.5)
             )
-            // Order matters. `scaleEffect` renders the card into an offscreen buffer sized to
-            // its own bounds, so a shadow applied *before* it gets baked into that buffer and
-            // clipped off at the card's edges — which is exactly the sliced-off glow you see
-            // on hover. Grouping first, scaling, then casting the shadow keeps it outside.
-            .compositingGroup()
             .scaleEffect(hovering ? 1.015 : 1.0)
-            .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
-                    radius: hovering ? 16 : 8)
             // Without this the card snaps to its hovered size in one frame, which reads as a
             // flicker rather than as a response to the pointer.
             .animation(.easeOut(duration: 0.18), value: hovering)

@@ -164,6 +164,134 @@ if CommandLine.arguments.contains("--bench") {
     }
 }
 
+// `--bench-panel` times the panel's own view tree, which `--bench` cannot see: the real
+// `OverlayView` in a window that is never ordered in, ticked, scrolled and hovered, in
+// main-thread CPU per step. Run it under `sample` for the call tree. What it cannot see is the
+// compositor — a window that is not on screen costs WindowServer nothing.
+if CommandLine.arguments.contains("--bench-panel") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let controller = AppController()
+        let registry = SessionRegistry()
+        controller.injectSessions(registry.refresh())
+        controller.hub.refresh()
+        let deadline = Date().addingTimeInterval(8)
+        while !controller.hub.loaded, controller.hub.failure == nil, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        let frame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered,
+                              defer: false)
+        let hosting = NSHostingView(rootView: OverlayView(controller: controller))
+        window.contentView = hosting
+        window.acceptsMouseMovedEvents = true
+
+        func cpu() -> Double {
+            var t = timespec()
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
+            return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
+        }
+        func settle() {
+            for _ in 0 ..< 3 { RunLoop.main.run(mode: .default, before: Date()) }
+            hosting.layoutSubtreeIfNeeded()
+            CATransaction.flush()
+        }
+        func time(_ name: String, steps: Int, _ body: (Int) -> Void) {
+            settle()
+            var worst = 0.0
+            let start = cpu()
+            for i in 0 ..< steps {
+                let t = cpu()
+                body(i)
+                settle()
+                worst = max(worst, cpu() - t)
+            }
+            print(String(format: "  %-34s %7.2f ms/step   worst %7.2f ms",
+                         (name as NSString).utf8String!, (cpu() - start) / Double(steps), worst))
+        }
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        func move(to point: CGPoint) {
+            guard let event = NSEvent.mouseEvent(with: .mouseMoved, location: point,
+                                                 modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber, context: nil,
+                                                 eventNumber: 0, clickCount: 0, pressure: 0) else { return }
+            window.sendEvent(event)
+        }
+
+        let first = cpu()
+        settle()
+        print("panel: \(controller.sessions.count) sessions, \(controller.hub.todos.count) todos, "
+              + "\(controller.hub.mail.count) mail")
+        print(String(format: "  %-34s %7.2f ms", ("first layout" as NSString).utf8String!,
+                     cpu() - first))
+
+        // What the compositor is handed. A shadow with no path and a mask are each an
+        // offscreen pass, every frame the layer under them moves.
+        var layers = 0, shadows = 0, pathless = 0, masks = 0, filtered = 0
+        var pixels = 0.0
+        func walk(_ layer: CALayer) {
+            layers += 1
+            if layer.shadowOpacity > 0 {
+                shadows += 1
+                if layer.shadowPath == nil { pathless += 1 }
+                if CommandLine.arguments.contains("--shadows") {
+                    print("    shadow \(type(of: layer)) \(Int(layer.bounds.width))x\(Int(layer.bounds.height))"
+                          + " r\(layer.shadowRadius) a\(layer.shadowColor?.alpha ?? -1)"
+                          + " path:\(layer.shadowPath != nil) sublayers:\(layer.sublayers?.count ?? 0)")
+                }
+            }
+            if layer.mask != nil { masks += 1 }
+            if !(layer.filters ?? []).isEmpty || layer.compositingFilter != nil { filtered += 1 }
+            if layer.contents != nil {
+                pixels += Double(layer.bounds.width * layer.bounds.height
+                    * layer.contentsScale * layer.contentsScale)
+            }
+            layer.sublayers?.forEach(walk)
+        }
+        hosting.layer.map(walk)
+        print("  layers \(layers), shadows \(shadows) (\(pathless) without a path), masks \(masks), "
+              + "filters \(filtered), backing \(Int(pixels / 1_000_000)) MP")
+
+        time("idle", steps: 60) { _ in }
+        time("tick (sessions republished)", steps: 150) { _ in
+            controller.injectSessions(registry.refresh())
+        }
+        // The rightmost scroll view is the todo column.
+        let scrolls = scrollViews(hosting).sorted { a, b in
+            a.convert(a.bounds, to: nil).minX < b.convert(b.bounds, to: nil).minX
+        }
+        print("  scroll views: \(scrolls.count)")
+        if let todo = scrolls.last {
+            let inWindow = todo.convert(todo.bounds, to: nil)
+            let pointer = CGPoint(x: inWindow.midX, y: inWindow.midY)
+            let range = max((todo.documentView?.frame.height ?? 0) - todo.contentSize.height, 0)
+            print("  todo scroll range: \(Int(range)) pt")
+            let scroll = { (i: Int) in
+                let y = range * (0.5 - 0.5 * cos(Double(i) / 60 * 2 * .pi))
+                todo.contentView.scroll(to: CGPoint(x: 0, y: y))
+                todo.reflectScrolledClipView(todo.contentView)
+            }
+            time("todo scroll, pointer away", steps: 120, scroll)
+            move(to: pointer)
+            time("todo scroll, pointer over column", steps: 120) { i in
+                scroll(i)
+                move(to: CGPoint(x: pointer.x + CGFloat(i % 2), y: pointer.y))
+            }
+            time("pointer sweeping the column", steps: 120) { i in
+                move(to: CGPoint(x: pointer.x, y: inWindow.minY + CGFloat(i * 4 % Int(inWindow.height))))
+            }
+            controller.modifiersChanged(.command)
+            time("same sweep, \u{2318} held", steps: 120) { i in
+                move(to: CGPoint(x: pointer.x, y: inWindow.minY + CGFloat(i * 4 % Int(inWindow.height))))
+            }
+        }
+        exit(0)
+    }
+}
+
 // The todo column as the panel would draw it, without the panel: section, due day, first line.
 if CommandLine.arguments.contains("--todos") {
     Task { @MainActor in
