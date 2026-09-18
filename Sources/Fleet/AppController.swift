@@ -37,6 +37,7 @@ final class AppController: ObservableObject {
 
     private let registry = SessionRegistry()
     private let notifier = Notifier()
+    private let awake = AwakeHold()
     private var overlay: OverlayWindowController?
     private var controlCenter: ControlCenterController?
     private var statusItem: StatusItemController?
@@ -193,6 +194,10 @@ final class AppController: ObservableObject {
     }
 
     private func tick() {
+        // Ahead of the suspended gate: with the display asleep this is the only thing still
+        // ticking, and a hold nobody releases keeps the machine awake all night.
+        let running = ProcessScanner.anyClaudeRunning()
+        awake.hold(running)
         guard !suspended, pretendFleet == nil else { return }
 
         // Ahead of the dormant gate below on purpose: memory fills up whether or not any
@@ -215,7 +220,7 @@ final class AppController: ObservableObject {
         }
 
         // Cheapest possible gate: if no session is running, do nothing else at all.
-        guard ProcessScanner.anyClaudeRunning() else {
+        guard running else {
             // Drop the last known fleet rather than leaving it stale. Nothing rendered it
             // before, but the menu bar shows the count continuously and would keep claiming
             // sessions that have since exited.
@@ -380,6 +385,9 @@ final class AppController: ObservableObject {
                     self.timer = nil
                     self.currentInterval = 0
                     self.hidePanel()
+                    // The display sleeping is not the sessions ending: keep the slow tick so
+                    // the hold is dropped when the last one exits.
+                    if self.awake.held { self.schedule(Config.idlePollDormant) }
                 }
             }
         }
@@ -392,6 +400,31 @@ final class AppController: ObservableObject {
                     self.schedule(Config.idlePollDormant)
                 }
             }
+        }
+    }
+}
+
+/// Keeps the machine out of idle sleep while a session exists: sleep drops the network, and
+/// with it whatever a session was in the middle of. The same claim `caffeinate -i` makes, so
+/// closing the lid or choosing Sleep still sleeps.
+@MainActor
+final class AwakeHold {
+    private var id: IOPMAssertionID?
+    var held: Bool { id != nil }
+
+    func hold(_ wanted: Bool) {
+        guard wanted != held else { return }
+        if let id {
+            IOPMAssertionRelease(id)
+            self.id = nil
+            return
+        }
+        var new = IOPMAssertionID(0)
+        if IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+                                       IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                                       "A Claude Code session is running" as CFString,
+                                       &new) == kIOReturnSuccess {
+            id = new
         }
     }
 }
