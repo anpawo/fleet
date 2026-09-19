@@ -570,9 +570,18 @@ final class HubStore: ObservableObject {
             if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
                 reelIndex = index
             }
-            guard reelCheck == nil, mayCheck(),
-                  let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt })
-            else { return }
+            guard reelCheck == nil, mayCheck() else { return }
+            guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
+                if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })
+                    .max(by: { $0.createdAt < $1.createdAt }) {
+                    reelCheck = Task {
+                        await digest(next)
+                        reelCheck = nil
+                        await syncReels()
+                    }
+                }
+                return
+            }
             checkingReel = next.id
             reelCheck = Task {
                 await ReelCheck.run(next) { step in
@@ -585,6 +594,35 @@ final class HubStore: ObservableObject {
             }
         } catch {
             NSLog("Fleet: reels fetch failed — \(error.localizedDescription)")
+        }
+    }
+
+    /// Reels whose background read failed since launch: not retried until the next one, or
+    /// the backlog would spin on the same broken answer.
+    private var digestFailed: Set<String> = []
+
+    /// Live sessions, `transcript id: project — topic`, for a Reel to be told to. Set by the
+    /// controller, like `mayCheck`.
+    var liveSessions: () -> [String: String] = { [:] }
+
+    /// The background read of a checked Reel: notes, project files and live sessions through
+    /// `ReelDigest`, and the rare todo here — which files the Reel away like the sparkle does.
+    private func digest(_ reel: Reel) async {
+        do {
+            let sessions = liveSessions()
+            let digest = try await Claude.digest(reel, themes: ReelDigest.themes(),
+                                                 projects: ReelDigest.projects(), sessions: sessions)
+            await Task.detached { ReelDigest.apply(digest, reel, sessions: sessions) }.value
+            try await Firestore.patch("factcheck/\(reel.id)", fields: ["digestedAt": Firestore.timestamp(Date())])
+            if let line = digest.todo {
+                add(line)
+                if !reel.seen { markSeen(reel) }
+            }
+            NSLog("Fleet: reel \(reel.id) read — note \(digest.note != nil), todo \(digest.todo != nil), "
+                  + "\(digest.projects.count) project(s), \(digest.sessions.count) session(s)")
+        } catch {
+            NSLog("Fleet: could not read reel \(reel.id) — \(error.localizedDescription)")
+            digestFailed.insert(reel.id)
         }
     }
 

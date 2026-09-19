@@ -200,7 +200,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 8
+    static let version = 9
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -374,7 +374,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 8
+    # fleet-hook-version: 9
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -390,7 +390,7 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel"
         exit 0
     fi
 
@@ -501,7 +501,24 @@ enum Hooks {
             "$event" "$note"
         printf '"systemMessage":"Fleet: machine under strain - %s"}\\n' "$reason"
     }
-    advise
+
+    # A Reel Fleet read in the background and judged relevant to this session — see
+    # `ReelDigest.tell`. Only when the machine had nothing to say: one JSON object per hook.
+    out=$(advise)
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+    elif [ -s "$dir/$sid.reel" ]; then
+        event=$(printf '%s' "$input" | sed -n \\
+            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
+        case "$event" in PostToolUse | UserPromptSubmit )
+            if mv "$dir/$sid.reel" "$dir/$sid.reel.out" 2>/dev/null; then
+                note=$(tr -d '\n' < "$dir/$sid.reel.out")
+                rm -f "$dir/$sid.reel.out"
+                printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' "$event" "$note"
+                printf '"systemMessage":"Fleet: passed on a saved Reel"}\n'
+            fi ;;
+        esac
+    fi
 
     # Which transcript this session is writing, and which process is writing it.
     #

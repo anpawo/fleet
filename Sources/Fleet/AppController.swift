@@ -60,6 +60,15 @@ final class AppController: ObservableObject {
 
     func start() {
         hub.mayCheck = { [weak self] in self?.reaper.struggling == false }
+        hub.liveSessions = { [weak self] in
+            var found: [String: String] = [:]
+            for session in self?.sessions ?? [] {
+                guard let path = session.transcript?.path else { continue }
+                let id = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+                found[id] = "\(session.dirName) — \(session.topic.prefix(200))"
+            }
+            return found
+        }
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
         bindHotKeys()

@@ -344,6 +344,24 @@ if let i = CommandLine.arguments.firstIndex(of: "--reel-todo"),
     RunLoop.main.run()
 }
 
+// `--reel-digest <shortcode>` prints what the background read would leave behind, writing nothing.
+if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
+   i + 1 < CommandLine.arguments.count {
+    let id = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        do {
+            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
+            else { print("no such reel"); exit(1) }
+            let d = try await Claude.digest(Reel(doc), themes: ReelDigest.themes(),
+                                            projects: ReelDigest.projects(), sessions: [:])
+            print("note [\(d.theme)]: \(d.note ?? "-")\ntodo: \(d.todo ?? "-")")
+            for (name, line) in d.projects { print("project \(name): \(line)") }
+        } catch { print(error.localizedDescription); exit(1) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // `--check-reel <shortcode>` runs the whole pipeline on one document and writes the verdict,
 // the way the timer would — the one way to watch a check happen.
 if let i = CommandLine.arguments.firstIndex(of: "--check-reel"),

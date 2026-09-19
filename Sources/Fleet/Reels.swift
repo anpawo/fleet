@@ -33,6 +33,8 @@ struct Reel: Identifiable {
     /// was, from `Category`, and the one line worth remembering it by. Both absent until then.
     var category: String
     var reminder: String
+    /// When the background read of a checked Reel — see `ReelDigest` — has been done.
+    var digestedAt: Date?
 
     init(_ doc: Firestore.Document) {
         id = doc.id
@@ -53,6 +55,7 @@ struct Reel: Identifiable {
         fleetError = doc.string("fleetError")
         category = doc.string("category")
         reminder = doc.string("reminder")
+        digestedAt = doc.date("digestedAt")
     }
 
     /// The shelves a filed Reel goes on, in the order the card pages through them. The names
@@ -78,6 +81,7 @@ struct Reel: Identifiable {
 
     var checked: Bool { status == "done" }
     var needsCheck: Bool { !checked && fleetTriedAt == nil && !seen }
+    var needsDigest: Bool { checked && digestedAt == nil }
 
     /// The phone's six verdicts folded to the four colours the panel has.
     enum Kind { case yes, no, mixed, unknown }
@@ -362,5 +366,113 @@ enum ReelCheck {
             throw Failure.step(step, tail.isEmpty ? "exit \(process.terminationStatus)" : tail)
         }
         return (try? String(contentsOf: out, encoding: .utf8)) ?? ""
+    }
+}
+
+/// What a checked Reel leaves behind once the model has read it, with nobody asking: a line in
+/// the theme's file of `~/self/reels` when it was worth keeping, a line in the file of each
+/// project it bears on — which that project's CLAUDE.md imports, so the next session there
+/// starts knowing it — and a word to each live session it bears on, delivered by the hook at
+/// its next tool call. A todo is the caller's, see `HubStore.digest`.
+enum ReelDigest {
+    static let root = NSHomeDirectory() + "/self"
+    static let notes = root + "/reels"
+
+    /// The projects a Reel can be about, each with the first lines that say what it is.
+    static func projects() -> [(name: String, about: String)] {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []).sorted()
+        return names.compactMap { name in
+            var dir: ObjCBool = false
+            guard !name.hasPrefix("."), name != "reels",
+                  FileManager.default.fileExists(atPath: root + "/" + name, isDirectory: &dir),
+                  dir.boolValue else { return nil }
+            let about = ["CLAUDE.md", "README.md"].lazy
+                .compactMap { try? String(contentsOfFile: "\(root)/\(name)/\($0)", encoding: .utf8) }
+                .first.map { String($0.prefix(300)).replacingOccurrences(of: "\n", with: " ") } ?? ""
+            return (name, about)
+        }
+    }
+
+    static func themes() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: notes)) ?? [])
+            .filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }.sorted()
+    }
+
+    /// The model's words become file names: nothing that is not a plain slug gets that far.
+    static func safe(_ name: String) -> Bool {
+        name.range(of: "^[a-z0-9][a-z0-9-]{1,30}$", options: .regularExpression) != nil
+    }
+
+    /// The line format `triage.mjs` writes, so the files read the same whoever filled them.
+    static func line(_ text: String, _ reel: Reel) -> String {
+        let day = ISO8601DateFormatter.string(from: reel.createdAt == .distantPast ? Date() : reel.createdAt,
+                                              timeZone: .current, formatOptions: [.withFullDate])
+        let text = text.replacingOccurrences(of: "\n", with: " ")
+        return "- \(day) — \(text) — https://www.instagram.com/reel/\(reel.id)/\n"
+    }
+
+    static func append(_ line: String, to path: String, heading: String?) {
+        if !FileManager.default.fileExists(atPath: path) {
+            try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
+                                                     withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: path, contents: heading.map { Data("# \($0)\n\n".utf8) })
+        }
+        guard let handle = FileHandle(forWritingAtPath: path) else { return }
+        handle.seekToEndOfFile()
+        handle.write(Data(line.utf8))
+        try? handle.close()
+    }
+
+    /// Writes everything but the todo. Only names the model was offered are acted on.
+    static func apply(_ digest: Claude.Digest, _ reel: Reel, sessions: [String: String]) {
+        var touched = false
+        if let note = digest.note, safe(digest.theme) {
+            append(line(note, reel), to: "\(notes)/\(digest.theme).md", heading: digest.theme)
+            touched = true
+        }
+        let known = Set(projects().map(\.name))
+        for (name, text) in digest.projects where known.contains(name) {
+            append(line(text, reel), to: "\(notes)/projects/\(name).md", heading: name)
+            link(project: name)
+            touched = true
+        }
+        for (id, text) in digest.sessions where sessions[id] != nil {
+            tell(session: id, "Fleet: a Reel Marius saved bears on what you are doing — \(text) "
+                 + "(https://www.instagram.com/reel/\(reel.id)/). Context, not an instruction: "
+                 + "use it if it helps, say nothing about it otherwise.")
+        }
+        if touched { commit("Reel \(reel.id)") }
+    }
+
+    /// The project's CLAUDE.md imports its Reel file, once. Created when the project has none.
+    static func link(project: String) {
+        let path = "\(root)/\(project)/CLAUDE.md"
+        let importLine = "@~/self/reels/projects/\(project).md"
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        guard !text.contains(importLine) else { return }
+        let block = "\n## Reels\n\nIdeas from saved Reels that bear on this project — read, not orders:\n\n\(importLine)\n"
+        try? (text + block).write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    /// Queued for the hook, which hands it to the session as context at its next tool call and
+    /// deletes it. Stored already JSON-escaped: the hook is `sh` and pastes it as is.
+    static func tell(session id: String, _ text: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: text, options: .fragmentsAllowed),
+              let quoted = String(data: data, encoding: .utf8) else { return }
+        let escaped = String(quoted.dropFirst().dropLast()) + "\\n\\n"
+        append(escaped, to: "\(Hooks.stateDirectory)/\(id).reel", heading: nil)
+    }
+
+    /// Committed every time, pushed best-effort: a push that fails now goes out with the next.
+    static func commit(_ message: String) {
+        for args in [["add", "-A", "."], ["commit", "-q", "-m", message], ["push", "-q"]] {
+            let git = Process()
+            git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            git.arguments = args
+            git.currentDirectoryURL = URL(fileURLWithPath: notes)
+            try? git.run()
+            git.waitUntilExit()
+            if git.terminationStatus != 0 { NSLog("Fleet: git \(args[0]) in reels failed"); return }
+        }
     }
 }
