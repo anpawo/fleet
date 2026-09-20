@@ -765,20 +765,24 @@ enum FirstLine {
     }
 }
 
-/// The Reels are read in the background now — see `ReelDigest` — so all that is left on the
-/// panel is how many went through today.
+/// The Reels are read in the background now — see `ReelDigest` — so the panel says one thing
+/// about them: how many went through today. A pill rather than a column of its own, in the
+/// same type as the sub-agent pill on a tile: a lone number does not need a heading and a rule
+/// over it.
 struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
 
+    private static let tint = Color(red: 0.55, green: 0.60, blue: 0.70)
+
     var body: some View {
-        // The number goes in the note rather than the count on the right: a column with no
-        // rows under it would have a figure floating on its own out at the far edge.
-        HubColumn(title: "REELS",
-                  count: 0,
-                  note: hub.checkingReel != nil ? "checking\u{2026}"
-                                                : "\(hub.reelsReadToday) read today") {
-            EmptyView()
-        }
+        Text("REELS: \(hub.reelsReadToday)" + (hub.checkingReel != nil ? "\u{2026}" : ""))
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(Self.tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Self.tint.opacity(0.14), in: Capsule())
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

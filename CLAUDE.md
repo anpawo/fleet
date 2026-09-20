@@ -18,6 +18,17 @@ verdicts and summaries are French because the phone writes them, and that stays 
 body, not in Fleet's own chrome. Asked for on 2026-09-16, after "À LIRE" and French verdict
 badges shipped on the Reels card.
 
+## Une tâche finie se termine par le test du hook
+
+Après `./install.sh`, lancer `./test-stop-hook.sh` : il rejoue le hook installé
+contre un HOME jetable et vérifie la seule décision non évidente du fichier —
+quand un STOP atteint une session et quand il ne l'atteint pas. Dire ce qu'il a
+affiché. Une app qui redémarre n'est pas un hook qui marche.
+
+**Pourquoi** : mesuré le 20-09-2026 sur tout le corpus de transcripts, du 18-08
+au 20-09 — 9 défauts de fleet signalés par capture d'écran par Marius, après
+coup, sur des sessions qui s'étaient déclarées terminées.
+
 ## Veille (Reels, YouTube)
 
 Avant d'attaquer un sujet, cherche-le dans le graphe de veille — une ligne par Reel ou vidéo, avec les projets qu'elle touche et les termes pour la retrouver :

@@ -159,7 +159,7 @@ struct OverlayView: View {
                         .padding(.bottom, 34)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     ReelsBlock(hub: controller.hub)
-                        .padding(.bottom, 22)
+                        .padding(.bottom, 26)
                     MailColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
