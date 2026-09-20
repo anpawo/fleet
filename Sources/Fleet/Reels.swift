@@ -417,7 +417,10 @@ enum ReelDigest {
                                                      withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: path, contents: heading.map { Data("# \($0)\n\n".utf8) })
         }
-        guard let handle = FileHandle(forWritingAtPath: path) else { return }
+        guard let handle = FileHandle(forWritingAtPath: path) else {
+            NSLog("Fleet: could not write \(path)")
+            return
+        }
         handle.seekToEndOfFile()
         handle.write(Data(line.utf8))
         try? handle.close()
@@ -451,7 +454,13 @@ enum ReelDigest {
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         guard !text.contains(importLine) else { return }
         let block = "\n## Reels\n\nIdeas from saved Reels that bear on this project — read, not orders:\n\n\(importLine)\n"
-        try? (text + block).write(toFile: path, atomically: true, encoding: .utf8)
+        do {
+            try (text + block).write(toFile: path, atomically: true, encoding: .utf8)
+        } catch {
+            // A write that fails quietly is worse than the missing line: the next session in
+            // that project starts without the notes and nothing anywhere says why.
+            NSLog("Fleet: could not point \(path) at its Reels — \(error.localizedDescription)")
+        }
     }
 
     /// Queued for the hook, which hands it to the session as context at its next tool call and
