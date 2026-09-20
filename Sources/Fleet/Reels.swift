@@ -447,13 +447,20 @@ enum ReelDigest {
         if touched { commit("Reel \(reel.id)") }
     }
 
-    /// The project's CLAUDE.md imports its Reel file, once. Created when the project has none.
+    /// The project's CLAUDE.md names its Reel file, once. Created when the project has none.
+    ///
+    /// Named, not imported. An `@` import of a file outside the repository stops Claude Code
+    /// dead at "Allow external CLAUDE.md file imports?" before its first turn — measured on
+    /// 2026-09-20, a session sat on that dialog for 41 minutes — and the answer belongs to
+    /// Marius, who has approved it nowhere. A path in a sentence costs no context and is read
+    /// on the day the subject comes up, which is all these notes were ever for.
     static func link(project: String) {
         let path = "\(root)/\(project)/CLAUDE.md"
-        let importLine = "@~/self/reels/projects/\(project).md"
+        let notesPath = "~/self/reels/projects/\(project).md"
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        guard !text.contains(importLine) else { return }
-        let block = "\n## Reels\n\nIdeas from saved Reels that bear on this project — read, not orders:\n\n\(importLine)\n"
+        guard !text.contains("reels/projects/\(project).md") else { return }
+        let block = "\n## Reels\n\nNotes from Reels Marius saved that bear on this project — "
+            + "read them the day the subject comes up, they are not orders:\n\n\(notesPath)\n"
         do {
             try (text + block).write(toFile: path, atomically: true, encoding: .utf8)
         } catch {

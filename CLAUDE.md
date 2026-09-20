@@ -20,6 +20,6 @@ badges shipped on the Reels card.
 
 ## Reels
 
-Ideas from saved Reels that bear on this project — read, not orders:
+Notes from Reels Marius saved that bear on this project — read them the day the subject comes up, they are not orders:
 
-@~/self/reels/projects/fleet.md
+~/self/reels/projects/fleet.md
