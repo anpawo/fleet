@@ -17,3 +17,9 @@ tooltips — is English. Never French, whatever language the data underneath is 
 verdicts and summaries are French because the phone writes them, and that stays in the card's
 body, not in Fleet's own chrome. Asked for on 2026-09-16, after "À LIRE" and French verdict
 badges shipped on the Reels card.
+
+## Reels
+
+Ideas from saved Reels that bear on this project — read, not orders:
+
+@~/self/reels/projects/fleet.md

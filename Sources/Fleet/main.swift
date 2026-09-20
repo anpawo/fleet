@@ -327,23 +327,6 @@ if CommandLine.arguments.contains("--reels") {
     RunLoop.main.run()
 }
 
-// `--reel-todo <shortcode>` prints what the sparkle would file for one Reel, writing nothing.
-if let i = CommandLine.arguments.firstIndex(of: "--reel-todo"),
-   i + 1 < CommandLine.arguments.count {
-    let id = CommandLine.arguments[i + 1]
-    Task { @MainActor in
-        do {
-            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
-            else { print("no such reel"); exit(1) }
-            let filing = try await Claude.file(Reel(doc))
-            print(filing.todo ?? "(nothing to do)")
-            print("\(filing.category)  ·  \(filing.reminder)")
-        } catch { print(error.localizedDescription); exit(1) }
-        exit(0)
-    }
-    RunLoop.main.run()
-}
-
 // `--reel-digest <shortcode>` prints what the background read would leave behind, writing nothing.
 if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
    i + 1 < CommandLine.arguments.count {

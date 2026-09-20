@@ -158,14 +158,11 @@ struct OverlayView: View {
                         // mail down itself, rather than landing on the MAIL heading.
                         .padding(.bottom, 34)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
-                    ReelsBlock(hub: controller.hub, commandHeld: controller.commandHeld)
+                    ReelsBlock(hub: controller.hub)
                         .padding(.bottom, 22)
                     MailColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
-                // The Reel unfolding under ⌘ pushes the mail down; without this the mail
-                // jumps to where the paragraph will end while the paragraph is still growing.
-                .animation(ReelsBlock.unfold, value: controller.commandHeld && controller.hub.reelHovered)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)

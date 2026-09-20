@@ -22,11 +22,10 @@ struct MailColumn: View {
         HubColumn(title: "MAIL",
                   count: hub.mail.count,
                   note: hub.failure ?? (hub.showingSeen ? "seen" : nil)) {
-            if hub.mail.isEmpty {
-                HubEmptyLine(text: hub.loaded ? "Nothing waiting" : "Loading\u{2026}")
-            } else {
-                ForEach(hub.mail.prefix(Self.maxItems)) { MailCard(mail: $0) }
+            if !hub.loaded {
+                HubEmptyLine(text: "Loading\u{2026}")
             }
+            ForEach(hub.mail.prefix(Self.maxItems)) { MailCard(mail: $0) }
         }
     }
 }
@@ -761,195 +760,20 @@ enum FirstLine {
     }
 }
 
-/// Over the mail: the Reels the phone was handed, one at a time, with the verdict this Mac or
-/// the phone reached. Red, green, amber, blue — false, true, mixed, not known — in the panel's
-/// own four colours, so a glance says which kind of thing you were sent before a word is read.
-///
-/// One at a time on purpose. A column of six paragraphs is a page, and the point of a verdict
-/// is to be read. Holding ⌘ over the card unfolds the text to its full length, the way a
-/// todo row opens under the pointer; ⌘← and ⌘→ turn the page either way and wrap; a ⌘-click
-/// is the sparkle — file it, move on, let the model work behind the next card; a right-click
-/// opens the Reel itself in Firefox. ⌘ brings the two controls: the sparkle files the Reel,
-/// as a todo when it is something to do and on a shelf on its document when not, and takes it
-/// off the deck either way; the ✕ deletes it everywhere.
-///
-/// The one card on the panel a plain click does nothing to — not even dismiss it. Everything
-/// here is behind ⌘, and a click that missed the key must not throw the panel away with the
-/// paragraph you were reading.
+/// The Reels are read in the background now — see `ReelDigest` — so all that is left on the
+/// panel is how many went through today.
 struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
-    let commandHeld: Bool
-
-    @State private var hoveringFile = false
-    @State private var hoveringDelete = false
-
-    private static let fileTint = Color(red: 0.27, green: 0.62, blue: 1.00)
-
-    /// The text unfolding under ⌘, and the mail under it easing down to make room. One
-    /// animation for both, from here and from the column in `OverlayView`: two curves would
-    /// have the mail arrive before or after the paragraph that pushed it.
-    static let unfold: Animation = .easeOut(duration: 0.35)
-    private static let deleteTint = Color(red: 1.00, green: 0.35, blue: 0.32)
-
-    private static func tint(_ reel: Reel) -> Color {
-        switch reel.kind {
-        case .yes: return SessionState.ready.tint
-        case .no: return SessionState.running.tint
-        case .mixed: return SessionState.apiError.tint
-        case .unknown: return SessionState.awaitingAnswer.tint
-        }
-    }
 
     var body: some View {
+        // The number goes in the note rather than the count on the right: a column with no
+        // rows under it would have a figure floating on its own out at the far edge.
         HubColumn(title: "REELS",
-                  count: hub.reels.count,
-                  note: hub.checkingReel != nil ? "checking\u{2026}" : nil) {
-            if let reel = hub.currentReel {
-                card(reel)
-            } else {
-                HubEmptyLine(text: "Nothing sent")
-            }
+                  count: 0,
+                  note: hub.checkingReel != nil ? "checking\u{2026}"
+                                                : "\(hub.reelsReadToday) read today") {
+            EmptyView()
         }
-    }
-
-    private var expanded: Bool { commandHeld && hub.reelHovered }
-
-    private func card(_ reel: Reel) -> some View {
-        let tint = Self.tint(reel)
-        return VStack(alignment: .leading, spacing: 5) {
-            VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Circle().fill(tint).frame(width: 5, height: 5)
-                Text(reel.badge)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(tint)
-                Spacer(minLength: 4)
-                // The controls take the place of the page number and the age, like the ✕ on
-                // a todo: nothing moves when ⌘ goes down.
-                ZStack(alignment: .trailing) {
-                    Text("\(hub.reelIndex % max(hub.reels.count, 1) + 1)/\(hub.reels.count) \u{00B7} "
-                         + shortAge(since: reel.createdAt))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.28))
-                        .opacity(commandHeld ? 0 : 1)
-                    if commandHeld {
-                        HStack(spacing: 6) { fileButton(reel); delete(reel) }
-                    }
-                }
-                .frame(height: 12, alignment: .trailing)
-            }
-            Text(reel.label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(2)
-            if hub.filingReels.contains(reel.id) {
-                Text("Reading it for something to do\u{2026}")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.4))
-            } else if hub.checkingReel == reel.id {
-                Text(hub.checkingStep.isEmpty ? "Checking\u{2026}" : hub.checkingStep)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.4))
-            } else if !reel.summary.isEmpty {
-                curtain(reel.summary, folded: 8)
-            } else if !reel.fleetError.isEmpty {
-                Text(reel.fleetError)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .lineLimit(3)
-            }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(tint.opacity(0.35), lineWidth: 1)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { if commandHeld { file(reel) } }
-        .animation(Self.unfold, value: expanded)
-        // A right-click opens the Reel in Firefox. SwiftUI has no right-click gesture on
-        // macOS, so the panel window catches the button and asks the store whether the pointer
-        // was over this card — the hover below is how it knows. ⌃-click is the same thing.
-        .gesture(TapGesture().modifiers(.control).onEnded { hub.openReel(reel) })
-        .onHover { hub.reelHovered = $0 }
-        .animation(TodoColumn.unroll, value: hub.reelIndex)
-    }
-
-    /// The room the text has to wrap in, for the curtain below. Seeded with the width the
-    /// column actually gives it, so the first frame — and an offscreen render, which never
-    /// gets the preference back — folds where the window will.
-    @State private var textWidth: CGFloat = 266
-    private static let textSize: CGFloat = 11
-
-    /// The todo row's curtain, on a paragraph: the text is laid out once at its full height
-    /// and what moves is the edge it is clipped to, so the lines below the fold come into view
-    /// one after another rather than the whole thing appearing at once. Both heights are
-    /// numbers — see `FirstLine` — which is what makes there be something to animate between.
-    private func curtain(_ text: String, folded lines: Int) -> some View {
-        let metrics = FirstLine.metrics(text, width: textWidth, size: Self.textSize)
-        let shown = min(metrics.lineCount, lines)
-        return Text(text)
-            .font(.system(size: Self.textSize))
-            .foregroundStyle(.white.opacity(0.78))
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(GeometryReader { proxy in
-                Color.clear.preference(key: TextWidth.self, value: proxy.size.width)
-            })
-            .overlay(alignment: .topLeading) {
-                if !expanded, metrics.lineCount > lines {
-                    Text("\u{2026}")
-                        .font(.system(size: Self.textSize))
-                        .foregroundStyle(.white.opacity(0.78))
-                        .offset(x: metrics.lastShownLineWidth(lines) + 1,
-                                y: metrics.lineHeight * CGFloat(lines - 1))
-                }
-            }
-            .frame(height: expanded ? metrics.fullHeight : metrics.lineHeight * CGFloat(shown),
-                   alignment: .top)
-            .clipped()
-            .onPreferenceChange(TextWidth.self) { if $0 > 24 { textWidth = $0 } }
-    }
-
-    /// The sparkle, and the ⌘-click: the model reads this one while you are already on the
-    /// next. A card that waits for an answer is a card you sit in front of.
-    private func file(_ reel: Reel) {
-        hub.fileReel(reel)
-        hub.turnReel(1)
-    }
-
-    private func fileButton(_ reel: Reel) -> some View {
-        Button { file(reel) } label: {
-            Image(systemName: "sparkles")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Self.fileTint.opacity(hoveringFile ? 1 : 0.75))
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(Self.fileTint.opacity(hoveringFile ? 0.22 : 0.10)))
-        }
-        .buttonStyle(.plain)
-        .disabled(hub.filingReels.contains(reel.id))
-        .onHover { hoveringFile = $0 }
-        .help("Something to do? Then it becomes a todo. Either way the Reel is put away")
-    }
-
-    private func delete(_ reel: Reel) -> some View {
-        Button { hub.deleteReel(reel) } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Self.deleteTint.opacity(hoveringDelete ? 1 : 0.75))
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(Self.deleteTint.opacity(hoveringDelete ? 0.22 : 0.10)))
-        }
-        .buttonStyle(.plain)
-        .onHover { hoveringDelete = $0 }
-        .help("Delete everywhere")
     }
 }
 

@@ -495,19 +495,14 @@ final class HubStore: ObservableObject {
 
     // MARK: - Reels
 
-    /// The Reels the phone was handed, newest first, minus the ones put away. Every one is on
-    /// the panel one at a time — see `currentReel` — so a verdict gets read rather than
-    /// scrolled past.
+    /// The Reels the phone was handed, minus the ones put away — for `fleet --reels`.
     @Published private(set) var reels: [Reel] = []
-    /// Which of them is showing. ⌘-click moves it along and it wraps: the list is short and a
-    /// place you cannot get back to from the end is a place you stop going.
-    @Published private(set) var reelIndex = 0
+    /// How many the background read has been through today: all the panel says about Reels,
+    /// now that nobody reads them there.
+    @Published private(set) var reelsReadToday = 0
     /// The Reel a check is running on right now, when one is. One at a time — whisper takes
     /// every core it is given, and two of them is the machine Fleet exists to prevent.
     @Published private(set) var checkingReel: String?
-    /// Which step that check is on, in words. A card that says "checking" for two minutes
-    /// looks stuck; one that says what it is doing does not.
-    @Published private(set) var checkingStep = ""
     /// Whether the machine has room for a check. Set by the controller from the reaper; a
     /// transcription started on a struggling machine is the wrong kind of help. Off until it
     /// is set: every `fleet --something` builds a store too, and none of them should start a
@@ -516,36 +511,6 @@ final class HubStore: ObservableObject {
 
     private(set) var reelsFetchedAt = Date.distantPast
     private var reelCheck: Task<Void, Never>?
-
-    var currentReel: Reel? { reels.isEmpty ? nil : reels[reelIndex % reels.count] }
-
-    /// One page along, either way, wrapping at both ends.
-    func turnReel(_ step: Int) {
-        guard !reels.isEmpty else { return }
-        reelIndex = ((reelIndex + step) % reels.count + reels.count) % reels.count
-    }
-
-    /// Whether the pointer is over the Reels card. The window reads it when the right button
-    /// goes down, and the card unfolds on it while ⌘ is held — like a todo row, which opens
-    /// under the pointer and not all down the column at once.
-    @Published var reelHovered = false
-
-    /// The right button, from the panel window: open the card under the pointer, if that is
-    /// what is under it.
-    func openHoveredReel() {
-        guard reelHovered, let reel = currentReel else { return }
-        openReel(reel)
-    }
-
-    /// The card's link, in the browser you use. Firefox by name rather than the default
-    /// handler: the default is whatever last claimed `https`, and that is not a choice.
-    func openReel(_ reel: Reel) {
-        let url = reel.url.isEmpty ? "https://www.instagram.com/reel/\(reel.id)/" : reel.url
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = ["-a", "Firefox", url]
-        try? task.run()
-    }
 
     /// From the controller's tick, panel or no panel: a Reel shared from the phone at lunch
     /// should have its verdict by the time you sit back down.
@@ -563,13 +528,8 @@ final class HubStore: ObservableObject {
             let all = try await Firestore.collection("factcheck").map(Reel.init)
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
-            // The card you are reading stays the card you are reading: every finished check
-            // lands here, and the index is a position in a list that has just been rebuilt.
-            let showing = currentReel?.id
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
-            if let showing, let index = reels.firstIndex(where: { $0.id == showing }) {
-                reelIndex = index
-            }
+            reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
             guard reelCheck == nil, mayCheck() else { return }
             guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
                 if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })
@@ -584,12 +544,9 @@ final class HubStore: ObservableObject {
             }
             checkingReel = next.id
             reelCheck = Task {
-                await ReelCheck.run(next) { step in
-                    Task { @MainActor in self.checkingStep = step }
-                }
+                await ReelCheck.run(next)
                 reelCheck = nil
                 checkingReel = nil
-                checkingStep = ""
                 await syncReels()
             }
         } catch {
@@ -626,56 +583,8 @@ final class HubStore: ObservableObject {
         }
     }
 
-    /// The Reels the model is reading right now. Several at once: each is a headless turn of
-    /// its own, and you have already moved on to the next card.
-    @Published private(set) var filingReels: Set<String> = []
-
-    /// The sparkle on a Reel, ⌘ held: ask whether it is something to do. If it is, the todo
-    /// lands in the column on the right; if not, the Reel is shelved on its document — a kind
-    /// and one line to remember it by. Either way it leaves the deck, seen on the phone. Not
-    /// on screen first, unlike the other writes here: a card gone before the model has
-    /// answered would be a todo you have to hope for.
-    func fileReel(_ reel: Reel) {
-        guard !filingReels.contains(reel.id) else { return }
-        filingReels.insert(reel.id)
-        Task {
-            defer { filingReels.remove(reel.id) }
-            do {
-                let filing = try await Claude.file(reel)
-                if let line = filing.todo {
-                    add(line)
-                    markSeen(reel)
-                    return
-                }
-                // Shelved: off the deck like a todo'd one, and seen on the phone. The shelf
-                // and the reminder go on the document for the phone, and for the day the
-                // Reel comes up again; the card does not keep them.
-                drop(reel)
-                try await Firestore.patch("factcheck/\(reel.id)", fields: [
-                    "category": ["stringValue": filing.category],
-                    "reminder": ["stringValue": filing.reminder],
-                    "seen": ["booleanValue": true],
-                    "seenAt": Firestore.timestamp(Date()),
-                ])
-            } catch {
-                NSLog("Fleet: could not file reel \(reel.id) — \(error.localizedDescription)")
-                failure = "not filed"
-            }
-        }
-    }
-
-    /// Take a Reel off the card without the page turning under you: one gone before the one
-    /// on show shifts the index back by one, so the same card stays in front.
-    private func drop(_ reel: Reel) {
-        guard let index = reels.firstIndex(where: { $0.id == reel.id }) else { return }
-        reels.remove(at: index)
-        if index < reelIndex { reelIndex -= 1 }
-        if !reels.isEmpty { reelIndex %= reels.count } else { reelIndex = 0 }
-    }
-
-    /// Put away, kept. On screen before it is on the network, like every write here.
+    /// Put away, kept.
     func markSeen(_ reel: Reel) {
-        drop(reel)
         Task {
             do {
                 try await Firestore.patch("factcheck/\(reel.id)", fields: [
@@ -684,19 +593,6 @@ final class HubStore: ObservableObject {
                 ])
             } catch {
                 NSLog("Fleet: could not mark reel \(reel.id) seen — \(error.localizedDescription)")
-                await syncReels()
-            }
-        }
-    }
-
-    /// The ✕ on a Reel, ⌘ held: gone, on the phone too.
-    func deleteReel(_ reel: Reel) {
-        drop(reel)
-        Task {
-            do {
-                try await Firestore.delete("factcheck/\(reel.id)")
-            } catch {
-                NSLog("Fleet: could not delete reel \(reel.id) — \(error.localizedDescription)")
                 await syncReels()
             }
         }
