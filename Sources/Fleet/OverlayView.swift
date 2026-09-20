@@ -721,8 +721,14 @@ struct SessionTile: View {
     /// Where in a loop of `period` seconds the clock is now, 0 to 1. Absolute time, so every
     /// tile on the panel sweeps together and none of them restarts on a refresh.
     private static func phase(_ now: Date, over period: TimeInterval) -> Double {
-        now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+        if let held = frozenPhase { return held }
+        return now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
     }
+
+    /// Stops the clock at one point in the loop, 0 to 1, for `--render --phase`. A moving edge
+    /// is otherwise the one thing a still cannot show: the picture lands wherever the second
+    /// hand happened to be, and two runs never agree. Nothing sets this in the running app.
+    nonisolated(unsafe) static var frozenPhase: Double?
 
     /// Once round the tile, and how much of the edge the highlight covers.
     private static let sweep: TimeInterval = 2.4
