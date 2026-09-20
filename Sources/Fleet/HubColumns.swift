@@ -21,6 +21,7 @@ struct MailColumn: View {
         // pass for one that just arrived, but that is a footnote on the column, not its name.
         HubColumn(title: "MAIL",
                   count: hub.mail.count,
+                  showsZero: true,
                   note: hub.failure ?? (hub.showingSeen ? "seen" : nil)) {
             if !hub.loaded {
                 HubEmptyLine(text: "Loading\u{2026}")
@@ -244,6 +245,10 @@ struct TodoColumn: View {
 struct HubColumn<Content: View>: View {
     let title: String
     let count: Int
+    /// Whether a count of zero is drawn. Off by default — a column with rows in it says how
+    /// many and a column with none says nothing — and on for MAIL, where the empty line that
+    /// used to say so is gone and the nought is all that is left to say it.
+    var showsZero = false
     /// A word about why the list may not be current — "offline", usually. Nil when it is.
     let note: String?
     /// The + on the heading, for a column you can write into. Nil on one that only reports.
@@ -276,7 +281,7 @@ struct HubColumn<Content: View>: View {
                         // in the gap above the rule.
                         .frame(height: 13)
                 }
-                if count > 0 {
+                if count > 0 || showsZero {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.32))
