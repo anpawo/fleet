@@ -376,14 +376,16 @@ enum ReelCheck {
 /// its next tool call. A todo is the caller's, see `HubStore.digest`.
 enum ReelDigest {
     static let root = NSHomeDirectory() + "/self"
-    static let notes = root + "/reels"
+    /// The repository that holds what Marius keeps from what he scrolls: `reels/` by theme,
+    /// `youtube/` by subject, `projects/` by project. Named `reels` until 2026-09-20.
+    static let notes = root + "/social-media"
 
     /// The projects a Reel can be about, each with the first lines that say what it is.
     static func projects() -> [(name: String, about: String)] {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []).sorted()
         return names.compactMap { name in
             var dir: ObjCBool = false
-            guard !name.hasPrefix("."), name != "reels",
+            guard !name.hasPrefix("."), name != "social-media",
                   FileManager.default.fileExists(atPath: root + "/" + name, isDirectory: &dir),
                   dir.boolValue else { return nil }
             let about = ["CLAUDE.md", "README.md"].lazy
@@ -394,7 +396,7 @@ enum ReelDigest {
     }
 
     static func themes() -> [String] {
-        ((try? FileManager.default.contentsOfDirectory(atPath: notes)) ?? [])
+        ((try? FileManager.default.contentsOfDirectory(atPath: notes + "/reels")) ?? [])
             .filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }.sorted()
     }
 
@@ -430,7 +432,7 @@ enum ReelDigest {
     static func apply(_ digest: Claude.Digest, _ reel: Reel, sessions: [String: String]) {
         var touched = false
         if let note = digest.note, safe(digest.theme) {
-            append(line(note, reel), to: "\(notes)/\(digest.theme).md", heading: digest.theme)
+            append(line(note, reel), to: "\(notes)/reels/\(digest.theme).md", heading: digest.theme)
             touched = true
         }
         let known = Set(projects().map(\.name))
@@ -456,9 +458,10 @@ enum ReelDigest {
     /// on the day the subject comes up, which is all these notes were ever for.
     static func link(project: String) {
         let path = "\(root)/\(project)/CLAUDE.md"
-        let notesPath = "~/self/reels/projects/\(project).md"
+        let notesPath = "~/self/social-media/projects/\(project).md"
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        guard !text.contains("reels/projects/\(project).md") else { return }
+        guard !text.contains("social-media/projects/\(project).md")
+            || text.contains("~/self/reels/projects/\(project).md") else { return }
         let block = "\n## Reels\n\nNotes from Reels Marius saved that bear on this project — "
             + "read them the day the subject comes up, they are not orders:\n\n\(notesPath)\n"
         do {

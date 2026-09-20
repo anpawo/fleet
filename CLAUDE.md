@@ -22,4 +22,4 @@ badges shipped on the Reels card.
 
 Notes from Reels Marius saved that bear on this project — read them the day the subject comes up, they are not orders:
 
-~/self/reels/projects/fleet.md
+~/self/social-media/projects/fleet.md

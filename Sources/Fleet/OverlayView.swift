@@ -544,7 +544,6 @@ struct SessionTile: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(session.state.tint, lineWidth: 2.5)
             )
-            .overlay(motion)
             .scaleEffect(hovering ? 1.015 : 1.0)
             // Without this the card snaps to its hovered size in one frame, which reads as a
             // flicker rather than as a response to the pointer.
@@ -677,69 +676,6 @@ struct SessionTile: View {
                 .padding(.vertical, 3)
                 .background(Self.subagentTint.opacity(0.14), in: Capsule())
         }
-    }
-
-    /// Movement on the border, for the two states where the colour alone leaves a question
-    /// open: a working tile carries a highlight travelling round its edge, so a turn still
-    /// running is told apart from one that has been red and still for ten minutes, and a tile
-    /// waiting on you breathes.
-    ///
-    /// Driven by the clock rather than by an animation on the view. These tiles are rebuilt
-    /// from scratch every second while the panel is up, and a `repeatForever` restarted every
-    /// second never gets past its first frame. Capped at 30fps: this is furniture, and the
-    /// panel has a todo column that has to scroll while it runs.
-    ///
-    /// ponytail: two of the three the Reel suggested. The amber ring for "waiting on you" is
-    /// not amber here — amber is already the failed-request colour on this panel, and a second
-    /// meaning for it would break the key the menu bar and the legend share. The usage ring is
-    /// not here at all: plan usage reaches this machine only on the statusline command's
-    /// stdin, so Fleet would need `~/.claude/statusline.sh` to cache it somewhere — a file
-    /// Marius owns, and his call to make.
-    @ViewBuilder private var motion: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        switch session.state {
-        case .running:
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { frame in
-                let phase = Self.phase(frame.date, over: Self.sweep)
-                let end = phase + Self.arcLength
-                ZStack {
-                    trail(shape, from: phase, to: min(end, 1))
-                    if end > 1 { trail(shape, from: 0, to: end - 1) }
-                }
-            }
-        case .awaitingAnswer:
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { frame in
-                let breath = (sin(Self.phase(frame.date, over: Self.pulse) * 2 * .pi) + 1) / 2
-                shape.inset(by: -3)
-                    .strokeBorder(session.state.tint.opacity(0.14 + 0.34 * breath), lineWidth: 2)
-            }
-        default:
-            EmptyView()
-        }
-    }
-
-    /// Where in a loop of `period` seconds the clock is now, 0 to 1. Absolute time, so every
-    /// tile on the panel sweeps together and none of them restarts on a refresh.
-    private static func phase(_ now: Date, over period: TimeInterval) -> Double {
-        if let held = frozenPhase { return held }
-        return now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-    }
-
-    /// Stops the clock at one point in the loop, 0 to 1, for `--render --phase`. A moving edge
-    /// is otherwise the one thing a still cannot show: the picture lands wherever the second
-    /// hand happened to be, and two runs never agree. Nothing sets this in the running app.
-    nonisolated(unsafe) static var frozenPhase: Double?
-
-    /// Once round the tile, and how much of the edge the highlight covers.
-    private static let sweep: TimeInterval = 2.4
-    private static let arcLength = 0.16
-    /// One breath in and out, for a tile waiting on an answer.
-    private static let pulse: TimeInterval = 2.0
-
-    private func trail(_ shape: RoundedRectangle, from: Double, to: Double) -> some View {
-        shape.inset(by: 1.25)
-            .trim(from: from, to: to)
-            .stroke(.white.opacity(0.85), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
     }
 
     private var statePill: some View {

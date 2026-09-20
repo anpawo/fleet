@@ -645,14 +645,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--launch"),
 if let i = CommandLine.arguments.firstIndex(of: "--render"),
    i + 1 < CommandLine.arguments.count {
     let outPath = CommandLine.arguments[i + 1]
-    // `--phase <0…1>` freezes the tiles' moving edge at one point in its loop, so a still of an
-    // animation is a chosen frame rather than whatever the clock was doing. Four renders at
-    // 0, 0.25, 0.5, 0.75 are the sweep, looked at without a window.
-    if let p = CommandLine.arguments.firstIndex(of: "--phase"),
-       p + 1 < CommandLine.arguments.count,
-       let phase = Double(CommandLine.arguments[p + 1]) {
-        SessionTile.frozenPhase = min(max(phase, 0), 1)
-    }
     MainActor.assumeIsolated {
         _ = NSApplication.shared
         let registry = SessionRegistry()
