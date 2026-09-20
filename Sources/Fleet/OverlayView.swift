@@ -549,6 +549,11 @@ struct SessionTile: View {
             // Without this the card snaps to its hovered size in one frame, which reads as a
             // flicker rather than as a response to the pointer.
             .animation(.easeOut(duration: 0.18), value: hovering)
+            // A turn ending is a colour change on four surfaces at once — border, glow, pill
+            // and whichever movement the edge was carrying. Crossfaded rather than cut, and
+            // short enough that a session which finishes and is prompted again mid-fade turns
+            // around on the spot instead of finishing a transition that is already wrong.
+            .animation(.easeInOut(duration: 0.22), value: session.state)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
