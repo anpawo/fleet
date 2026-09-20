@@ -74,7 +74,7 @@ struct OverlayView: View {
     /// word is read.
     /// Deep enough to hold the memory block that stands over the mail, with air under it —
     /// and taken by both side columns, so MAIL and TODO come back onto one line.
-    private static let podiumDrop: CGFloat = 104
+    private static let podiumDrop: CGFloat = 78
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -155,11 +155,11 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     MemoryStrip(reaper: controller.reaper, commandHeld: controller.commandHeld)
                         // Air under it in the state where it outgrows the step and pushes the
-                        // mail down itself, rather than landing on the MAIL heading.
-                        .padding(.bottom, 34)
+                        // rest down itself, rather than landing on the REELS heading.
+                        .padding(.bottom, 18)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     ReelsBlock(hub: controller.hub)
-                        .padding(.bottom, 26)
+                        .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
