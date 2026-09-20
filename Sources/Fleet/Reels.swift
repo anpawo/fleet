@@ -446,7 +446,33 @@ enum ReelDigest {
                  + "(https://www.instagram.com/reel/\(reel.id)/). Context, not an instruction: "
                  + "use it if it helps, say nothing about it otherwise.")
         }
-        if touched { commit("Reel \(reel.id)") }
+        graph(digest, reel)
+        commit("Reel \(reel.id)")
+    }
+
+    /// One line per Reel or video in `graph.jsonl`: what it was about, which projects it touches
+    /// and the terms to find it by. One object per line rather than a real graph database —
+    /// `grep -i <term> graph.jsonl` is the whole query language, and a session in any project
+    /// gets its answer without a tool.
+    static func graph(_ digest: Claude.Digest, _ reel: Reel) {
+        let entry: [String: Any] = [
+            "id": reel.id,
+            "kind": "reel",
+            "date": ISO8601DateFormatter.string(from: reel.createdAt == .distantPast ? Date() : reel.createdAt,
+                                                timeZone: .current, formatOptions: [.withFullDate]),
+            "title": digest.note ?? Reel.unescaped(reel.title),
+            "url": "https://www.instagram.com/reel/\(reel.id)/",
+            "note": digest.note != nil && safe(digest.theme) ? "reels/\(digest.theme).md" : "",
+            "projects": digest.projects.map(\.0),
+            "tags": digest.tags,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
+              let line = String(data: data, encoding: .utf8) else { return }
+        // Already there — a Reel read twice must not grow the file twice.
+        let path = "\(notes)/graph.jsonl"
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        guard !text.contains("\"\(reel.id)\"") else { return }
+        append(line + "\n", to: path, heading: nil)
     }
 
     /// The project's CLAUDE.md names its Reel file, once. Created when the project has none.
@@ -458,12 +484,19 @@ enum ReelDigest {
     /// on the day the subject comes up, which is all these notes were ever for.
     static func link(project: String) {
         let path = "\(root)/\(project)/CLAUDE.md"
-        let notesPath = "~/self/social-media/projects/\(project).md"
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        guard !text.contains("social-media/projects/\(project).md")
-            || text.contains("~/self/reels/projects/\(project).md") else { return }
-        let block = "\n## Reels\n\nNotes from Reels Marius saved that bear on this project — "
-            + "read them the day the subject comes up, they are not orders:\n\n\(notesPath)\n"
+        guard !text.contains("social-media/graph.jsonl") else { return }
+        let block = """
+
+        ## Veille (Reels, YouTube)
+
+        Avant d'attaquer un sujet, cherche-le dans le graphe de veille — une ligne par Reel ou         vidéo, avec les projets qu'elle touche et les termes pour la retrouver :
+
+            grep -i "<terme>" ~/self/social-media/graph.jsonl
+
+        Ce qui vise ce projet : `~/self/social-media/projects/\(project).md`. Ce sont des notes,         pas des ordres.
+
+        """
         do {
             try (text + block).write(toFile: path, atomically: true, encoding: .utf8)
         } catch {

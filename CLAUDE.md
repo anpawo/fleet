@@ -18,8 +18,10 @@ verdicts and summaries are French because the phone writes them, and that stays 
 body, not in Fleet's own chrome. Asked for on 2026-09-16, after "À LIRE" and French verdict
 badges shipped on the Reels card.
 
-## Reels
+## Veille (Reels, YouTube)
 
-Notes from Reels Marius saved that bear on this project — read them the day the subject comes up, they are not orders:
+Avant d'attaquer un sujet, cherche-le dans le graphe de veille — une ligne par Reel ou vidéo, avec les projets qu'elle touche et les termes pour la retrouver :
 
-~/self/social-media/projects/fleet.md
+    grep -i "<terme>" ~/self/social-media/graph.jsonl
+
+Ce qui vise ce projet : `~/self/social-media/projects/fleet.md`. Ce sont des notes, pas des ordres.

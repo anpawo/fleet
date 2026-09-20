@@ -207,6 +207,7 @@ enum Claude {
         var todo: String?
         var projects: [(String, String)]
         var sessions: [(String, String)]
+        var tags: [String]
     }
 
     static func digest(_ reel: Reel, themes: [String], projects: [(name: String, about: String)],
@@ -224,7 +225,7 @@ enum Claude {
         Marius saved this Instagram Reel from his phone. Nobody is watching: you read it in the \
         background and decide what, if anything, it leaves behind. Reply with one JSON object \
         and nothing else:
-        {"note": "..." or null, "theme": "...", "todo": "..." or null, \
+        {"note": "..." or null, "theme": "...", "todo": "..." or null, "tags": ["..."], \
         "projects": [{"name": "...", "line": "..."}], "sessions": [{"id": "...", "message": "..."}]}
 
         note: one line in \(Config.language), at most twenty-five words, the substance worth \
@@ -235,6 +236,10 @@ enum Claude {
         todo: almost always null. Only a bounded action he should take anyway — a deadline, an \
         administrative step, something already committed to. A tool to try is a note, not a todo. \
         One line in \(Config.language), imperative, at most twelve words.
+        tags: three to six precise technical terms in lowercase kebab-case, English for standard \
+        technical words (swiftui, llm, rate-limiting) and \(Config.language) when no English term \
+        exists. A tag is what he would type to search for this the day the subject comes back — \
+        never a vague one like "tech" or "video". Always give tags, even when the note is null.
         projects: the projects below this Reel concretely helps — a technique or tool that fits \
         what that project is — each with one line in \(Config.language) saying how. Usually empty.
         sessions: the live Claude Code sessions below whose current task this Reel bears on \
@@ -267,11 +272,15 @@ enum Claude {
             }
         }
         let url = reel.url.isEmpty ? "https://www.instagram.com/reel/\(reel.id)/" : reel.url
+        let tags = (object["tags"] as? [String] ?? []).map {
+            $0.lowercased().trimmingCharacters(in: .whitespaces)
+        }.filter { $0.range(of: "^[a-z0-9][a-z0-9-]{1,30}$", options: .regularExpression) != nil }
         return Digest(note: clean(object["note"]),
                       theme: (clean(object["theme"]) ?? "").lowercased(),
                       todo: clean(object["todo"]).map { $0 + " — " + url },
                       projects: pairs("projects", "name", "line"),
-                      sessions: pairs("sessions", "id", "message"))
+                      sessions: pairs("sessions", "id", "message"),
+                      tags: Array(tags.prefix(6)))
     }
 
     // MARK: - Running the binary
