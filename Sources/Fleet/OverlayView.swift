@@ -80,7 +80,7 @@ struct OverlayView: View {
 
     /// How far a block's frame reaches past its content either side — `blockFrame`'s own
     /// default spread.
-    private static let blockSpread: CGFloat = 13
+    static let blockSpread: CGFloat = 13
 
     /// What the panel leaves above its first block — 100 over the board and 26 more inside it
     /// — and, now, under its last one. The same gap at both ends: a column that stopped where
@@ -89,6 +89,11 @@ struct OverlayView: View {
 
     /// As tall as the screen has room for between those two gaps — the ceiling a column
     /// scrolls or is cut off under, rather than a height it takes.
+    /// What a block is told to be, against the `columnHeight` its column is clipped to: a
+    /// block's frame is drawn `blockSpread` past its content on every side — see `blockFrame`
+    /// — and a block as tall as the clip lost its own bottom edge to it.
+    static var blockHeight: CGFloat { columnHeight - blockSpread }
+
     static var columnHeight: CGFloat {
         let screen = OverlayWindowController.activeScreen()
         // The window is the whole screen, menu bar and dock included, so the insets are
@@ -191,6 +196,7 @@ struct OverlayView: View {
                         // the block scrolls inside it, like the todo list beside the fleet.
                         .frame(maxHeight: .infinity)
                 }
+                .frame(height: Self.blockHeight, alignment: .top)
                 // Cut off at the panel's own bottom gap rather than run off the screen. The
                 // widening either side of the clip is the room a block's frame takes past its
                 // content — see `blockFrame` — which a clip at the column's width would shave.
@@ -210,7 +216,7 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling)
-                .frame(width: centerWidth, height: Self.columnHeight, alignment: .top)
+                .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
@@ -223,7 +229,7 @@ struct OverlayView: View {
                     // No podium here: the todos start on the fleet's own line. They are the
                     // other list you are answerable to, and a step below the sessions read as
                     // a footnote to them.
-                    .frame(width: sideWidth, height: Self.columnHeight, alignment: .top)
+                    .frame(width: sideWidth, height: Self.blockHeight, alignment: .top)
             }
             gap(Self.edgeWeight)
         }

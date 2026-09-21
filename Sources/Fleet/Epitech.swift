@@ -22,9 +22,13 @@ enum Epitech {
         var year: Int
         var rendus: [Rendu]
 
-        /// Its page on the intra — where ⌘-clicking the card lands.
+        /// Its page on my.epitech — where ⌘-clicking the card lands.
+        ///
+        /// Not the intra, which files the same module under an instance code of its own
+        /// (`PAR-5-1` where my.epitech says `PAR-1`) and answers "Incorrect code Instance" to
+        /// the one we hold. This is the site the scan read it off, and the path is the API's.
         var url: URL? {
-            URL(string: "https://intra.epitech.eu/module/\(year)/\(code)/\(instance)/")
+            URL(string: "https://my.epitech.eu/units/\(year)/\(code)/\(instance)")
         }
     }
 

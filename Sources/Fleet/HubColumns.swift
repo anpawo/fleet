@@ -1006,8 +1006,12 @@ extension View {
         contentShape(Rectangle())
             .onHover { onHover($0) }
             .onTapGesture {
-                guard commandHeld else { return onDismiss() }
-                if let open { open() } else if let url { NSWorkspace.shared.open(url) }
+                // The panel goes away either way. Opening a mail means reading it, and a
+                // notification board still standing over what you opened is in the way.
+                if commandHeld {
+                    if let open { open() } else if let url { NSWorkspace.shared.open(url) }
+                }
+                onDismiss()
             }
     }
 
