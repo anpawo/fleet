@@ -10,6 +10,9 @@ import SwiftUI
 /// a click anywhere in these columns dismisses the panel, like any other empty space.
 struct MailColumn: View {
     @ObservedObject var hub: HubStore
+    /// Off for an offscreen render, like the two columns below it: `ImageRenderer` draws
+    /// nothing inside a `ScrollView`.
+    var scrolling = true
 
     /// What fits beside three rows of tiles now that a card is two lines rather than four.
     private static let maxItems = 10
@@ -22,14 +25,32 @@ struct MailColumn: View {
         HubColumn(title: "MAIL",
                   count: hub.mail.count,
                   showsZero: true,
-                  note: hub.failure ?? (hub.showingSeen ? "seen" : nil),
+                  // What is wrong with Firestore is over the fleet now — see `AlertsBlock`.
+                  // What is left here is which pile you are looking at.
+                  note: hub.showingSeen ? "seen" : nil,
                   tint: BlockTint.mail,
-                  minRows: 3) {
-            if !hub.loaded {
-                HubEmptyLine(text: "Loading\u{2026}")
+                  minRows: 3,
+                  fills: true) {
+            // The block is a third of the column now, whatever it holds, so what does not fit
+            // scrolls rather than running down over the school underneath it.
+            if scrolling {
+                ScrollView(.vertical) {
+                    VStack(spacing: 8) { rows }
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                VStack(spacing: 8) { rows }
             }
-            ForEach(hub.mail.prefix(Self.maxItems)) { MailCard(mail: $0) }
         }
+    }
+
+    @ViewBuilder private var rows: some View {
+        if !hub.loaded {
+            HubEmptyLine(text: "Loading\u{2026}")
+        }
+        ForEach(hub.mail.prefix(Self.maxItems)) { MailCard(mail: $0) }
     }
 }
 
@@ -80,10 +101,10 @@ struct TodoColumn: View {
     var body: some View {
         HubColumn(title: "TODO",
                   count: hub.todos.count,
-                  note: hub.failure,
+                  note: nil,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
-                  fill: BlockTint.todo.opacity(0.16),
+                  fill: BlockTint.todo.darkened(0.86),
                   fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
@@ -883,7 +904,7 @@ struct EpitechColumn: View {
                   // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
                   note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
-                  fill: BlockTint.epitech.opacity(0.16),
+                  fill: BlockTint.epitech.darkened(0.86),
                   badge: credits,
                   alarm: alarming,
                   minRows: 3,
@@ -1144,6 +1165,15 @@ struct AlertsBlock: View {
     /// Forced on to be looked at: `defaults write com.mr.fleet runsAlarm -bool true`.
     static func alerts(_ hub: HubStore) -> [String] {
         var out: [String] = []
+        // Firestore first: when it is down, every figure on the panel is from the last fetch
+        // that worked, and nothing else here can be trusted to be current either.
+        if let failure = hub.failure {
+            switch failure {
+            case "offline": out.append("firestore offline — mail and todos are from the last fetch")
+            case "not saved": out.append("todo not saved — firestore refused the write")
+            default: out.append("firestore: \(failure)")
+            }
+        }
         if let failure = hub.epitech?.failure { out.append(failure) }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
@@ -1209,7 +1239,7 @@ struct AlertsBlock: View {
         // The fleet's own spread, so the two frames end on the same line either side. Tinted
         // rather than coloured, like every other block: at the tint's own strength the bar was
         // a red slab across the panel, and the words on it were the quietest thing on it.
-        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.opacity(0.16),
+        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.80),
                     spread: 26, bottomSpread: 8, radius: 8)
         // The whole bar, frame and sentence included — not the name alone as on a block that
         // is merely stale. This one has nothing else to say, so the pulse is all of it.

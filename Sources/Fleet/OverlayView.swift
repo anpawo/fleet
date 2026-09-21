@@ -180,14 +180,23 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    MailColumn(hub: controller.hub)
-                    EpitechColumn(hub: controller.hub,
-                                  commandHeld: controller.commandHeld,
-                                  onDismiss: { controller.hidePanel() },
-                                  scrolling: !eagerLayout)
-                        // What is left of the column once the blocks above have had theirs —
-                        // the block scrolls inside it, like the todo list beside the fleet.
-                        .frame(maxHeight: .infinity)
+                    // What is left of the column once the memory has had its line, split a
+                    // third to the mail and two thirds to the school — the mail is a handful
+                    // of rows you glance at, the school is a term of modules and a fortnight
+                    // of mail. Both scroll inside their share, so neither can push the other
+                    // off the bottom of the panel.
+                    GeometryReader { space in
+                        let free = space.size.height - Self.blockGap
+                        VStack(alignment: .leading, spacing: Self.blockGap) {
+                            MailColumn(hub: controller.hub, scrolling: !eagerLayout)
+                                .frame(height: max(0, free / 3))
+                            EpitechColumn(hub: controller.hub,
+                                          commandHeld: controller.commandHeld,
+                                          onDismiss: { controller.hidePanel() },
+                                          scrolling: !eagerLayout)
+                                .frame(height: max(0, free * 2 / 3))
+                        }
+                    }
                 }
                 .frame(height: Self.blockHeight, alignment: .top)
                 // Cut off at the panel's own bottom gap rather than run off the screen. The
@@ -824,9 +833,12 @@ struct MemoryStrip: View {
                 // The whole readout, where every other block puts its count. A heading over a
                 // single line of figures is a heading over nothing: the block is one line at
                 // rest, and it only grows when there is something to say underneath.
-                Text("RAM \u{00B7} \(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
+                // The share in the block's own colour — the same verdict the frame is painted
+                // in, said twice on the one line where it can be read as a figure.
+                (Text("RAM \u{00B7} ").foregroundColor(.white.opacity(0.9))
+                    + Text(percentLabel).foregroundColor(ramTint)
+                    + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
                     .titleGround()
             }
             .padding(.horizontal, 2)
@@ -885,7 +897,7 @@ struct MemoryStrip: View {
         // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
         // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
         // same four thresholds the figure was tinted by.
-        .blockFrame(ramTint.opacity(0.85), fill: ramTint.opacity(0.30), radius: 8)
+        .blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.72), radius: 8)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -946,6 +958,19 @@ struct MemoryStrip: View {
     }
 }
 
+extension Color {
+    /// The same hue with the light taken out of it, and no transparency: `opacity` on a panel
+    /// that floats over your windows lets them through, which reads as a colour gone grey.
+    func darkened(_ amount: Double) -> Color {
+        let rgb = NSColor(self).usingColorSpace(.sRGB) ?? .black
+        let keep = max(0, 1 - amount)
+        return Color(red: Double(rgb.redComponent) * keep,
+                     green: Double(rgb.greenComponent) * keep,
+                     blue: Double(rgb.blueComponent) * keep)
+    }
+
+}
+
 extension View {
     /// A dark chip behind a column's name. The panel is a wash over your desktop, and a
     /// heading standing on a bright wallpaper is a heading you have to hunt for.
@@ -975,9 +1000,10 @@ extension View {
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
-                // Kept low: at half strength the wash was a coloured card, and the panel read
-                // as six colours before it read as six lists.
-                .fill(fill ?? tint.opacity(0.28))
+                // Darkened, not thinned: an opacity lets the desktop through and the colour
+                // comes back as grey. This is the same hue taken down towards black, opaque,
+                // so a block is dark and still its own colour.
+                .fill(fill ?? tint.darkened(0.74))
                 .overlay(
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
