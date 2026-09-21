@@ -22,7 +22,8 @@ struct MailColumn: View {
         HubColumn(title: "MAIL",
                   count: hub.mail.count,
                   showsZero: true,
-                  note: hub.failure ?? (hub.showingSeen ? "seen" : nil)) {
+                  note: hub.failure ?? (hub.showingSeen ? "seen" : nil),
+                  tint: BlockTint.mail) {
             if !hub.loaded {
                 HubEmptyLine(text: "Loading\u{2026}")
             }
@@ -80,7 +81,8 @@ struct TodoColumn: View {
         HubColumn(title: "TODO",
                   count: hub.todos.count,
                   note: hub.failure,
-                  onAdd: { withAnimation(Self.unroll) { hub.compose() } }) {
+                  onAdd: { withAnimation(Self.unroll) { hub.compose() } },
+                  tint: BlockTint.todo) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
             // The horizontal padding is the room a lifted card's shadow needs, taken inside
@@ -253,6 +255,8 @@ struct HubColumn<Content: View>: View {
     let note: String?
     /// The + on the heading, for a column you can write into. Nil on one that only reports.
     var onAdd: (() -> Void)?
+    /// The colour of the chip behind the name — see `BlockTint`.
+    var tint: Color = Color(white: 0.24)
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -262,7 +266,7 @@ struct HubColumn<Content: View>: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(.white.opacity(0.92))
-                    .titleGround()
+                    .titleGround(tint)
                 if let note {
                     Text(note)
                         .font(.system(size: 9.5))
@@ -769,36 +773,56 @@ enum FirstLine {
 ///
 /// The number on the heading is not the number of modules — it is how many projects still want
 /// a rendu, which is the only figure here that is a size of work rather than a list of names.
-struct EpithequeColumn: View {
+struct EpitechColumn: View {
     @ObservedObject var hub: HubStore
+    /// Whether ⌘ is down. The cards are names and dates while it is not, and open onto what
+    /// each module still wants handed in while it is — the same bargain the todo column makes.
+    let commandHeld: Bool
+
+    /// The card under the pointer, which is the only one that opens. On the column rather than
+    /// the card, for the same reason the todo column keeps it here: a card is rebuilt every tick.
+    @State private var hovered: String?
 
     var body: some View {
-        HubColumn(title: "EPITHEQUE",
-                  count: hub.epitheque?.projectsDue ?? 0,
+        HubColumn(title: "EPITECH",
+                  count: hub.epitech?.projectsDue ?? 0,
                   showsZero: true,
-                  note: note) {
-            if let snapshot = hub.epitheque, !snapshot.modules.isEmpty {
-                ForEach(snapshot.modules) { ModuleCard(module: $0) }
+                  note: note,
+                  tint: BlockTint.epitech) {
+            if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
+                ForEach(snapshot.modules) { module in
+                    ModuleCard(module: module,
+                               expanded: commandHeld && hovered == module.id,
+                               onHover: { inside in
+                                   withAnimation(TodoColumn.unroll) {
+                                       if inside { hovered = module.id }
+                                       else if hovered == module.id { hovered = nil }
+                                   }
+                               })
+                }
             } else {
-                HubEmptyLine(text: hub.epitheque == nil ? "No scan" : "Nothing running")
+                HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing running")
             }
         }
+        .animation(TodoColumn.unroll, value: commandHeld)
     }
 
     /// The scan runs three times a day, so a file older than a day is a scan that has stopped —
     /// and a list of modules nobody has checked since Tuesday has to say so rather than pass
     /// for this morning's.
     private var note: String? {
-        guard let readAt = hub.epitheque?.readAt,
+        guard let readAt = hub.epitech?.readAt,
               Date().timeIntervalSince(readAt) > 86_400 else { return nil }
         return shortAge(since: readAt)
     }
 }
 
-/// One module: its name, and the day it ends. Nothing else — a module is a container, and what
-/// is actually due inside it is the count on the heading.
+/// One module: its name and the day it ends, and under ⌘ what is actually inside it — the code
+/// it goes by on the intra, and every rendu it still wants, each with its own day.
 struct ModuleCard: View {
-    let module: Epitheque.Module
+    let module: Epitech.Module
+    let expanded: Bool
+    let onHover: (Bool) -> Void
 
     private static let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -808,15 +832,42 @@ struct ModuleCard: View {
     }()
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(module.name)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Text(Self.day.string(from: module.end))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.28))
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(module.name)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(expanded ? 2 : 1)
+                Spacer(minLength: 4)
+                Text(Self.day.string(from: module.end))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
+
+            if expanded {
+                Text("\(module.code) \u{00B7} \(module.instance)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.4))
+                // Not "0 rendus": a module with nothing to hand in is a fact worth a word, and
+                // an empty space under an open card reads as a card that failed to open.
+                if module.rendus.isEmpty {
+                    Text("nothing to hand in")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+                ForEach(module.rendus) { rendu in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(rendu.title)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(Self.day.string(from: rendu.date))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.28))
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 7)
@@ -825,8 +876,9 @@ struct ModuleCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
         )
+        .onHover { onHover($0) }
     }
 }
 

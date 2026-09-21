@@ -162,7 +162,8 @@ struct OverlayView: View {
                         .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
                         .padding(.bottom, 38)
-                    EpithequeColumn(hub: controller.hub)
+                    EpitechColumn(hub: controller.hub,
+                                  commandHeld: controller.commandHeld)
                 }
                 .frame(width: sideWidth)
                 gap(Self.innerWeight)
@@ -247,7 +248,7 @@ struct OverlayView: View {
                     // their tracking this one runs into the legend beside it.
                     .tracking(2.6)
                     .foregroundStyle(.white.opacity(0.92))
-                    .titleGround()
+                    .titleGround(BlockTint.fleet)
                 Spacer(minLength: 3)
                 if !controller.sessions.isEmpty {
                     Text("\(controller.sessions.count)")
@@ -745,7 +746,7 @@ struct MemoryStrip: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
-                    .titleGround()
+                    .titleGround(BlockTint.memory)
                 Spacer(minLength: 3)
                 if tight || stop != nil {
                     Spacer(minLength: 6)
@@ -882,14 +883,27 @@ extension View {
     /// Not a material: macOS's blur has a fixed radius, and the panel already turned frosted
     /// glass down for that reason. The negative padding puts the chip outside the text's own
     /// bounds, so nothing on the heading line moves.
-    func titleGround() -> some View {
+    func titleGround(_ tint: Color = Color(white: 0.24)) -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(white: 0.24)))
+                .fill(tint))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
     }
+}
+
+/// A colour per block, worn on the heading's own chip and nowhere else.
+///
+/// Dark enough that the name stays white on top of it: these are labels on the quietest panel
+/// on the machine, and a block that announces itself in full-strength yellow would outshout the
+/// only thing here that uses colour to mean something — a session's state.
+enum BlockTint {
+    static let mail = Color(red: 0.40, green: 0.32, blue: 0.05)
+    static let epitech = Color(red: 0.10, green: 0.17, blue: 0.40)
+    static let memory = Color(red: 0.42, green: 0.24, blue: 0.05)
+    static let fleet = Color(red: 0.09, green: 0.30, blue: 0.15)
+    static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
 }
 
 /// The one thing on this panel that reaches into the sessions rather than reporting on them.

@@ -312,16 +312,19 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
-// The EPITHEQUE block without the panel: the modules under way and the rendus still ahead.
-if CommandLine.arguments.contains("--epitheque") {
-    guard let snapshot = Epitheque.read() else {
-        print("no \(Epitheque.file.path) — the scan has never run here")
+// The EPITECH block without the panel: the modules under way and the rendus still ahead.
+if CommandLine.arguments.contains("--epitech") {
+    guard let snapshot = Epitech.read() else {
+        print("no \(Epitech.file.path) — the scan has never run here")
         exit(1)
     }
     let day = DateFormatter()
     day.dateFormat = "dd/MM/yyyy"
     for module in snapshot.modules {
-        print("  \(day.string(from: module.end))  \(module.name)")
+        print("  \(day.string(from: module.end))  \(module.name)  [\(module.code) \(module.instance)]")
+        for rendu in module.rendus {
+            print("      \(day.string(from: rendu.date))  \(rendu.title)")
+        }
     }
     print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
     exit(0)

@@ -232,7 +232,7 @@ final class HubStore: ObservableObject {
     @Published private(set) var showingSeen = false
     @Published private(set) var todos: [Todo] = []
     /// The Epitech modules under way, from the scan's own file. Nil until the first read.
-    @Published private(set) var epitheque: Epitheque.Snapshot?
+    @Published private(set) var epitech: Epitech.Snapshot?
     /// Why the columns are empty, when they are empty for a reason worth saying.
     @Published private(set) var failure: String?
     /// Whether the todo column has an empty row open at its top, waiting to be written into.
@@ -633,7 +633,7 @@ final class HubStore: ObservableObject {
     private func load() async {
         // Off the disk, before anything goes near the network: the Epitech block has no fetch
         // of its own and must not be held up by — or lost with — the one the columns make.
-        epitheque = Epitheque.read()
+        epitech = Epitech.read()
         do {
             // All three at once: they are independent collections and the panel is already
             // on screen waiting for them.

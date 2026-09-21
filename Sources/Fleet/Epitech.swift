@@ -6,12 +6,26 @@ import Foundation
 /// @epitech.eu mailbox, reconciled three times a day by launchd and left on this disk. Fleet
 /// reads it and nothing else: the logins it would otherwise need are a Microsoft session, a
 /// cookie jar and an MFA prompt, and every answer they would give is already in the file.
-enum Epitheque {
+enum Epitech {
     /// One module you are registered to and in the middle of.
     struct Module: Identifiable {
         var id: String
         var name: String
         var end: Date
+        /// Its code on the intra, `G-ING-910` — what the module is actually called in every
+        /// mail about it, and the only thing on the card you could search for.
+        var code: String
+        var instance: String
+        /// What it still wants handed in. The card is a name and a date until you hold ⌘; this
+        /// is what is underneath.
+        var rendus: [Rendu]
+    }
+
+    /// A project of a module, still to hand in.
+    struct Rendu: Identifiable {
+        var id: String
+        var title: String
+        var date: Date
     }
 
     struct Snapshot {
@@ -33,8 +47,11 @@ enum Epitheque {
 
         struct Deadline: Decodable {
             let id: String
+            let title: String
             let date: String
             let kind: String
+            /// The module's code. Absent on the deadlines that belong to no module.
+            let unit: String?
         }
 
         let generatedAt: String
@@ -52,22 +69,44 @@ enum Epitheque {
         guard let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(State.self, from: data) else { return nil }
 
+        // By id: the file repeats a deadline once per unit it is listed under, so counting rows
+        // would say more than there are.
+        var due: [String: Rendu] = [:]
+        for deadline in state.deadlines where deadline.kind == "project-due" {
+            guard let at = date(deadline.date), at > now else { continue }
+            due[deadline.id] = Rendu(id: deadline.id, title: shorten(deadline.title), date: at)
+        }
+        let byUnit = Dictionary(grouping: state.deadlines.filter { due[$0.id] != nil },
+                                by: { $0.unit ?? "" })
+
         let modules = state.registrations.compactMap { registration -> Module? in
             guard let start = date(registration.start), let end = date(registration.end),
                   start <= now, now <= end else { return nil }
+            let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
+            var rendus: [Rendu] = ids.compactMap { due[$0] }
+            rendus.sort { (a: Rendu, b: Rendu) in
+                a.date == b.date ? a.title < b.title : a.date < b.date
+            }
             return Module(id: registration.code + registration.instance,
-                          name: registration.name, end: end)
+                          name: registration.name, end: end,
+                          code: registration.code, instance: registration.instance,
+                          rendus: rendus)
         }.sorted { $0.end < $1.end }
-
-        // By id: one project shows up once per unit it is listed under, and the file keeps all
-        // of them — counting rows would say seventeen where there are fourteen.
-        var due: Set<String> = []
-        for deadline in state.deadlines where deadline.kind == "project-due" {
-            if let at = date(deadline.date), at > now { due.insert(deadline.id) }
-        }
 
         return Snapshot(modules: modules, projectsDue: due.count,
                         readAt: date(state.generatedAt) ?? .distantPast)
+    }
+
+    /// "Rendu — [PRIMARY] - Cloud Architecting (User Group - AWS)" is the scan's line, written
+    /// to stand alone in a todo list. On a card already filed under its module, the word Rendu
+    /// and the module's own name in brackets are both things you can read off the card.
+    private static func shorten(_ title: String) -> String {
+        var short = title
+        if let dash = short.range(of: "Rendu \u{2014} ") { short = String(short[dash.upperBound...]) }
+        if short.hasSuffix(")"), let open = short.lastIndex(of: "(") {
+            short = String(short[short.startIndex ..< open])
+        }
+        return short.trimmingCharacters(in: .whitespaces)
     }
 
     private static let parser: ISO8601DateFormatter = {
