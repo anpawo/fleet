@@ -1138,7 +1138,8 @@ struct AlertsBlock: View {
         if let failure = hub.epitech?.failure { out.append(failure) }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
-        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append("check") }
+        // Nothing is wrong and the bar is on anyway: it says so, rather than naming a source.
+        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append("test") }
         return out
     }
 
