@@ -225,6 +225,9 @@ struct OverlayView: View {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
+        // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
+        // inside that is a line the cards wipe over every time the pointer crosses one.
+        .blockFrame(BlockTint.fleet, spread: 26)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -253,7 +256,8 @@ struct OverlayView: View {
                 if !controller.sessions.isEmpty {
                     Text("\(controller.sessions.count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.32))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .titleGround(BlockTint.fleet)
                 }
             }
 
@@ -279,15 +283,9 @@ struct OverlayView: View {
             )
         }
         .padding(.horizontal, 2)
-        // The rule sits inside the heading's bounds rather than offset out of them, so the
-        // scroll view below starts under it and the tiles are clipped at the line instead of
-        // riding over it.
+        // The room the scroll view below needs to start clear of the heading rather than under
+        // it: the tiles are clipped at this line instead of riding over the name.
         .padding(.bottom, 9)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.white.opacity(0.10))
-                .frame(height: 1)
-        }
     }
 
     private func tiles(_ sessions: [Session]) -> some View {
@@ -758,10 +756,6 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
 
-            Rectangle()
-                .fill(tint.opacity(tight ? 0.30 : 0.10))
-                .frame(height: 1)
-
             // Under the rule rather than beside the name: the sentence is a sentence, and the
             // heading line is a name, a button and no room for a third thing.
             if tight {
@@ -814,6 +808,7 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
         }
+        .blockFrame(BlockTint.memory)
     }
 
     /// Red whenever the sessions have been told to wind down and the ones you are not driving
@@ -883,6 +878,27 @@ extension View {
     /// Not a material: macOS's blur has a fixed radius, and the panel already turned frosted
     /// glass down for that reason. The negative padding puts the chip outside the text's own
     /// bounds, so nothing on the heading line moves.
+    /// The outline around a whole block, in the block's own colour, with its top edge running
+    /// through the middle of the heading line.
+    ///
+    /// Nothing is cut out of the line: what breaks it is the heading's own chips, which are
+    /// opaque and sit on top — the title at the left, the count at the right. That is why every
+    /// item on that line wears a ground, and why the rule that used to sit *under* the heading
+    /// is gone. One line through the name is a frame with a legend; two lines a few points apart
+    /// is a mistake.
+    ///
+    /// Drawn outside the block's own bounds rather than padded into them, so hanging a frame on
+    /// a column moves nothing inside it: the cards keep the width they had.
+    func blockFrame(_ tint: Color, spread: CGFloat = 13, headingCentre: CGFloat = 7) -> some View {
+        background(alignment: .top) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(tint, lineWidth: 1)
+                .padding(.top, headingCentre)
+                .padding(.horizontal, -spread)
+                .padding(.bottom, -spread)
+        }
+    }
+
     func titleGround(_ tint: Color = Color(white: 0.24)) -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)

@@ -272,13 +272,14 @@ struct HubColumn<Content: View>: View {
                         .font(.system(size: 9.5))
                         .foregroundStyle(.white.opacity(0.3))
                         .lineLimit(1)
+                        .titleGround(tint)
                         // The chip behind the name bleeds 7pt past the text on either side,
                         // which ate the gap the HStack was leaving here.
-                        .padding(.leading, 8)
+                        .padding(.leading, 15)
                 }
                 Spacer(minLength: 4)
                 if let onAdd {
-                    AddButton(action: onAdd)
+                    AddButton(action: onAdd, ground: tint)
                         // Pinned to the heading's own line: the button is 16pt tall and the
                         // words beside it are 11pt, so left to itself it would push this column
                         // rule a couple of points below the one on MAIL. What it spills lands
@@ -288,20 +289,18 @@ struct HubColumn<Content: View>: View {
                 if count > 0 || showsZero {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.32))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .titleGround(tint)
                 }
             }
             .padding(.horizontal, 2)
 
-            Rectangle()
-                .fill(.white.opacity(0.10))
-                .frame(height: 1)
-
-            // Matches the room the fleet leaves under its own rule, so the first mail, the
+            // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.
             VStack(spacing: 8) { content }
-                .padding(.top, 8)
+                .padding(.top, 9)
         }
+        .blockFrame(tint)
     }
 }
 
@@ -594,6 +593,9 @@ struct TodoCard: View {
 /// kind of thing: a small target that appears on a heading and does one thing to the list.
 struct AddButton: View {
     let action: () -> Void
+    /// Opaque, because the button sits on the block's own outline: a translucent disc lets the
+    /// line straight through it.
+    var ground: Color = Color(white: 0.24)
 
     @State private var hovering = false
 
@@ -603,7 +605,8 @@ struct AddButton: View {
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.5))
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(.white.opacity(hovering ? 0.16 : 0.07)))
+                .background(Circle().fill(ground))
+                .overlay(Circle().fill(.white.opacity(hovering ? 0.16 : 0)))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
