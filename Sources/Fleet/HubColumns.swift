@@ -83,6 +83,7 @@ struct TodoColumn: View {
                   note: hub.failure,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
+                  fill: BlockTint.todo.opacity(0.22),
                   fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
@@ -254,6 +255,10 @@ struct HubColumn<Content: View>: View {
     var onAdd: (() -> Void)?
     /// The colour of the chip behind the name — see `BlockTint`.
     var tint: Color = Color(white: 0.24)
+    /// The wash inside the frame, when the tint's own is too much of it. The two blue blocks
+    /// are the only ones deep enough in colour for the wash to read as a coloured card rather
+    /// than as black paper with a coloured edge.
+    var fill: Color?
     /// What goes top right in place of the count, when a number of rows is not the figure worth
     /// having there.
     var badge: String?
@@ -326,7 +331,7 @@ struct HubColumn<Content: View>: View {
                        maxHeight: fills ? .infinity : nil, alignment: .top)
                 .padding(.top, 9)
         }
-        .blockFrame(tint, radius: radius)
+        .blockFrame(tint, fill: fill, radius: radius)
     }
 }
 
@@ -861,6 +866,7 @@ struct EpitechColumn: View {
                   // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
                   note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
+                  fill: BlockTint.epitech.opacity(0.22),
                   badge: credits,
                   alarm: alarming,
                   minRows: 3,
@@ -1176,7 +1182,6 @@ struct AlertsBlock: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(SessionState.running.tint)
-                    .blinking(true)
                     .titleGround()
                 Spacer(minLength: 3)
             }
@@ -1207,6 +1212,9 @@ struct AlertsBlock: View {
         // a red slab across the panel, and the words on it were the quietest thing on it.
         .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.opacity(0.16),
                     spread: 26, bottomSpread: 8, radius: 8)
+        // The whole bar, frame and sentence included — not the name alone as on a block that
+        // is merely stale. This one has nothing else to say, so the pulse is all of it.
+        .blinking(true)
     }
 }
 
