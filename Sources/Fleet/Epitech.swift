@@ -70,21 +70,51 @@ enum Epitech {
             let error: String?
         }
 
+        struct Edsquare: Decodable {
+            let ok: Bool?
+        }
+
         let generatedAt: String
         let registrations: [Registration]
         let deadlines: [Deadline]
         let sessionOk: Bool?
         let errors: [String]?
         let intra: Intra?
+        let edsquare: Edsquare?
     }
 
     static var file: URL {
         URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".epitech/state.json")
     }
 
+    /// What each reader came back with on the last run — written by `run.sh`, one exit code per
+    /// source. A non-zero code is a key or a token that no longer passes.
+    struct Sources: Decodable {
+        let at: String
+        let scan: Int?
+        let edsquare: Int?
+        let outlook: Int?
+        /// Null on the runs where it does not go out: Discord is read once a day, at eight.
+        let discord: Int?
+
+        /// The ones that failed, named as the block should say them.
+        var broken: [String] {
+            var out: [String] = []
+            if let scan, scan != 0 { out.append(scan == 3 ? "epitech session" : "epitech scan") }
+            if let outlook, outlook != 0 { out.append("outlook token") }
+            if let edsquare, edsquare != 0 { out.append("edsquare") }
+            if let discord, discord != 0 { out.append("discord token") }
+            return out
+        }
+    }
+
     /// Nil when the scan has never run on this machine — which is a different thing from a term
     /// with no modules in it, and the block says so.
     static func read(from file: URL = Epitech.file, now: Date = Date()) -> Snapshot? {
+        // Beside state.json, whatever state.json is — so a fixture can carry its own verdicts.
+        let sourcesFile = file.deletingLastPathComponent().appending(path: "sources.json")
+        let sources = (try? Data(contentsOf: sourcesFile))
+            .flatMap { try? JSONDecoder().decode(Sources.self, from: $0) }
         guard let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(State.self, from: data) else { return nil }
 
@@ -118,7 +148,8 @@ enum Epitech {
         let readAt = date(state.generatedAt) ?? .distantPast
         return Snapshot(modules: modules, projectsDue: due.count,
                         credits: state.intra?.ok == true ? state.intra?.credits : nil,
-                        failure: failure(state, readAt: readAt), readAt: readAt)
+                        failure: failure(state, readAt: readAt, sources: sources),
+                        readAt: readAt)
     }
 
     /// Why what is on screen may not be true any more, in the fewest words that say it.
@@ -126,11 +157,17 @@ enum Epitech {
     /// A scan whose Microsoft session has died exits before it writes anything, so the loudest
     /// signal is the file's own age: today's modules and last Tuesday's look identical. Six
     /// hours is two missed runs — the scan goes three times a day.
-    private static func failure(_ state: State, readAt: Date) -> String? {
-        if state.sessionOk == false { return "session expired" }
-        if let intra = state.intra, !intra.ok { return intra.error ?? "intra unreachable" }
+    private static func failure(_ state: State, readAt: Date, sources: Sources?) -> String? {
+        if let broken = sources?.broken, !broken.isEmpty { return broken.joined(separator: ", ") }
+        if state.sessionOk == false { return "epitech session" }
+        if let intra = state.intra, !intra.ok { return "intra cookie" }
+        if state.edsquare?.ok == false { return "edsquare" }
         if let errors = state.errors, !errors.isEmpty { return errors[0] }
-        if Date().timeIntervalSince(readAt) > 6 * 3600 { return "scan \(shortAge(since: readAt)) old" }
+        // Fourteen hours, not six: the scan goes out at eight, two and eight, so the longest
+        // honest silence is the twelve hours of a night. Six would have cried every morning.
+        if Date().timeIntervalSince(readAt) > 14 * 3600 {
+            return "scan \(shortAge(since: readAt)) old"
+        }
         return nil
     }
 

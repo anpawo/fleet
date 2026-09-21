@@ -966,7 +966,12 @@ extension View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.white.opacity(0.12))
+                // Opaque first, wash second. The block's own colour starts at this line, and a
+                // translucent chip let it through — the name sat on a coloured smear instead of
+                // on the panel. The near-black is the one every card on the panel is drawn on.
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.white.opacity(0.12)))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
             .padding(.horizontal, -7)
