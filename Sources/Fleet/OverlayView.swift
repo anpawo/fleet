@@ -791,6 +791,13 @@ struct MemoryStrip: View {
                         // label below is @State, and this is what clears it.
                         .id(stop?.at)
                 }
+                // The whole readout, where every other block puts its count. A heading over a
+                // single line of figures is a heading over nothing: the block is one line at
+                // rest, and it only grows when there is something to say underneath.
+                Text("\(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .titleGround()
             }
             .padding(.horizontal, 2)
 
@@ -812,7 +819,6 @@ struct MemoryStrip: View {
                     // Under pressure the pills are the processes holding the memory, which is
                     // the only thing to do about it.
                     VStack(alignment: .leading, spacing: 4) {
-                        ramReading
                         if commandHeld {
                             // One after the other, each easing down out of the bar, so the eye
                             // follows the list as it forms rather than finding it there. Gone at
@@ -829,7 +835,6 @@ struct MemoryStrip: View {
                     .animation(.easeOut(duration: 0.4), value: commandHeld)
                 } else {
                     let ram = reaper.footprint
-                    ramReading
                     // Not "when there is any". Swap used never comes back down — a page that
                     // has been written to disk stays counted until the machine reboots — so
                     // "> 0" meant "from the first time it ever paged until you restart", which
@@ -859,15 +864,6 @@ struct MemoryStrip: View {
     private var ramTint: Color {
         if reaper.struggling { return SessionState.running.tint }
         return Self.scale(share(reaper.footprint.used), 0.60, 0.75, 0.88) ?? BlockTint.memory
-    }
-
-    /// Red whenever the sessions have been told to wind down and the ones you are not driving
-    /// are held, whatever the share says: the bar is where you look to know that is happening,
-    /// and a blue 75% beside a machine Fleet has put on pause says the opposite.
-    private var ramReading: some View {
-        let ram = reaper.footprint
-        return Reading("RAM", percent(share(ram.used)), trailing: gigabytes(ram.total),
-                       bare: true)
     }
 
     private func share(_ bytes: UInt64) -> Double {
@@ -1101,7 +1097,7 @@ private struct Reading: View {
         // the two gaps either side of it are the same, not because anything centres it.
         HStack(spacing: 0) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
             Spacer(minLength: 8)

@@ -26,6 +26,11 @@ enum Epitech {
         var id: String
         var title: String
         var date: Date
+        /// The User Groups tag their projects `[PRIMARY]` or `[SECONDARY]` in the name itself:
+        /// the primary ones are what the module is graded on, the secondary ones are there to
+        /// be taken if you want them. Kept as a flag rather than left in the title, where it
+        /// cost a third of the width on every line.
+        var optional = false
     }
 
     struct Snapshot {
@@ -123,7 +128,8 @@ enum Epitech {
         var due: [String: Rendu] = [:]
         for deadline in state.deadlines where deadline.kind == "project-due" {
             guard let at = date(deadline.date), at > now else { continue }
-            due[deadline.id] = Rendu(id: deadline.id, title: shorten(deadline.title), date: at)
+            due[deadline.id] = Rendu(id: deadline.id, title: shorten(deadline.title), date: at,
+                                     optional: deadline.title.contains("[SECONDARY]"))
         }
         let byUnit = Dictionary(grouping: state.deadlines.filter { due[$0.id] != nil },
                                 by: { $0.unit ?? "" })
@@ -136,8 +142,11 @@ enum Epitech {
             let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
             var rendus: [Rendu] = ids.compactMap { due[$0] }
             guard !rendus.isEmpty else { return nil }
+            // What the module is graded on first, then what is merely on offer.
             rendus.sort { (a: Rendu, b: Rendu) in
-                a.date == b.date ? a.title < b.title : a.date < b.date
+                if a.date != b.date { return a.date < b.date }
+                if a.optional != b.optional { return b.optional }
+                return a.title < b.title
             }
             return Module(id: registration.code + registration.instance,
                           name: registration.name, end: end,
@@ -177,6 +186,9 @@ enum Epitech {
     private static func shorten(_ title: String) -> String {
         var short = title
         if let dash = short.range(of: "Rendu \u{2014} ") { short = String(short[dash.upperBound...]) }
+        for tag in ["[PRIMARY] - ", "[SECONDARY] - "] where short.hasPrefix(tag) {
+            short = String(short.dropFirst(tag.count))
+        }
         if short.hasSuffix(")"), let open = short.lastIndex(of: "(") {
             short = String(short[short.startIndex ..< open])
         }

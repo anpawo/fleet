@@ -946,9 +946,16 @@ struct ModuleCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(rendu.title)
                             .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(.white.opacity(rendu.optional ? 0.45 : 0.75))
                             .lineLimit(1)
                         Spacer(minLength: 4)
+                        // Only the optional ones are marked. Being graded on a project is the
+                        // norm here, and a tag on every line is a tag nobody reads.
+                        if rendu.optional {
+                            Text("opt")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.3))
+                        }
                         Text(Self.day.string(from: rendu.date))
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.28))
