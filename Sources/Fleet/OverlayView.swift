@@ -69,12 +69,10 @@ struct OverlayView: View {
     private static let edgeWeight = 2
     private static let innerWeight = 3
 
-    /// How far below the fleet the two side columns start. A podium: the sessions are what the
-    /// panel is for, and standing them a step above what is merely waiting says so before a
-    /// word is read.
-    /// Deep enough to hold the memory block that stands over the mail, with air under it —
-    /// and taken by both side columns, so MAIL and TODO come back onto one line.
-    private static let podiumDrop: CGFloat = 78
+    /// The one space between two blocks of a side column. A frame reaches 13pt below its
+    /// content and its own line sits 7pt down from the top of the next, so what the eye sees
+    /// is eighteen of this.
+    private static let blockGap: CGFloat = 24
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -176,25 +174,18 @@ struct OverlayView: View {
                 // in the corner, at the width of the column it sits over. A minimum rather
                 // than a height — under pressure the hogs need more rows, and an alert that
                 // shoves the column down is an alert doing its job.
-                VStack(alignment: .leading, spacing: 0) {
-                    // The machine's own two lines, on the step the podium leaves above the
-                    // rest: how full the memory is, and whether anything that runs on its own
-                    // came back broken. The minimum is the step; either can outgrow it and
-                    // push the column down, which is an alert doing its job.
-                    VStack(alignment: .leading, spacing: 22) {
-                        MemoryStrip(reaper: controller.reaper,
-                                    commandHeld: controller.commandHeld)
-                        RunsBlock(hub: controller.hub)
-                    }
-                    .padding(.bottom, 24)
-                    .frame(minHeight: Self.podiumDrop, alignment: .top)
+                // One gap, five blocks: the machine's own two lines, the two networks, the
+                // mail and the school. Every space between them is the same space — a column
+                // whose gaps vary reads as groups nobody meant to make.
+                VStack(alignment: .leading, spacing: Self.blockGap) {
+                    MemoryStrip(reaper: controller.reaper,
+                                commandHeld: controller.commandHeld)
+                    RunsBlock(hub: controller.hub)
                     HStack(alignment: .top, spacing: 36) {
                         ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
                         YoutubeBlock().frame(maxWidth: .infinity)
                     }
-                    .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
-                        .padding(.bottom, 38)
                     EpitechColumn(hub: controller.hub,
                                   commandHeld: controller.commandHeld)
                 }
