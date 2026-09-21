@@ -791,7 +791,7 @@ struct MemoryStrip: View {
                 // The whole readout, where every other block puts its count. A heading over a
                 // single line of figures is a heading over nothing: the block is one line at
                 // rest, and it only grows when there is something to say underneath.
-                Text("RAM \(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
+                Text("RAM \u{00B7} \(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .titleGround()
