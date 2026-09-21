@@ -499,6 +499,9 @@ final class HubStore: ObservableObject {
 
     /// The Reels the phone was handed, minus the ones put away — for `fleet --reels`.
     @Published private(set) var reels: [Reel] = []
+    /// The runs that came back broken, newest first — a check the phone gave up on, or one
+    /// this Mac could not carry out. What the RUNS bar counts.
+    @Published private(set) var failedRuns: [String] = []
     /// How many the background read has been through today: all the panel says about Reels,
     /// now that nobody reads them there.
     @Published private(set) var reelsReadToday = 0
@@ -532,6 +535,13 @@ final class HubStore: ObservableObject {
             reelsFetchedAt = Date()
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
+            // Both kinds of failure, because they are two different things gone wrong: the
+            // phone's own pipeline giving up on a Reel, and this Mac failing to check one.
+            // Put away counts as dealt with: a Reel you have already read the failure of is not
+            // news, and a bar that stays red for ever is a bar nobody looks at.
+            failedRuns = all.filter { !$0.seen && ($0.status == "failed" || !$0.fleetError.isEmpty) }
+                .sorted { $0.createdAt > $1.createdAt }
+                .map { $0.status == "failed" ? "check" : "fleet" }
             guard reelCheck == nil, mayCheck() else { return }
             guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
                 if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })

@@ -265,6 +265,9 @@ struct HubColumn<Content: View>: View {
     /// A blinking red light beside the name. On when the block cannot see what it is meant to
     /// report — the one thing on this panel that asks to be noticed from across the room.
     var alarm = false
+    /// How round the frame's corners are. A one-line block wears the same 12pt as a column of
+    /// cards as a capsule; the short ones ask for less.
+    var radius: CGFloat = 12
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -315,7 +318,7 @@ struct HubColumn<Content: View>: View {
             VStack(spacing: 8) { content }
                 .padding(.top, 9)
         }
-        .blockFrame(tint)
+        .blockFrame(tint, radius: radius)
     }
 }
 
@@ -991,6 +994,36 @@ struct ReelsBlock: View {
                   showsZero: true,
                   note: hub.checkingReel != nil ? "\u{2026}" : nil,
                   tint: BlockTint.reels) {}
+    }
+}
+
+/// A bar under the memory: whether anything that runs on its own came back broken.
+///
+/// Grey and silent when nothing has. Red and blinking — the whole block, not just its name —
+/// when something has, because this is the one thing on the panel nobody would otherwise go
+/// looking for: a pipeline that fails leaves no trace on a screen anyone reads.
+struct RunsBlock: View {
+    @ObservedObject var hub: HubStore
+
+    /// Forced on to be looked at: `defaults write com.mr.fleet runsAlarm -bool true`.
+    private var alarming: Bool {
+        !hub.failedRuns.isEmpty || UserDefaults.standard.bool(forKey: "runsAlarm")
+    }
+
+    var body: some View {
+        HubColumn(title: "RUNS",
+                  count: 0,
+                  note: nil,
+                  tint: alarming ? SessionState.running.tint : Color(white: 0.24),
+                  badge: badge,
+                  radius: 8) {}
+            .blinking(alarming)
+    }
+
+    private var badge: String {
+        let failed = hub.failedRuns.count
+        if failed == 0 { return alarming ? "check" : "ok" }
+        return failed == 1 ? "1 failed" : "\(failed) failed"
     }
 }
 

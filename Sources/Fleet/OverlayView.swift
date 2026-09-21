@@ -177,11 +177,17 @@ struct OverlayView: View {
                 // than a height — under pressure the hogs need more rows, and an alert that
                 // shoves the column down is an alert doing its job.
                 VStack(alignment: .leading, spacing: 0) {
-                    MemoryStrip(reaper: controller.reaper, commandHeld: controller.commandHeld)
-                        // Air under it in the state where it outgrows the step and pushes the
-                        // rest down itself, rather than landing on the REELS heading.
-                        .padding(.bottom, 18)
-                        .frame(minHeight: Self.podiumDrop, alignment: .top)
+                    // The machine's own two lines, on the step the podium leaves above the
+                    // rest: how full the memory is, and whether anything that runs on its own
+                    // came back broken. The minimum is the step; either can outgrow it and
+                    // push the column down, which is an alert doing its job.
+                    VStack(alignment: .leading, spacing: 22) {
+                        MemoryStrip(reaper: controller.reaper,
+                                    commandHeld: controller.commandHeld)
+                        RunsBlock(hub: controller.hub)
+                    }
+                    .padding(.bottom, 24)
+                    .frame(minHeight: Self.podiumDrop, alignment: .top)
                     HStack(alignment: .top, spacing: 36) {
                         ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
                         YoutubeBlock().frame(maxWidth: .infinity)
@@ -794,7 +800,7 @@ struct MemoryStrip: View {
                 // The whole readout, where every other block puts its count. A heading over a
                 // single line of figures is a heading over nothing: the block is one line at
                 // rest, and it only grows when there is something to say underneath.
-                Text("\(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
+                Text("RAM \(percent(share(reaper.footprint.used))) \u{00B7} \(gigabytes(reaper.footprint.total))")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .titleGround()
@@ -855,7 +861,7 @@ struct MemoryStrip: View {
         // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
         // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
         // same four thresholds the figure was tinted by.
-        .blockFrame(ramTint.opacity(0.85), fill: ramTint.opacity(0.30))
+        .blockFrame(ramTint.opacity(0.85), fill: ramTint.opacity(0.30), radius: 8)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -938,15 +944,16 @@ extension View {
     /// laisse 20pt sous la dernière rangée pour le halo au survol. Sans lui, ces 20pt
     /// s'ajoutent au débord et le noir descend deux fois plus bas sur le bas que sur les côtés.
     func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
-                    bottomSpread: CGFloat? = nil, headingCentre: CGFloat = 7) -> some View {
+                    bottomSpread: CGFloat? = nil, headingCentre: CGFloat = 7,
+                    radius: CGFloat = 12) -> some View {
         background(alignment: .top) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
                 .fill(fill ?? tint.opacity(0.45))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
                 )
                 .padding(.top, headingCentre)
