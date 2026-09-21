@@ -93,16 +93,6 @@ struct OverlayView: View {
 
     private static let rowsShown = 3
 
-    /// How tall the todo list is: the fleet's own height, not a ceiling it creeps up to. The
-    /// two blocks are the two lists you are answerable to and they end on the same line.
-    ///
-    /// Fifteen points short of the tiles, because the two hold their content at different
-    /// depths: the fleet's heading leaves 9pt above the grid and its frame 6pt under it, while
-    /// a HubColumn leaves 17 above its rows and 13 under them. 9 + 6 - 17 - 13.
-    static var todoHeight: CGFloat {
-        min(gridHeight, columnHeight) - 15
-    }
-
     /// What the panel leaves above its first block — 100 over the board and 26 more inside it
     /// — and, now, under its last one. The same gap at both ends: a column that stopped where
     /// the screen did read as the panel having been cut off rather than laid out.
@@ -205,15 +195,28 @@ struct OverlayView: View {
                     }
                     MailColumn(hub: controller.hub)
                     EpitechColumn(hub: controller.hub,
-                                  commandHeld: controller.commandHeld)
+                                  commandHeld: controller.commandHeld,
+                                  scrolling: !eagerLayout)
+                        // What is left of the column once the blocks above have had theirs —
+                        // the block scrolls inside it, like the todo list beside the fleet.
+                        .frame(maxHeight: .infinity)
                 }
                 // Cut off at the panel's own bottom gap rather than run off the screen. The
                 // widening either side of the clip is the room a block's frame takes past its
                 // content — see `blockFrame` — which a clip at the column's width would shave.
                 .frame(width: sideWidth, height: Self.columnHeight, alignment: .top)
+                // The clip is only ever meant to land at the foot of the column, so it is
+                // opened out everywhere else: a block's frame reaches `blockSpread` past its
+                // content either side — see `blockFrame` — and its heading chip stands proud
+                // of the top, which a box drawn at the content's own bounds shaved off.
                 .padding(.horizontal, Self.blockSpread)
-                .clipped()
+                .padding(.top, Self.blockSpread)
+                // Rounded, not squared off: what the cut lands on is a card, and a card
+                // sliced on a straight line reads as a drawing error rather than a list
+                // carrying on past the edge.
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, -Self.blockSpread)
+                .padding(.top, -Self.blockSpread)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)
@@ -221,14 +224,15 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
-                           listHeight: Self.todoHeight,
                            onDismiss: { controller.hidePanel() },
                            scrolling: !eagerLayout)
-                    .frame(width: sideWidth)
+                    // The same height as the column on the other side, so the two lists you
+                    // are answerable to end on the same line at the foot of the panel.
+                    //
                     // No podium here: the todos start on the fleet's own line. They are the
                     // other list you are answerable to, and a step below the sessions read as
                     // a footnote to them.
-                    .padding(.bottom, 40)
+                    .frame(width: sideWidth, height: Self.columnHeight, alignment: .top)
             }
             gap(Self.edgeWeight)
         }

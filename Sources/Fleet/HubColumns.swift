@@ -40,10 +40,6 @@ struct TodoColumn: View {
     /// Whether ⌘ is down. The column is a list while it is not, and a set of controls while it
     /// is — see `TodoCard`.
     let commandHeld: Bool
-    /// How tall the list is, handed down from the fleet beside it. A height and not a
-    /// ceiling: a short list keeps the room anyway, a long one is cut off here and scrolls.
-    /// See `OverlayView.todoHeight`.
-    let listHeight: CGFloat
     /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
     /// notification board, and getting out of it must never take aim.
     let onDismiss: () -> Void
@@ -86,7 +82,8 @@ struct TodoColumn: View {
                   count: hub.todos.count,
                   note: hub.failure,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
-                  tint: BlockTint.todo) {
+                  tint: BlockTint.todo,
+                  fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
             // The horizontal padding is the room a lifted card's shadow needs, taken inside
@@ -99,11 +96,12 @@ struct TodoColumn: View {
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                // The fleet's height, whatever the list holds — the rows past it scroll.
-                .frame(height: listHeight, alignment: .top)
+                // The height the column was given, whatever the list holds — it ends on the
+                // same line as the EPITECH block on the other side of the panel, and the rows
+                // past that scroll.
+                .frame(maxHeight: .infinity, alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
-                    .frame(minHeight: listHeight, alignment: .top)
             }
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
@@ -272,6 +270,10 @@ struct HubColumn<Content: View>: View {
     /// MAIL that collapses to a line, and grows back the moment something lands, moves every
     /// block under it — the left column would rearrange itself all morning.
     var minRows = 0
+    /// Whether the rows take whatever height the column has been given rather than only what
+    /// they need. A block that scrolls has to be told how tall it is, and the one at the foot
+    /// of the left column is as tall as what is left of the screen.
+    var fills = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -320,7 +322,8 @@ struct HubColumn<Content: View>: View {
             // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.
             VStack(spacing: 8) { content }
-                .frame(minHeight: MailCard.room(forRows: minRows), alignment: .top)
+                .frame(minHeight: MailCard.room(forRows: minRows),
+                       maxHeight: fills ? .infinity : nil, alignment: .top)
                 .padding(.top, 9)
         }
         .blockFrame(tint, radius: radius)
@@ -837,6 +840,9 @@ struct EpitechColumn: View {
     /// Whether ⌘ is down. The cards are names and dates while it is not, and open onto what
     /// each module still wants handed in while it is — the same bargain the todo column makes.
     let commandHeld: Bool
+    /// Off for an offscreen render, like the todo column's: `ImageRenderer` draws nothing
+    /// inside a `ScrollView`.
+    var scrolling = true
 
     /// The card under the pointer, which is the only one that opens. On the column rather than
     /// the card, for the same reason the todo column keeps it here: a card is rebuilt every tick.
@@ -854,27 +860,44 @@ struct EpitechColumn: View {
                   badge: credits,
                   noteIsAlarm: hub.epitech?.failure != nil,
                   alarm: alarming,
-                  minRows: 3) {
-            if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
-                ForEach(snapshot.modules) { module in
-                    ModuleCard(module: module,
-                               expanded: commandHeld && hovered == module.id,
-                               onHover: { inside in
-                                   withAnimation(TodoColumn.unroll) {
-                                       if inside { hovered = module.id }
-                                       else if hovered == module.id { hovered = nil }
-                                   }
-                               })
+                  minRows: 3,
+                  fills: true) {
+            // The todo column's block, down to the scroll: a term of modules and a fortnight
+            // of mail is longer than any screen, and the block is as tall as what is left of
+            // the left column either way.
+            if scrolling {
+                ScrollView(.vertical) {
+                    VStack(spacing: 8) { rows }
                 }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: .infinity, alignment: .top)
             } else {
-                HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
+                VStack(spacing: 8) { rows }
             }
-
-            // Under the modules, not inside them: a mail rarely belongs to one, and the thing
-            // it is asking for is worth reading whether or not a module is open.
-            ForEach(hub.epitech?.mails ?? []) { MailLine(mail: $0) }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
+    }
+
+    @ViewBuilder private var rows: some View {
+        if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
+            ForEach(snapshot.modules) { module in
+                ModuleCard(module: module,
+                           expanded: commandHeld && hovered == module.id,
+                           onHover: { inside in
+                               withAnimation(TodoColumn.unroll) {
+                                   if inside { hovered = module.id }
+                                   else if hovered == module.id { hovered = nil }
+                               }
+                           })
+            }
+        } else {
+            HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
+        }
+
+        // Under the modules, not inside them: a mail rarely belongs to one, and the thing
+        // it is asking for is worth reading whether or not a module is open.
+        ForEach(hub.epitech?.mails ?? []) { MailLine(mail: $0) }
     }
 
     /// Whether the light is blinking: when the scan cannot see, or when it has been switched
