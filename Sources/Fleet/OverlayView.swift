@@ -222,9 +222,10 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     if !AlertsBlock.alerts(controller.hub).isEmpty {
                         AlertsBlock(hub: controller.hub)
-                            // Clear of the line it hangs over: its own height, and the gap a
-                            // block leaves under its heading.
-                            .offset(y: -(AlertsBlock.height + 14))
+                            // As wide as the block it hangs over, and clear of its heading
+                            // line: its own height, and the gap a block leaves under one.
+                            .frame(width: centerWidth)
+                            .offset(y: -(AlertsBlock.height + 34))
                     }
                 }
             if controller.hub.isConfigured {

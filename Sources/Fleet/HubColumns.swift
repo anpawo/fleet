@@ -1129,7 +1129,8 @@ struct ReelsBlock: View {
 struct AlertsBlock: View {
     @ObservedObject var hub: HubStore
 
-    /// One line of 11pt with room either side of it.
+    /// One line of 11pt with room either side of it. Stated rather than worked out, because
+    /// what hangs the bar over the fleet has to know it from outside — see `board`.
     static let height: CGFloat = 30
 
     /// What is broken, each source in its own words — which is also whether the bar is on the
@@ -1141,34 +1142,71 @@ struct AlertsBlock: View {
         if let failure = hub.epitech?.failure { out.append(failure) }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
-        // Nothing is wrong and the bar is on anyway: it says so, rather than naming a source.
-        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append("test") }
+        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }
 
-    /// One line, not a block: what is wrong is a handful of words, and a framed box with a
-    /// heading and an empty body under it is a column waiting for rows that never come. Built
-    /// like the state legend on the fleet's own heading — the same near-black ground, the same
-    /// 8pt corners — so it belongs to the line it sits on.
+    /// What the bar says when it has been switched on by hand: one of the failures that can
+    /// really happen, rather than the word "test" — the point of looking at it is to see what
+    /// the day it fires will look like, and a bar reading "test" shows the frame and none of
+    /// the sentence.
+    ///
+    /// Drawn once, at launch: `alerts` is read on every tick, and a line that picks again each
+    /// time would be a bar nobody can read.
+    private static let demo = [
+        "epitech session expired — log in again",
+        "epitech scan failed — my.epitech did not answer",
+        "outlook token expired — no mail since the last run",
+        "edsquare unreachable — no timetable this run",
+        "discord token expired — announcements not read",
+        "agenda not writable — deadlines were not filed",
+        "scan 2d old — nothing here is current",
+        "1 run failed",
+    ].randomElement() ?? "1 run failed"
+
+    /// Built like every other block on the panel: the name on its chip at the top left, the
+    /// frame the width of what it heads. What is wrong goes in the middle of the line, on a
+    /// ground of its own — the same place, and the same treatment, as the state legend on the
+    /// fleet's heading right under it. A sentence pinned to the left would sit under the name
+    /// and read as part of it.
     var body: some View {
-        HStack(spacing: 10) {
-            Text("ALERT")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(3.2)
-            Text(Self.alerts(hub).joined(separator: "  \u{00B7}  "))
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
+        ZStack {
+            HStack(spacing: 8) {
+                Text("ALERT")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(3.2)
+                    .foregroundStyle(SessionState.running.tint)
+                    .blinking(true)
+                    .titleGround()
+                Spacer(minLength: 3)
+            }
+
+            HStack(spacing: 8) {
+                // The one mark on the panel that asks a question rather than reporting: what
+                // is behind it is a thing to go and look at, not a number to read.
+                Text("?")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(SessionState.running.tint)
+                    .frame(width: 16, height: 16)
+                    .background(SessionState.running.tint.opacity(0.18), in: Circle())
+                Text(Self.alerts(hub).joined(separator: "  \u{00B7}  "))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(SessionState.running.tint)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(SessionState.running.tint.opacity(0.7), lineWidth: 1))
         }
-        .foregroundStyle(SessionState.running.tint)
-        .padding(.horizontal, 12)
-        // A height it states rather than one it works out, because what hangs the bar over the
-        // fleet has to know it from outside — see `board`.
         .frame(height: Self.height)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(SessionState.running.tint, lineWidth: 1))
-        .blinking(true)
+        // The fleet's own spread, so the two frames end on the same line either side. Tinted
+        // rather than coloured, like every other block: at the tint's own strength the bar was
+        // a red slab across the panel, and the words on it were the quietest thing on it.
+        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.opacity(0.16),
+                    spread: 26, bottomSpread: 8, radius: 8)
     }
 }
 

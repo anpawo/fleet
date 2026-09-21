@@ -189,14 +189,19 @@ enum Epitech {
         /// was the failure that actually happened, five times in ten days.
         let calendar: Int?
 
-        /// The ones that failed, named as the block should say them.
+        /// The ones that failed, each as a sentence: what broke, and what you are therefore
+        /// not seeing. The bar over the fleet has a line to say it in, and "edsquare" on its
+        /// own left the second half — the part that matters — to be remembered.
         var broken: [String] {
             var out: [String] = []
-            if let scan, scan != 0 { out.append(scan == 3 ? "epitech session" : "epitech scan") }
-            if let outlook, outlook != 0 { out.append("outlook token") }
-            if let edsquare, edsquare != 0 { out.append("edsquare") }
-            if let discord, discord != 0 { out.append("discord token") }
-            if let calendar, calendar != 0 { out.append("agenda") }
+            if let scan, scan != 0 {
+                out.append(scan == 3 ? "epitech session expired — log in again"
+                                     : "epitech scan failed — my.epitech did not answer")
+            }
+            if let outlook, outlook != 0 { out.append("outlook token expired — no mail since the last run") }
+            if let edsquare, edsquare != 0 { out.append("edsquare unreachable — no timetable this run") }
+            if let discord, discord != 0 { out.append("discord token expired — announcements not read") }
+            if let calendar, calendar != 0 { out.append("agenda not writable — deadlines were not filed") }
             return out
         }
     }
@@ -268,14 +273,14 @@ enum Epitech {
     /// hours is two missed runs — the scan goes three times a day.
     private static func failure(_ state: State, readAt: Date, sources: Sources?) -> String? {
         if let broken = sources?.broken, !broken.isEmpty { return broken.joined(separator: ", ") }
-        if state.sessionOk == false { return "epitech session" }
-        if let intra = state.intra, !intra.ok { return "intra cookie" }
-        if state.edsquare?.ok == false { return "edsquare" }
+        if state.sessionOk == false { return "epitech session expired — log in again" }
+        if let intra = state.intra, !intra.ok { return "intra cookie expired — no credits" }
+        if state.edsquare?.ok == false { return "edsquare unreachable — no timetable this run" }
         if let errors = state.errors, !errors.isEmpty { return errors[0] }
         // Fourteen hours, not six: the scan goes out at eight, two and eight, so the longest
         // honest silence is the twelve hours of a night. Six would have cried every morning.
         if Date().timeIntervalSince(readAt) > 14 * 3600 {
-            return "scan \(shortAge(since: readAt)) old"
+            return "scan \(shortAge(since: readAt)) old — nothing here is current"
         }
         return nil
     }
