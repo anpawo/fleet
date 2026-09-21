@@ -58,6 +58,8 @@ struct TodoColumn: View {
     /// move under different rules — the list rearranges itself with an animation, and the row
     /// under your hand must not.
     @State private var dragOffset: CGFloat = 0
+    /// How tall the rows are, as measured from inside the scroll view.
+    @State private var listHeight: CGFloat = 0
 
     private struct Dragging: Equatable {
         let id: String
@@ -89,16 +91,17 @@ struct TodoColumn: View {
             // and given back outside, so the clip lands out of its reach.
             if scrolling {
                 ScrollView(.vertical) {
-                    VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
+                    VStack(spacing: 8) { rows }
+                        .padding(.horizontal, Self.glowRoom)
+                        .measuredHeight()
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
                 // Sized to the rows rather than to the space on offer — see the fleet's own
-                // scroll view. Without it the column's frame runs to the bottom of the screen
-                // whatever is in the list.
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxHeight: Self.maxHeight, alignment: .top)
+                // scroll view for why this is a height and not a cap.
+                .onPreferenceChange(ContentHeight.self) { listHeight = $0 }
+                .frame(height: min(max(listHeight, 1), Self.maxHeight), alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
             }
@@ -270,20 +273,20 @@ struct HubColumn<Content: View>: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(.white.opacity(0.92))
-                    .titleGround(tint)
+                    .titleGround()
                 if let note {
                     Text(note)
                         .font(.system(size: 9.5))
                         .foregroundStyle(.white.opacity(0.3))
                         .lineLimit(1)
-                        .titleGround(tint)
+                        .titleGround()
                         // The chip behind the name bleeds 7pt past the text on either side,
                         // which ate the gap the HStack was leaving here.
                         .padding(.leading, 15)
                 }
                 Spacer(minLength: 4)
                 if let onAdd {
-                    AddButton(action: onAdd, ground: tint)
+                    AddButton(action: onAdd)
                         // Pinned to the heading's own line: the button is 16pt tall and the
                         // words beside it are 11pt, so left to itself it would push this column
                         // rule a couple of points below the one on MAIL. What it spills lands
@@ -294,7 +297,7 @@ struct HubColumn<Content: View>: View {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.45))
-                        .titleGround(tint)
+                        .titleGround()
                 }
             }
             .padding(.horizontal, 2)
@@ -597,10 +600,6 @@ struct TodoCard: View {
 /// kind of thing: a small target that appears on a heading and does one thing to the list.
 struct AddButton: View {
     let action: () -> Void
-    /// Opaque, because the button sits on the block's own outline: a translucent disc lets the
-    /// line straight through it.
-    var ground: Color = Color(white: 0.24)
-
     @State private var hovering = false
 
     var body: some View {
@@ -609,7 +608,7 @@ struct AddButton: View {
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.5))
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(ground))
+                .background(Circle().fill(.white.opacity(0.12)))
                 .overlay(Circle().fill(.white.opacity(hovering ? 0.16 : 0)))
                 .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 1))
         }
@@ -890,51 +889,28 @@ struct ModuleCard: View {
     }
 }
 
-/// What this machine has been fed from a phone, in one block: the Reels the background read
-/// has been through today, and — when there is one — YouTube beside it.
+/// What the phone has fed this machine, one block per network: how many Reels the background
+/// read has been through today, and YouTube beside it.
 ///
-/// Two pills rather than two blocks. They are the same kind of thing arriving from the same
-/// place, and a frame each would put more furniture on the panel than either has content.
-struct SocialBlock: View {
+/// A block each rather than two pills in one, because the colour belongs on the outline — it
+/// is the block that is Instagram's, not a badge inside it. Neither has rows: a name and a
+/// number is the whole of what either has to say, and the frame is what makes that a block.
+struct ReelsBlock: View {
     @ObservedObject var hub: HubStore
 
     var body: some View {
-        HubColumn(title: "SOCIAL MEDIA", count: 0, note: nil, tint: BlockTint.social) {
-            HStack(spacing: 8) {
-                SocialPill(name: "REELS",
-                           value: "\(hub.reelsReadToday)" + (hub.checkingReel != nil ? " \u{2026}" : ""),
-                           tint: BlockTint.reels)
-                // Nothing behind it yet: the YouTube notes are files in ~/self/social-media and
-                // nobody counts them. The name holds the place it will take.
-                SocialPill(name: "YOUTUBE", value: nil, tint: BlockTint.youtube)
-                Spacer(minLength: 0)
-            }
-        }
+        HubColumn(title: "REELS",
+                  count: hub.reelsReadToday,
+                  showsZero: true,
+                  note: hub.checkingReel != nil ? "\u{2026}" : nil,
+                  tint: BlockTint.reels) {}
     }
 }
 
-/// One network: its name, and what came in from it today when anything counts it.
-struct SocialPill: View {
-    let name: String
-    let value: String?
-    let tint: Color
-
+/// Nothing behind it yet: the YouTube notes are files in ~/self/social-media and nobody counts
+/// them. The name holds the place they will take.
+struct YoutubeBlock: View {
     var body: some View {
-        HStack(spacing: 6) {
-            Text(name)
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.6)
-                .foregroundStyle(.white.opacity(0.92))
-            if let value {
-                Text(value)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .strokeBorder(.white.opacity(0.55), lineWidth: 1))
+        HubColumn(title: "YOUTUBE", count: 0, note: nil, tint: BlockTint.youtube) {}
     }
 }

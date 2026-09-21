@@ -86,6 +86,9 @@ struct OverlayView: View {
         max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
     }
 
+    /// How tall the tiles are, as measured from inside the scroll view. See the frame below.
+    @State private var gridHeight: CGFloat = 0
+
     var body: some View {
         ZStack {
             // Flat scrim rather than a live blur. Two reasons, and the second one is why the
@@ -164,8 +167,11 @@ struct OverlayView: View {
                         // rest down itself, rather than landing on the REELS heading.
                         .padding(.bottom, 18)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
-                    SocialBlock(hub: controller.hub)
-                        .padding(.bottom, 38)
+                    HStack(alignment: .top, spacing: 36) {
+                        ReelsBlock(hub: controller.hub).frame(width: 112)
+                        YoutubeBlock().frame(width: 112)
+                    }
+                    .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
                         .padding(.bottom, 38)
                     EpitechColumn(hub: controller.hub,
@@ -223,24 +229,29 @@ struct OverlayView: View {
                     grid.padding(.horizontal, Self.glowRoom)
                         .padding(.top, 18)
                         .padding(.bottom, 20)
+                        .measuredHeight()
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
                 // A ScrollView takes every point it is offered, which put the fleet's frame
-                // below the bottom of the screen on a fleet of six. Fixed vertically it reports
-                // the height of the tiles themselves; the cap is what it does past that, which
-                // is scroll. Checked in isolation: 200pt of content under a 500pt cap measures
-                // 200, 900pt measures 500.
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxHeight: Self.columnHeight, alignment: .top)
+                // below the bottom of the screen whatever was in it — so it is given the height
+                // of the tiles themselves, up to what the screen has room for.
+                //
+                // An explicit height, not `fixedSize` and a cap. That pair reports the right
+                // number and draws the wrong thing: the scroll view is sized to its content and
+                // then squeezed by the frame, so the rows past the cap are still painted, out
+                // in the open under the block's own background. A frame the scroll view is
+                // actually laid out at is one it clips to.
+                .onPreferenceChange(ContentHeight.self) { gridHeight = $0 }
+                .frame(height: min(max(gridHeight, 1), Self.columnHeight), alignment: .top)
             } else {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
         // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.75), spread: 26)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.6), spread: 26, bottomSpread: 6)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -264,13 +275,13 @@ struct OverlayView: View {
                     // their tracking this one runs into the legend beside it.
                     .tracking(2.6)
                     .foregroundStyle(.white.opacity(0.92))
-                    .titleGround(BlockTint.fleet)
+                    .titleGround()
                 Spacer(minLength: 3)
                 if !controller.sessions.isEmpty {
                     Text("\(controller.sessions.count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.45))
-                        .titleGround(BlockTint.fleet)
+                        .titleGround()
                 }
             }
 
@@ -759,7 +770,7 @@ struct MemoryStrip: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
-                    .titleGround(BlockTint.memory)
+                    .titleGround()
                 Spacer(minLength: 3)
                 if tight || stop != nil {
                     Spacer(minLength: 6)
@@ -904,8 +915,11 @@ extension View {
     ///
     /// Drawn outside the block's own bounds rather than padded into them, so hanging a frame on
     /// a column moves nothing inside it: the cards keep the width they had.
+    /// `bottomSpread` pour les blocs qui gardent de la place en bas à l'intérieur — le fleet
+    /// laisse 20pt sous la dernière rangée pour le halo au survol. Sans lui, ces 20pt
+    /// s'ajoutent au débord et le noir descend deux fois plus bas sur le bas que sur les côtés.
     func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
-                    headingCentre: CGFloat = 7) -> some View {
+                    bottomSpread: CGFloat? = nil, headingCentre: CGFloat = 7) -> some View {
         background(alignment: .top) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 // The same colour as the line, laid over the panel's black scrim — which
@@ -918,21 +932,37 @@ extension View {
                 )
                 .padding(.top, headingCentre)
                 .padding(.horizontal, -spread)
-                .padding(.bottom, -spread)
+                .padding(.bottom, -(bottomSpread ?? spread))
         }
     }
 
-    func titleGround(_ tint: Color = Color(white: 0.24)) -> some View {
+    /// Grey and half there, whatever the block: the colour is the block's own background now,
+    /// and a chip in that same colour laid on top of it was a second statement of it. What a
+    /// chip has to do is break the outline and stay readable, which a wash and an edge do.
+    func titleGround() -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(tint)
-                // Outlined, because a chip in the block's own dark colour sits on a line of
-                // that same colour: without an edge the name reads as part of the frame.
+                .fill(.white.opacity(0.12))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
+    }
+}
+
+/// How tall something inside a scroll view turned out to be, reported to whatever is sizing
+/// the scroll view around it.
+struct ContentHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+extension View {
+    func measuredHeight() -> some View {
+        background(GeometryReader { proxy in
+            Color.clear.preference(key: ContentHeight.self, value: proxy.size.height)
+        })
     }
 }
 
@@ -944,17 +974,19 @@ extension View {
 enum BlockTint {
     static let mail = Color(red: 0.40, green: 0.32, blue: 0.05)
     static let epitech = Color(red: 0.10, green: 0.17, blue: 0.40)
-    static let memory = Color(red: 0.42, green: 0.24, blue: 0.05)
+    /// Gris, comme SOCIAL MEDIA : ces deux blocs constatent, ils ne demandent rien. Seule la
+    /// jauge de RAM garde une couleur, et elle la tient de son propre taux.
+    static let memory = Color(white: 0.24)
     /// Black, alone among the five. The fleet is the thing this panel is for and the only
     /// block whose contents already carry colour — six session states, on every tile. A green
     /// frame around them put a seventh in the running.
     static let fleet = Color(white: 0.14)
     static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
     /// The two networks' own colours, dimmed to the panel's level: Instagram's pink and
-    /// YouTube's red, under a violet that is what the two of them make together.
-    static let social = Color(red: 0.32, green: 0.12, blue: 0.40)
-    static let reels = Color(red: 0.55, green: 0.13, blue: 0.35)
-    static let youtube = Color(red: 0.55, green: 0.09, blue: 0.09)
+    /// YouTube's red. Quiet, because neither block has anything to say most days — but their
+    /// own, because a block is told apart by its colour everywhere else on this panel.
+    static let reels = Color(red: 0.47, green: 0.12, blue: 0.31)
+    static let youtube = Color(red: 0.47, green: 0.09, blue: 0.09)
 }
 
 /// The one thing on this panel that reaches into the sessions rather than reporting on them.
