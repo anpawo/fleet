@@ -104,7 +104,7 @@ struct TodoColumn: View {
                   note: nil,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
-                  fill: BlockTint.todo.darkened(0.62),
+                  fill: BlockTint.todo.darkened(0.44),
                   fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
