@@ -279,7 +279,9 @@ struct OverlayView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                    // White, where every other card on the panel is outlined at 0.07: the key
+                    // sits on the fleet's own line, and the fleet's line is black now.
+                    .strokeBorder(.white.opacity(0.75), lineWidth: 1)
             )
         }
         .padding(.horizontal, 2)
@@ -321,10 +323,6 @@ struct OverlayView: View {
         Circle()
             .fill(state.tint)
             .frame(width: 7, height: 7)
-            // A ring, so six small dots on a dark plate read as a key rather than as specks.
-            // Inside the dot rather than around it: a stroke on a 7pt circle is drawn on the
-            // path, and a ring outside it would close the gaps the key is spaced by.
-            .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1))
     }
 }
 
@@ -896,10 +894,10 @@ extension View {
     func blockFrame(_ tint: Color, spread: CGFloat = 13, headingCentre: CGFloat = 7) -> some View {
         background(alignment: .top) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                // The same colour as the line, laid thin over the panel's black scrim — which
+                // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
-                .fill(tint.opacity(0.16))
+                .fill(tint.opacity(0.45))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
