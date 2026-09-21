@@ -262,6 +262,9 @@ struct HubColumn<Content: View>: View {
     /// Whether the note is bad news rather than a footnote. Red, because a session that has
     /// quietly expired otherwise looks exactly like a calm week.
     var noteIsAlarm = false
+    /// A blinking red light beside the name. On when the block cannot see what it is meant to
+    /// report — the one thing on this panel that asks to be noticed from across the room.
+    var alarm = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -270,7 +273,8 @@ struct HubColumn<Content: View>: View {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(alarm ? SessionState.running.tint : .white.opacity(0.92))
+                    .blinking(alarm)
                     .titleGround()
                 if let note {
                     Text(note)
@@ -313,6 +317,33 @@ struct HubColumn<Content: View>: View {
         }
         .blockFrame(tint)
     }
+}
+
+/// The one thing on the panel that blinks: a block's own name, when the block cannot see what
+/// it is meant to report.
+///
+/// The name and not a light beside it — a lamp in a corner is furniture, and what is wrong here
+/// is the whole block. Half a second is slow enough to read as a pulse rather than a flicker.
+/// The chip behind the name does not blink with it: a ground that comes and goes reads as the
+/// heading itself being redrawn.
+struct Blinking: ViewModifier {
+    let active: Bool
+    @State private var dim = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(active && dim ? 0.25 : 1)
+            .onAppear {
+                guard active else { return }
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    dim = true
+                }
+            }
+    }
+}
+
+extension View {
+    func blinking(_ active: Bool) -> some View { modifier(Blinking(active: active)) }
 }
 
 /// A column with nothing in it — either because there is nothing, or because the first fetch
@@ -804,7 +835,8 @@ struct EpitechColumn: View {
                   note: hub.epitech?.failure ?? (credits != nil ? rendus : nil),
                   tint: BlockTint.epitech,
                   badge: credits,
-                  noteIsAlarm: hub.epitech?.failure != nil) {
+                  noteIsAlarm: hub.epitech?.failure != nil,
+                  alarm: alarming) {
             if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
                 ForEach(snapshot.modules) { module in
                     ModuleCard(module: module,
@@ -821,6 +853,16 @@ struct EpitechColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
+    }
+
+    /// Whether the light is blinking: when the scan cannot see, or when it has been switched
+    /// on by hand to be looked at —
+    ///
+    ///     defaults write com.mr.fleet epitechAlarm -bool true    # and false to stop
+    ///
+    /// A default rather than a constant, so turning it off is a command rather than a build.
+    private var alarming: Bool {
+        hub.epitech?.failure != nil || UserDefaults.standard.bool(forKey: "epitechAlarm")
     }
 
     /// Banked, and what is left of the year's sixty — the two figures the heading is for. The
@@ -873,7 +915,10 @@ struct ModuleCard: View {
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(2)
                 Spacer(minLength: 4)
-                Text(Self.day.string(from: module.end))
+                // Said, not implied. Two bare dates on one card is two dates you have to work
+                // out: this one is when the module closes, the one under it is when the next
+                // thing is due, and nothing on the card was saying which was which.
+                Text("ends \(Self.day.string(from: module.end))")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
             }
@@ -890,7 +935,7 @@ struct ModuleCard: View {
                     .foregroundStyle(.white.opacity(0.3))
                 Spacer(minLength: 4)
                 if let first = module.rendus.first {
-                    Text(Self.day.string(from: first.date))
+                    Text("next \(Self.day.string(from: first.date))")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(Self.dueTint(first.date))
                 }

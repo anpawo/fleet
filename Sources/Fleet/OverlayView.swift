@@ -781,9 +781,8 @@ struct MemoryStrip: View {
                 Text("MEMORY")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
-                    // No chip: this block wears its colour across its whole ground, so a
-                    // plate under the name would be a second, paler statement of it.
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
+                    .titleGround()
                 Spacer(minLength: 3)
                 if tight || stop != nil {
                     Spacer(minLength: 6)
@@ -847,9 +846,19 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
         }
-        // Full strength, where every other block is tinted at 45%: the name sits straight on
-        // this ground rather than on a chip, and a wash is not a ground to read white off.
-        .blockFrame(BlockTint.memory, fill: BlockTint.memory)
+        // The one block whose colour is a reading rather than a name. The RAM used to say it
+        // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
+        // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
+        // same four thresholds the figure was tinted by.
+        .blockFrame(ramTint.opacity(0.85), fill: ramTint.opacity(0.30))
+    }
+
+    /// What colour the block is: the share of the RAM in use, on the scale the figure itself
+    /// used to be drawn in — and red outright once Fleet is holding sessions back, whatever
+    /// the share says.
+    private var ramTint: Color {
+        if reaper.struggling { return SessionState.running.tint }
+        return Self.scale(share(reaper.footprint.used), 0.60, 0.75, 0.88) ?? BlockTint.memory
     }
 
     /// Red whenever the sessions have been told to wind down and the ones you are not driving
@@ -858,8 +867,7 @@ struct MemoryStrip: View {
     private var ramReading: some View {
         let ram = reaper.footprint
         return Reading("RAM", percent(share(ram.used)), trailing: gigabytes(ram.total),
-                       accent: reaper.struggling ? SessionState.running.tint
-                                                 : Self.scale(share(ram.used), 0.60, 0.75, 0.88))
+                       bare: true)
     }
 
     private func share(_ bytes: UInt64) -> Double {
@@ -1070,11 +1078,16 @@ private struct Reading: View {
     /// What the whole pill is worth saying in colour — the number and the ground under it.
     /// Nil on everything but the RAM share, which is the only one with a scale to be on.
     var accent: Color?
-    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil) {
+    /// Without its capsule. The RAM reading wears none: the whole memory block is its ground
+    /// now, and it is the block that changes colour with the share.
+    var bare = false
+    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil,
+         bare: Bool = false) {
         self.label = label
         self.value = value
         self.trailing = trailing
         self.accent = accent
+        self.bare = bare
     }
 
     var body: some View {
@@ -1097,20 +1110,22 @@ private struct Reading: View {
                     .foregroundStyle(.white.opacity(0.45))
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, bare ? 2 : 10)
         // The same capsule the hog pills wear, for the same reason: on the panel's black these
         // numbers were text floating in a void, and a ground is what makes them a readout.
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
-        .background(
-            // Opaque, on the same near-black the mail and todo rows sit on. A translucent pill
-            // over the scrim lets the desktop through, and a wallpaper is not a background you
-            // can read a number off.
-            Capsule().fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                .overlay(Capsule().fill(accent?.opacity(0.22) ?? .white.opacity(0.05)))
-                .overlay(Capsule().stroke(accent?.opacity(0.55) ?? .white.opacity(0.14),
-                                          lineWidth: 1))
-        )
+        .background {
+            if !bare {
+                // Opaque, on the same near-black the mail and todo rows sit on. A translucent
+                // pill over the scrim lets the desktop through, and a wallpaper is not a
+                // background you can read a number off.
+                Capsule().fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                    .overlay(Capsule().fill(accent?.opacity(0.22) ?? .white.opacity(0.05)))
+                    .overlay(Capsule().stroke(accent?.opacity(0.55) ?? .white.opacity(0.14),
+                                              lineWidth: 1))
+            }
+        }
     }
 }
 
