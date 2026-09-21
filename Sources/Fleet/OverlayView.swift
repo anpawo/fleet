@@ -321,6 +321,10 @@ struct OverlayView: View {
         Circle()
             .fill(state.tint)
             .frame(width: 7, height: 7)
+            // A ring, so six small dots on a dark plate read as a key rather than as specks.
+            // Inside the dot rather than around it: a stroke on a 7pt circle is drawn on the
+            // path, and a ring outside it would close the gaps the key is spaced by.
+            .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1))
     }
 }
 
@@ -892,7 +896,14 @@ extension View {
     func blockFrame(_ tint: Color, spread: CGFloat = 13, headingCentre: CGFloat = 7) -> some View {
         background(alignment: .top) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(tint, lineWidth: 1)
+                // The same colour as the line, laid thin over the panel's black scrim — which
+                // is what darkens it. A block is tinted, not coloured: the cards inside are
+                // opaque and keep their own near-black, so this only ever shows in the margins.
+                .fill(tint.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(tint, lineWidth: 1)
+                )
                 .padding(.top, headingCentre)
                 .padding(.horizontal, -spread)
                 .padding(.bottom, -spread)
@@ -918,7 +929,10 @@ enum BlockTint {
     static let mail = Color(red: 0.40, green: 0.32, blue: 0.05)
     static let epitech = Color(red: 0.10, green: 0.17, blue: 0.40)
     static let memory = Color(red: 0.42, green: 0.24, blue: 0.05)
-    static let fleet = Color(red: 0.09, green: 0.30, blue: 0.15)
+    /// Black, alone among the five. The fleet is the thing this panel is for and the only
+    /// block whose contents already carry colour — six session states, on every tile. A green
+    /// frame around them put a seventh in the running.
+    static let fleet = Color(white: 0.14)
     static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
 }
 
