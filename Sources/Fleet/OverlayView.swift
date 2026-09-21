@@ -897,7 +897,7 @@ struct MemoryStrip: View {
         // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
         // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
         // same four thresholds the figure was tinted by.
-        .blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.72), radius: 8)
+        .blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.60), radius: 8)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -1003,7 +1003,7 @@ extension View {
                 // Darkened, not thinned: an opacity lets the desktop through and the colour
                 // comes back as grey. This is the same hue taken down towards black, opaque,
                 // so a block is dark and still its own colour.
-                .fill(fill ?? tint.darkened(0.74))
+                .fill(fill ?? tint.darkened(0.62))
                 .overlay(
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
