@@ -78,6 +78,10 @@ struct OverlayView: View {
     /// 310pt card.
     private static let glowRoom: CGFloat = 22
 
+    /// How far a block's frame reaches past its content either side — `blockFrame`'s own
+    /// default spread.
+    private static let blockSpread: CGFloat = 13
+
     /// Three rows of two, and the fleet is that tall whatever is in it: under six sessions the
     /// last row is empty air, over six the rest scrolls. A block that grew a row every other
     /// session pushed the two columns beside it down the screen and back up again all day —
@@ -99,10 +103,19 @@ struct OverlayView: View {
         min(gridHeight, columnHeight) - 15
     }
 
-    /// As tall as the screen has room for under the panel's own insets — the ceiling a column
-    /// scrolls under rather than a height it takes.
+    /// What the panel leaves above its first block — 100 over the board and 26 more inside it
+    /// — and, now, under its last one. The same gap at both ends: a column that stopped where
+    /// the screen did read as the panel having been cut off rather than laid out.
+    static let inset: CGFloat = 126
+
+    /// As tall as the screen has room for between those two gaps — the ceiling a column
+    /// scrolls or is cut off under, rather than a height it takes.
     static var columnHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
+        let screen = OverlayWindowController.activeScreen()
+        // The window is the whole screen, menu bar and dock included, so the insets are
+        // measured off that. A dock at the bottom eats into the gap rather than adding to it.
+        let dock = screen.visibleFrame.minY - screen.frame.minY
+        return max(240, screen.frame.height - inset - max(inset, dock))
     }
 
     var body: some View {
@@ -194,7 +207,13 @@ struct OverlayView: View {
                     EpitechColumn(hub: controller.hub,
                                   commandHeld: controller.commandHeld)
                 }
-                .frame(width: sideWidth)
+                // Cut off at the panel's own bottom gap rather than run off the screen. The
+                // widening either side of the clip is the room a block's frame takes past its
+                // content — see `blockFrame` — which a clip at the column's width would shave.
+                .frame(width: sideWidth, height: Self.columnHeight, alignment: .top)
+                .padding(.horizontal, Self.blockSpread)
+                .clipped()
+                .padding(.horizontal, -Self.blockSpread)
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling).frame(width: centerWidth)

@@ -145,7 +145,7 @@ final class OverlayWindowController {
     /// The screen the user is actually on. `NSScreen.main` is the one holding the key window,
     /// which for a background agent with nothing on screen can name a display on another
     /// Space; the pointer is a truthful stand-in for "here".
-    private static func activeScreen() -> NSScreen {
+    static func activeScreen() -> NSScreen {
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
             ?? NSScreen.main
