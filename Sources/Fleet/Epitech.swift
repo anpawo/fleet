@@ -84,7 +84,7 @@ enum Epitech {
 
     /// Nil when the scan has never run on this machine — which is a different thing from a term
     /// with no modules in it, and the block says so.
-    static func read(now: Date = Date()) -> Snapshot? {
+    static func read(from file: URL = Epitech.file, now: Date = Date()) -> Snapshot? {
         guard let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(State.self, from: data) else { return nil }
 

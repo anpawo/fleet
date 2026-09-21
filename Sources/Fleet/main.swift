@@ -320,8 +320,13 @@ if CommandLine.arguments.contains("--todos") {
 }
 
 // The EPITECH block without the panel: the modules under way and the rendus still ahead.
-if CommandLine.arguments.contains("--epitech") {
-    guard let snapshot = Epitech.read() else {
+if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
+    // An optional path, so a state.json that says something this one does not — a dead session,
+    // a year's credits — can be put in front of the reader without touching the real file.
+    let file = flag + 1 < CommandLine.arguments.count
+        && !CommandLine.arguments[flag + 1].hasPrefix("--")
+        ? URL(fileURLWithPath: CommandLine.arguments[flag + 1]) : Epitech.file
+    guard let snapshot = Epitech.read(from: file) else {
         print("no \(Epitech.file.path) — the scan has never run here")
         exit(1)
     }
@@ -334,6 +339,8 @@ if CommandLine.arguments.contains("--epitech") {
         }
     }
     print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
+    print("credits: \(snapshot.credits.map { "\($0)/\(Epitech.creditsPerYear)" } ?? "unknown")")
+    print("trouble: \(snapshot.failure ?? "none")")
     exit(0)
 }
 
