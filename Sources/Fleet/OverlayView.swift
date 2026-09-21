@@ -1000,10 +1000,10 @@ extension View {
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
-                // Darkened, not thinned: an opacity lets the desktop through and the colour
-                // comes back as grey. This is the same hue taken down towards black, opaque,
-                // so a block is dark and still its own colour.
-                .fill(fill ?? tint.darkened(0.48))
+                // Darkened rather than thinned: the hue is taken down towards black first,
+                // so it stays its own colour. The sliver of transparency on top only lets
+                // the desktop show through the margins.
+                .fill((fill ?? tint.darkened(0.48)).opacity(0.86))
                 .overlay(
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
