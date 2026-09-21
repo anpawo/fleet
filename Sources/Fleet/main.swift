@@ -359,6 +359,32 @@ if CommandLine.arguments.contains("--reels") {
     RunLoop.main.run()
 }
 
+// `--reels-run` drains the backlog and exits: every Reel the phone could not check, then every
+// checked Reel nobody has read. This is the whole analyser — the resident app only ever reads
+// the collection to say what is in it. Run from its own LaunchAgent, `com.mr.fleet.reels`.
+//
+// Local, and not in the cloud: Instagram serves the video to a residential address and to
+// nothing else, the transcription is whisper.cpp on this machine's own cores, and the notes it
+// writes land in ~/self/social-media. A datacenter would fail at the first step.
+if CommandLine.arguments.contains("--reels-run") {
+    Task { @MainActor in
+        let hub = HubStore()
+        hub.mayCheck = { true }
+        await hub.syncReels()
+        // Each finished check calls `syncReels` again, so the backlog drains on its own and
+        // this only has to wait for the quiet. The cap is the cron's own interval: a job still
+        // going when the next one starts is two whispers on eleven cores.
+        let deadline = Date().addingTimeInterval(90 * 60)
+        while hub.working, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        print("reels: \(hub.reels.count) unread, \(hub.reelsReadToday) read today"
+              + (hub.working ? " — still working, stopped at the cap" : ""))
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // `--reel-digest <shortcode>` prints what the background read would leave behind, writing nothing.
 if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
    i + 1 < CommandLine.arguments.count {

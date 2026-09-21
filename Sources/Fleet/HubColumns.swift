@@ -83,7 +83,7 @@ struct TodoColumn: View {
                   note: hub.failure,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
-                  fill: BlockTint.todo.opacity(0.22),
+                  fill: BlockTint.todo.opacity(0.16),
                   fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
@@ -281,6 +281,21 @@ struct HubColumn<Content: View>: View {
     var fills = false
     @ViewBuilder let content: Content
 
+    /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
+    private var cornerLabel: String? {
+        if let badge { return badge }
+        return count > 0 || showsZero ? "\(count)" : nil
+    }
+
+    @ViewBuilder private var corner: some View {
+        if let cornerLabel {
+            Text(cornerLabel)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.45))
+                .titleGround()
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -302,24 +317,13 @@ struct HubColumn<Content: View>: View {
                         .padding(.leading, 15)
                 }
                 Spacer(minLength: 4)
+                // The + and the figure are one control on a column you can write into: two
+                // chips a few points apart, one of them clickable and the other not, is a
+                // target you have to aim at. Together they are the size of a button.
                 if let onAdd {
-                    AddButton(action: onAdd)
-                        // Pinned to the heading's own line: the button is 16pt tall and the
-                        // words beside it are 11pt, so left to itself it would push this column
-                        // rule a couple of points below the one on MAIL. What it spills lands
-                        // in the gap above the rule.
-                        .frame(height: 13)
-                }
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .titleGround()
-                } else if count > 0 || showsZero {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .titleGround()
+                    AddButton(action: onAdd, count: cornerLabel)
+                } else {
+                    corner
                 }
             }
             .padding(.horizontal, 2)
@@ -660,17 +664,30 @@ struct TodoCard: View {
 /// kind of thing: a small target that appears on a heading and does one thing to the list.
 struct AddButton: View {
     let action: () -> Void
+    /// The column's own figure, on the same chip as the +. Two grounds a few points apart,
+    /// one of them clickable and the other not, is a target you have to aim at; together they
+    /// are one control the size of a button.
+    var count: String?
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.5))
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(.white.opacity(0.12)))
-                .overlay(Circle().fill(.white.opacity(hovering ? 0.16 : 0)))
-                .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 1))
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
+                if let count {
+                    Text(count)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.45))
+                }
+            }
+            .titleGround()
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.white.opacity(hovering ? 0.10 : 0))
+                .padding(.horizontal, -7)
+                .padding(.vertical, -3))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -866,7 +883,7 @@ struct EpitechColumn: View {
                   // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
                   note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
-                  fill: BlockTint.epitech.opacity(0.22),
+                  fill: BlockTint.epitech.opacity(0.16),
                   badge: credits,
                   alarm: alarming,
                   minRows: 3,
@@ -1104,24 +1121,6 @@ struct ModuleCard: View {
     }
 }
 
-/// What the phone has fed this machine, one block per network: how many Reels the background
-/// read has been through today, and YouTube beside it.
-///
-/// A block each rather than two pills in one, because the colour belongs on the outline — it
-/// is the block that is Instagram's, not a badge inside it. Neither has rows: a name and a
-/// number is the whole of what either has to say, and the frame is what makes that a block.
-struct ReelsBlock: View {
-    @ObservedObject var hub: HubStore
-
-    var body: some View {
-        HubColumn(title: "REELS",
-                  count: hub.reelsReadToday,
-                  showsZero: true,
-                  note: hub.checkingReel != nil ? "\u{2026}" : nil,
-                  tint: BlockTint.reels) {}
-    }
-}
-
 /// Everything that runs on its own and came back broken, in one bar over the fleet: a check
 /// the phone gave up on, a scan that could not log in.
 ///
@@ -1218,10 +1217,3 @@ struct AlertsBlock: View {
     }
 }
 
-/// Nothing behind it yet: the YouTube notes are files in ~/self/social-media and nobody counts
-/// them. The name holds the place they will take.
-struct YoutubeBlock: View {
-    var body: some View {
-        HubColumn(title: "YOUTUBE", count: 0, note: nil, tint: BlockTint.youtube) {}
-    }
-}

@@ -59,7 +59,9 @@ final class AppController: ObservableObject {
     @Published private(set) var mutedUntil: Date?
 
     func start() {
-        hub.mayCheck = { [weak self] in self?.reaper.struggling == false }
+        // No `mayCheck` here on purpose: the resident app reads the collection for what the
+        // panel shows and never starts a pipeline of its own. The download, the transcription
+        // and the read belong to `fleet --reels-run`, on its own schedule — see `install.sh`.
         hub.liveSessions = { [weak self] in
             var found: [String: String] = [:]
             for session in self?.sessions ?? [] {

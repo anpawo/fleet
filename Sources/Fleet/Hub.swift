@@ -508,11 +508,15 @@ final class HubStore: ObservableObject {
     /// The Reel a check is running on right now, when one is. One at a time — whisper takes
     /// every core it is given, and two of them is the machine Fleet exists to prevent.
     @Published private(set) var checkingReel: String?
-    /// Whether the machine has room for a check. Set by the controller from the reaper; a
-    /// transcription started on a struggling machine is the wrong kind of help. Off until it
-    /// is set: every `fleet --something` builds a store too, and none of them should start a
-    /// two-minute pipeline on the way to printing a list.
+    /// Whether this process may start a check at all. Off by default, and turned on by the
+    /// one job whose business it is — `fleet --reels-run`. Every `fleet --something` builds a
+    /// store too, and none of them should start a two-minute pipeline on the way to printing
+    /// a list; the resident app leaves it off because a download and a transcription on the
+    /// machine you are working on is the wrong kind of help at an hour it chose itself.
     var mayCheck: () -> Bool = { false }
+
+    /// Whether a check or a read is running right now — what the drain waits on.
+    var working: Bool { reelCheck != nil }
 
     private(set) var reelsFetchedAt = Date.distantPast
     private var reelCheck: Task<Void, Never>?

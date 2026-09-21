@@ -174,16 +174,12 @@ struct OverlayView: View {
                 // in the corner, at the width of the column it sits over. A minimum rather
                 // than a height — under pressure the hogs need more rows, and an alert that
                 // shoves the column down is an alert doing its job.
-                // One gap, five blocks: the machine's own two lines, the two networks, the
-                // mail and the school. Every space between them is the same space — a column
-                // whose gaps vary reads as groups nobody meant to make.
+                // One gap, three blocks: the machine's own two lines, the mail and the
+                // school. Every space between them is the same space — a column whose gaps
+                // vary reads as groups nobody meant to make.
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    HStack(alignment: .top, spacing: 36) {
-                        ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
-                        YoutubeBlock().frame(maxWidth: .infinity)
-                    }
                     MailColumn(hub: controller.hub)
                     EpitechColumn(hub: controller.hub,
                                   commandHeld: controller.commandHeld,
@@ -979,7 +975,9 @@ extension View {
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
-                .fill(fill ?? tint.opacity(0.45))
+                // Kept low: at half strength the wash was a coloured card, and the panel read
+                // as six colours before it read as six lists.
+                .fill(fill ?? tint.opacity(0.28))
                 .overlay(
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)

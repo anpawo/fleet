@@ -82,6 +82,53 @@ launchctl kickstart -k "gui/$UID/$LABEL"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
 	-f "$DEST" 2>/dev/null || true
 
+# The Reels analyser is not the app: the app reads the collection, this job does the work —
+# yt-dlp, whisper and the read — four times a day rather than whenever a Reel happens to land
+# while you are working. Four fixed hours, none of them at night: the machine is asleep then,
+# and launchd would pile the missed runs onto the lid opening.
+REELS="com.mr.fleet.reels"
+REELS_PLIST="$HOME/Library/LaunchAgents/$REELS.plist"
+echo "==> Writing $REELS_PLIST"
+cat > "$REELS_PLIST.new" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>$REELS</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>$DEST/Contents/MacOS/Fleet</string>
+		<string>--reels-run</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+		<dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>15</integer></dict>
+		<dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>15</integer></dict>
+		<dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
+	</array>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>StandardOutPath</key>
+	<string>/tmp/fleet-reels.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/fleet-reels.log</string>
+</dict>
+</plist>
+PLIST_EOF
+if cmp -s "$REELS_PLIST.new" "$REELS_PLIST"; then
+	rm -f "$REELS_PLIST.new"
+else
+	mv "$REELS_PLIST.new" "$REELS_PLIST"
+	launchctl bootout "gui/$UID/$REELS" 2>/dev/null || true
+fi
+launchctl bootstrap "gui/$UID" "$REELS_PLIST" 2>/dev/null || true
+
 echo "==> Installing the fleet command to $BIN/fleet"
 mkdir -p "$BIN"
 cat > "$BIN/fleet" <<SHIM_EOF
