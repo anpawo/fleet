@@ -101,6 +101,9 @@ enum Epitech {
         let outlook: Int?
         /// Null on the runs where it does not go out: Discord is read once a day, at eight.
         let discord: Int?
+        /// The probe of calendar access, not a reader: a green run that silently writes nothing
+        /// was the failure that actually happened, five times in ten days.
+        let calendar: Int?
 
         /// The ones that failed, named as the block should say them.
         var broken: [String] {
@@ -109,6 +112,7 @@ enum Epitech {
             if let outlook, outlook != 0 { out.append("outlook token") }
             if let edsquare, edsquare != 0 { out.append("edsquare") }
             if let discord, discord != 0 { out.append("discord token") }
+            if let calendar, calendar != 0 { out.append("agenda") }
             return out
         }
     }
