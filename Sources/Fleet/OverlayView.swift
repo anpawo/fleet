@@ -302,7 +302,7 @@ struct OverlayView: View {
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
         // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.58), spread: 26, bottomSpread: 13)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 26, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
