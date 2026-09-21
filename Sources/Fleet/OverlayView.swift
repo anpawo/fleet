@@ -164,7 +164,7 @@ struct OverlayView: View {
                         // rest down itself, rather than landing on the REELS heading.
                         .padding(.bottom, 18)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
-                    ReelsBlock(hub: controller.hub)
+                    SocialBlock(hub: controller.hub)
                         .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
                         .padding(.bottom, 38)
@@ -950,6 +950,11 @@ enum BlockTint {
     /// frame around them put a seventh in the running.
     static let fleet = Color(white: 0.14)
     static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
+    /// The two networks' own colours, dimmed to the panel's level: Instagram's pink and
+    /// YouTube's red, under a violet that is what the two of them make together.
+    static let social = Color(red: 0.32, green: 0.12, blue: 0.40)
+    static let reels = Color(red: 0.55, green: 0.13, blue: 0.35)
+    static let youtube = Color(red: 0.55, green: 0.09, blue: 0.09)
 }
 
 /// The one thing on this panel that reaches into the sessions rather than reporting on them.

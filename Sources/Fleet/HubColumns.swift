@@ -890,20 +890,51 @@ struct ModuleCard: View {
     }
 }
 
-/// The Reels are read in the background now — see `ReelDigest` — so the panel says one thing
-/// about them: how many went through today. Written like the column headings beside it rather
-/// than as a small coloured pill: it is a heading with its number in it, not a badge on
-/// something else, and a lone number needs no rule under it.
-struct ReelsBlock: View {
+/// What this machine has been fed from a phone, in one block: the Reels the background read
+/// has been through today, and — when there is one — YouTube beside it.
+///
+/// Two pills rather than two blocks. They are the same kind of thing arriving from the same
+/// place, and a frame each would put more furniture on the panel than either has content.
+struct SocialBlock: View {
     @ObservedObject var hub: HubStore
 
     var body: some View {
-        Text("REELS: \(hub.reelsReadToday)" + (hub.checkingReel != nil ? " \u{2026}" : ""))
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(3.2)
-            .foregroundStyle(.white.opacity(0.92))
-            .titleGround()
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HubColumn(title: "SOCIAL MEDIA", count: 0, note: nil, tint: BlockTint.social) {
+            HStack(spacing: 8) {
+                SocialPill(name: "REELS",
+                           value: "\(hub.reelsReadToday)" + (hub.checkingReel != nil ? " \u{2026}" : ""),
+                           tint: BlockTint.reels)
+                // Nothing behind it yet: the YouTube notes are files in ~/self/social-media and
+                // nobody counts them. The name holds the place it will take.
+                SocialPill(name: "YOUTUBE", value: nil, tint: BlockTint.youtube)
+                Spacer(minLength: 0)
+            }
+        }
     }
 }
 
+/// One network: its name, and what came in from it today when anything counts it.
+struct SocialPill: View {
+    let name: String
+    let value: String?
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(1.6)
+                .foregroundStyle(.white.opacity(0.92))
+            if let value {
+                Text(value)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .strokeBorder(.white.opacity(0.55), lineWidth: 1))
+    }
+}
