@@ -256,6 +256,12 @@ struct HubColumn<Content: View>: View {
     var onAdd: (() -> Void)?
     /// The colour of the chip behind the name — see `BlockTint`.
     var tint: Color = Color(white: 0.24)
+    /// What goes top right in place of the count, when a number of rows is not the figure worth
+    /// having there.
+    var badge: String?
+    /// Whether the note is bad news rather than a footnote. Red, because a session that has
+    /// quietly expired otherwise looks exactly like a calm week.
+    var noteIsAlarm = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -269,7 +275,8 @@ struct HubColumn<Content: View>: View {
                 if let note {
                     Text(note)
                         .font(.system(size: 9.5))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(noteIsAlarm ? SessionState.running.tint
+                                                    : .white.opacity(0.3))
                         .lineLimit(1)
                         .titleGround()
                         // The chip behind the name bleeds 7pt past the text on either side,
@@ -285,7 +292,12 @@ struct HubColumn<Content: View>: View {
                         // in the gap above the rule.
                         .frame(height: 13)
                 }
-                if count > 0 || showsZero {
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .titleGround()
+                } else if count > 0 || showsZero {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.45))
@@ -786,8 +798,13 @@ struct EpitechColumn: View {
         HubColumn(title: "EPITECH",
                   count: hub.epitech?.projectsDue ?? 0,
                   showsZero: true,
-                  note: note,
-                  tint: BlockTint.epitech) {
+                  // The rendus move beside the name only once the credits have taken the
+                  // corner. Until the intra answers, the corner is the count of rendus and
+                  // saying it twice on one line says nothing twice.
+                  note: hub.epitech?.failure ?? (credits != nil ? rendus : nil),
+                  tint: BlockTint.epitech,
+                  badge: credits,
+                  noteIsAlarm: hub.epitech?.failure != nil) {
             if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
                 ForEach(snapshot.modules) { module in
                     ModuleCard(module: module,
@@ -806,13 +823,17 @@ struct EpitechColumn: View {
         .animation(TodoColumn.unroll, value: commandHeld)
     }
 
-    /// The scan runs three times a day, so a file older than a day is a scan that has stopped —
-    /// and a list of modules nobody has checked since Tuesday has to say so rather than pass
-    /// for this morning's.
-    private var note: String? {
-        guard let readAt = hub.epitech?.readAt,
-              Date().timeIntervalSince(readAt) > 86_400 else { return nil }
-        return shortAge(since: readAt)
+    /// Banked, and what is left of the year's sixty — the two figures the heading is for. The
+    /// count of rendus moves to the note beside the name, since every card below states its
+    /// own share of it.
+    private var credits: String? {
+        guard let credits = hub.epitech?.credits else { return nil }
+        return "\(credits)+\(max(0, Epitech.creditsPerYear - credits))/\(Epitech.creditsPerYear)"
+    }
+
+    private var rendus: String? {
+        guard let due = hub.epitech?.projectsDue, due > 0 else { return nil }
+        return due == 1 ? "1 rendu" : "\(due) rendus"
     }
 }
 

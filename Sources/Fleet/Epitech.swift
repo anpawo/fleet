@@ -32,9 +32,19 @@ enum Epitech {
         var modules: [Module]
         /// Projects still wanting a rendu, whatever module they hang off.
         var projectsDue: Int
+        /// Credits banked this school year, out of the sixty a year is worth. Nil when the scan
+        /// predates the intra read, or when the intra would not answer.
+        var credits: Int?
+        /// What the scan could not reach — a dead cookie, mostly. The block says so out loud:
+        /// a session that has quietly expired otherwise looks exactly like a calm week.
+        var failure: String?
         /// When the scan last wrote the file — the block says so when it goes stale.
         var readAt: Date
     }
+
+    /// Sixty ECTS is what a year at Epitech is worth. Not read from anywhere: it is the rule,
+    /// and the intra reports the year's tally against it without ever stating it.
+    static let creditsPerYear = 60
 
     private struct State: Decodable {
         struct Registration: Decodable {
@@ -54,9 +64,18 @@ enum Epitech {
             let unit: String?
         }
 
+        struct Intra: Decodable {
+            let ok: Bool
+            let credits: Int?
+            let error: String?
+        }
+
         let generatedAt: String
         let registrations: [Registration]
         let deadlines: [Deadline]
+        let sessionOk: Bool?
+        let errors: [String]?
+        let intra: Intra?
     }
 
     static var file: URL {
@@ -96,8 +115,23 @@ enum Epitech {
                           rendus: rendus)
         }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
+        let readAt = date(state.generatedAt) ?? .distantPast
         return Snapshot(modules: modules, projectsDue: due.count,
-                        readAt: date(state.generatedAt) ?? .distantPast)
+                        credits: state.intra?.ok == true ? state.intra?.credits : nil,
+                        failure: failure(state, readAt: readAt), readAt: readAt)
+    }
+
+    /// Why what is on screen may not be true any more, in the fewest words that say it.
+    ///
+    /// A scan whose Microsoft session has died exits before it writes anything, so the loudest
+    /// signal is the file's own age: today's modules and last Tuesday's look identical. Six
+    /// hours is two missed runs — the scan goes three times a day.
+    private static func failure(_ state: State, readAt: Date) -> String? {
+        if state.sessionOk == false { return "session expired" }
+        if let intra = state.intra, !intra.ok { return intra.error ?? "intra unreachable" }
+        if let errors = state.errors, !errors.isEmpty { return errors[0] }
+        if Date().timeIntervalSince(readAt) > 6 * 3600 { return "scan \(shortAge(since: readAt)) old" }
+        return nil
     }
 
     /// "Rendu — [PRIMARY] - Cloud Architecting (User Group - AWS)" is the scan's line, written

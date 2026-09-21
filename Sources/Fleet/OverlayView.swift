@@ -781,8 +781,9 @@ struct MemoryStrip: View {
                 Text("MEMORY")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
+                    // No chip: this block wears its colour across its whole ground, so a
+                    // plate under the name would be a second, paler statement of it.
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
-                    .titleGround()
                 Spacer(minLength: 3)
                 if tight || stop != nil {
                     Spacer(minLength: 6)
@@ -846,7 +847,9 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
         }
-        .blockFrame(BlockTint.memory)
+        // Full strength, where every other block is tinted at 45%: the name sits straight on
+        // this ground rather than on a chip, and a wash is not a ground to read white off.
+        .blockFrame(BlockTint.memory, fill: BlockTint.memory)
     }
 
     /// Red whenever the sessions have been told to wind down and the ones you are not driving
