@@ -79,11 +79,14 @@ enum Epitech {
         let byUnit = Dictionary(grouping: state.deadlines.filter { due[$0.id] != nil },
                                 by: { $0.unit ?? "" })
 
+        // Only what still wants handing in. A module with nothing due is a line you read past
+        // — School Life runs all year and asks for nothing — and the count on the heading is a
+        // count of rendus, so what is listed under it had better add up to it.
         let modules = state.registrations.compactMap { registration -> Module? in
-            guard let start = date(registration.start), let end = date(registration.end),
-                  start <= now, now <= end else { return nil }
+            guard let end = date(registration.end) else { return nil }
             let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
             var rendus: [Rendu] = ids.compactMap { due[$0] }
+            guard !rendus.isEmpty else { return nil }
             rendus.sort { (a: Rendu, b: Rendu) in
                 a.date == b.date ? a.title < b.title : a.date < b.date
             }
@@ -91,7 +94,7 @@ enum Epitech {
                           name: registration.name, end: end,
                           code: registration.code, instance: registration.instance,
                           rendus: rendus)
-        }.sorted { $0.end < $1.end }
+        }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
         return Snapshot(modules: modules, projectsDue: due.count,
                         readAt: date(state.generatedAt) ?? .distantPast)

@@ -800,7 +800,7 @@ struct EpitechColumn: View {
                                })
                 }
             } else {
-                HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing running")
+                HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
@@ -830,35 +830,57 @@ struct ModuleCard: View {
         return formatter
     }()
 
+    /// How soon, in the four colours the todo column already uses for a deadline. The same
+    /// reflex has to mean the same thing on both sides of the panel.
+    private static func dueTint(_ due: Date) -> Color {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: calendar.startOfDay(for: due)).day ?? 0
+        switch days {
+        case ..<1: return SessionState.running.tint
+        case ..<8: return SessionState.apiError.tint
+        case ..<15: return SessionState.awaitingAnswer.tint
+        default: return SessionState.ready.tint
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(module.name)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(expanded ? 2 : 1)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(2)
                 Spacer(minLength: 4)
                 Text(Self.day.string(from: module.end))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
             }
 
-            if expanded {
-                Text("\(module.code) \u{00B7} \(module.instance)")
+            // The line the card exists for. It used to take ⌘ to find out whether a module
+            // wanted anything handed in, which is the one thing a glance at this block is
+            // asking — so it is on the card, in the colour a deadline is drawn in.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(module.rendus.count == 1 ? "1 rendu" : "\(module.rendus.count) rendus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+                Text(module.code)
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.4))
-                // Not "0 rendus": a module with nothing to hand in is a fact worth a word, and
-                // an empty space under an open card reads as a card that failed to open.
-                if module.rendus.isEmpty {
-                    Text("nothing to hand in")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(.white.opacity(0.3))
+                Spacer(minLength: 4)
+                if let first = module.rendus.first {
+                    Text(Self.day.string(from: first.date))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Self.dueTint(first.date))
                 }
+            }
+
+            if expanded {
                 ForEach(module.rendus) { rendu in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(rendu.title)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.white.opacity(0.65))
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Text(Self.day.string(from: rendu.date))
@@ -869,12 +891,12 @@ struct ModuleCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 7)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
         )
         .onHover { onHover($0) }
