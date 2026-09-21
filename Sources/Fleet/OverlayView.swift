@@ -180,7 +180,9 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    RunsBlock(hub: controller.hub)
+                    if RunsBlock.alarming(controller.hub) {
+                        RunsBlock(hub: controller.hub)
+                    }
                     HStack(alignment: .top, spacing: 36) {
                         ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
                         YoutubeBlock().frame(maxWidth: .infinity)

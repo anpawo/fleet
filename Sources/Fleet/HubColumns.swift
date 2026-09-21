@@ -1005,10 +1005,16 @@ struct ReelsBlock: View {
 struct RunsBlock: View {
     @ObservedObject var hub: HubStore
 
+    /// Whether there is anything to say — which is also whether the bar is on the panel at
+    /// all. A grey bar reporting that nothing is wrong is a line of furniture you stop seeing,
+    /// and the day it turns red you would not notice it had.
+    ///
     /// Forced on to be looked at: `defaults write com.mr.fleet runsAlarm -bool true`.
-    private var alarming: Bool {
+    static func alarming(_ hub: HubStore) -> Bool {
         !hub.failedRuns.isEmpty || UserDefaults.standard.bool(forKey: "runsAlarm")
     }
+
+    private var alarming: Bool { Self.alarming(hub) }
 
     var body: some View {
         HubColumn(title: "RUNS",
@@ -1022,7 +1028,7 @@ struct RunsBlock: View {
 
     private var badge: String {
         let failed = hub.failedRuns.count
-        if failed == 0 { return alarming ? "check" : "ok" }
+        if failed == 0 { return "check" }
         return failed == 1 ? "1 failed" : "\(failed) failed"
     }
 }
