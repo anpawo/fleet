@@ -94,6 +94,10 @@ struct TodoColumn: View {
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
+                // Sized to the rows rather than to the space on offer — see the fleet's own
+                // scroll view. Without it the column's frame runs to the bottom of the screen
+                // whatever is in the list.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxHeight: Self.maxHeight, alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
@@ -607,6 +611,7 @@ struct AddButton: View {
                 .frame(width: 16, height: 16)
                 .background(Circle().fill(ground))
                 .overlay(Circle().fill(.white.opacity(hovering ? 0.16 : 0)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.55), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

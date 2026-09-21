@@ -80,6 +80,12 @@ struct OverlayView: View {
     /// 310pt card.
     private static let glowRoom: CGFloat = 22
 
+    /// As tall as the screen has room for under the panel's own insets — the ceiling a column
+    /// scrolls under rather than a height it takes.
+    static var columnHeight: CGFloat {
+        max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
+    }
+
     var body: some View {
         ZStack {
             // Flat scrim rather than a live blur. Two reasons, and the second one is why the
@@ -216,18 +222,25 @@ struct OverlayView: View {
                     // taken inside the scroll view instead of over the rule above it.
                     grid.padding(.horizontal, Self.glowRoom)
                         .padding(.top, 18)
-                        .padding(.bottom, 44)
+                        .padding(.bottom, 20)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
+                // A ScrollView takes every point it is offered, which put the fleet's frame
+                // below the bottom of the screen on a fleet of six. Fixed vertically it reports
+                // the height of the tiles themselves; the cap is what it does past that, which
+                // is scroll. Checked in isolation: 200pt of content under a 500pt cap measures
+                // 200, 900pt measures 500.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: Self.columnHeight, alignment: .top)
             } else {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
         // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, spread: 26)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.75), spread: 26)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -891,13 +904,14 @@ extension View {
     ///
     /// Drawn outside the block's own bounds rather than padded into them, so hanging a frame on
     /// a column moves nothing inside it: the cards keep the width they had.
-    func blockFrame(_ tint: Color, spread: CGFloat = 13, headingCentre: CGFloat = 7) -> some View {
+    func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
+                    headingCentre: CGFloat = 7) -> some View {
         background(alignment: .top) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
-                .fill(tint.opacity(0.45))
+                .fill(fill ?? tint.opacity(0.45))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
@@ -912,7 +926,11 @@ extension View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(tint))
+                .fill(tint)
+                // Outlined, because a chip in the block's own dark colour sits on a line of
+                // that same colour: without an edge the name reads as part of the frame.
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
     }
