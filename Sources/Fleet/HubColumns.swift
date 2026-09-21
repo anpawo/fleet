@@ -29,6 +29,7 @@ struct MailColumn: View {
                   // What is left here is which pile you are looking at.
                   note: hub.showingSeen ? "seen" : nil,
                   tint: BlockTint.mail,
+                  fill: BlockTint.mail.darkened(0.36),
                   minRows: 3,
                   fills: true) {
             // The block is a third of the column now, whatever it holds, so what does not fit

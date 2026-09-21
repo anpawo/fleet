@@ -1003,7 +1003,7 @@ extension View {
                 // Darkened rather than thinned: the hue is taken down towards black first,
                 // so it stays its own colour. The sliver of transparency on top only lets
                 // the desktop show through the margins.
-                .fill((fill ?? tint.darkened(0.48)).opacity(0.86))
+                .fill((fill ?? tint.darkened(0.48)).opacity(0.78))
                 .overlay(
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
