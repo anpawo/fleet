@@ -866,6 +866,10 @@ struct EpitechColumn: View {
             } else {
                 HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
             }
+
+            // Under the modules, not inside them: a mail rarely belongs to one, and the thing
+            // it is asking for is worth reading whether or not a module is open.
+            ForEach(hub.epitech?.mails ?? []) { MailLine(mail: $0) }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
     }
@@ -891,6 +895,35 @@ struct EpitechColumn: View {
     private var rendus: String? {
         guard let due = hub.epitech?.projectsDue, due > 0 else { return nil }
         return due == 1 ? "1 rendu" : "\(due) rendus"
+    }
+}
+
+/// One mail, in the few words it comes down to. The date is the mail's, not a deadline: what it
+/// answers is "is this still current", which is the question a fortnight of mail raises.
+struct MailLine: View {
+    let mail: Epitech.Mail
+
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d MMM"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // The ones that want something done are the reason the list exists; the ones that
+            // only warn sit a shade back, so the first kind is findable without reading.
+            Text(mail.gist)
+                .font(.system(size: 11, weight: mail.action ? .medium : .regular))
+                .foregroundStyle(.white.opacity(mail.action ? 0.85 : 0.5))
+                .lineLimit(2)
+            Spacer(minLength: 4)
+            Text(Self.day.string(from: mail.date))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.28))
+        }
+        .padding(.horizontal, 2)
     }
 }
 

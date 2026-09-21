@@ -33,6 +33,17 @@ enum Epitech {
         var optional = false
     }
 
+    /// A mail that asks something, or warns of something, said in the few words it comes down
+    /// to. The scan's own agent writes these: deciding which of forty mails matters, and saying
+    /// one in six words, is the judgement it is there for. Fleet only draws the line.
+    struct Mail: Identifiable {
+        var id: String
+        var date: Date
+        var gist: String
+        /// It wants something done, as opposed to telling you something. Drawn louder.
+        var action: Bool
+    }
+
     struct Snapshot {
         var modules: [Module]
         /// Projects still wanting a rendu, whatever module they hang off.
@@ -45,11 +56,25 @@ enum Epitech {
         var failure: String?
         /// When the scan last wrote the file — the block says so when it goes stale.
         var readAt: Date
+        /// What the mailbox is saying this fortnight, already sifted and shortened.
+        var mails: [Mail] = []
     }
 
     /// Sixty ECTS is what a year at Epitech is worth. Not read from anywhere: it is the rule,
     /// and the intra reports the year's tally against it without ever stating it.
     static let creditsPerYear = 60
+
+    /// `mails.json`, written beside `state.json` by the same agent — kept apart because the
+    /// readers write `state.json` and the judgement about mails is made after they are done.
+    private struct MailFile: Decodable {
+        struct Item: Decodable {
+            let id: String
+            let date: String
+            let gist: String
+            let action: Bool?
+        }
+        let mails: [Item]
+    }
 
     private struct State: Decodable {
         struct Registration: Decodable {
@@ -124,6 +149,14 @@ enum Epitech {
         let sourcesFile = file.deletingLastPathComponent().appending(path: "sources.json")
         let sources = (try? Data(contentsOf: sourcesFile))
             .flatMap { try? JSONDecoder().decode(Sources.self, from: $0) }
+        let mailsFile = file.deletingLastPathComponent().appending(path: "mails.json")
+        let mails = ((try? Data(contentsOf: mailsFile))
+            .flatMap { try? JSONDecoder().decode(MailFile.self, from: $0) }?.mails ?? [])
+            .compactMap { item -> Mail? in
+                guard let at = date(item.date) else { return nil }
+                return Mail(id: item.id, date: at, gist: item.gist, action: item.action ?? false)
+            }
+            .sorted { $0.date > $1.date }
         guard let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(State.self, from: data) else { return nil }
 
@@ -162,7 +195,8 @@ enum Epitech {
         return Snapshot(modules: modules, projectsDue: due.count,
                         credits: state.intra?.ok == true ? state.intra?.credits : nil,
                         failure: failure(state, readAt: readAt, sources: sources),
-                        readAt: readAt)
+                        readAt: readAt,
+                        mails: mails)
     }
 
     /// Why what is on screen may not be true any more, in the fewest words that say it.
