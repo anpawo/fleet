@@ -225,6 +225,13 @@ if CommandLine.arguments.contains("--bench-panel") {
         settle()
         print("panel: \(controller.sessions.count) sessions, \(controller.hub.todos.count) todos, "
               + "\(controller.hub.mail.count) mail")
+        // What each scrolling block was actually laid out at, which is what its frame is drawn
+        // round. A height of nothing is a block that came up empty; a height equal to the cap
+        // on a short list is a frame running off the bottom of the screen.
+        for scroller in scrollViews(hosting) {
+            print(String(format: "  %-34s %7.1f pt of %7.1f", ("scroller" as NSString).utf8String!,
+                         scroller.frame.height, scroller.documentView?.frame.height ?? 0))
+        }
         print(String(format: "  %-34s %7.2f ms", ("first layout" as NSString).utf8String!,
                      cpu() - first))
 

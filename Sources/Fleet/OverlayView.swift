@@ -80,14 +80,19 @@ struct OverlayView: View {
     /// 310pt card.
     private static let glowRoom: CGFloat = 22
 
+    /// How tall the tiles come out, before the screen has its say: whole rows of a fixed-height
+    /// card, plus the air above and below them. Nothing here is measured because nothing here
+    /// varies — a tile is `SessionTile.height` tall whatever is in it.
+    static func gridHeight(_ sessions: Int) -> CGFloat {
+        let rows = CGFloat(max(1, (sessions + tilesPerRow - 1) / tilesPerRow))
+        return rows * SessionTile.height + (rows - 1) * 26 + 18 + 20
+    }
+
     /// As tall as the screen has room for under the panel's own insets — the ceiling a column
     /// scrolls under rather than a height it takes.
     static var columnHeight: CGFloat {
         max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
     }
-
-    /// How tall the tiles are, as measured from inside the scroll view. See the frame below.
-    @State private var gridHeight: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -216,12 +221,7 @@ struct OverlayView: View {
                 // while the whole board slid under them, which read as the panel coming apart.
                 // No indicator: a bar down the middle of the panel is furniture, and the
                 // tiles cut off at the bottom edge say there is more just as well.
-                // The negative padding is the room the hover glow needs. A ScrollView clips
-                // to its own bounds, and the grid is exactly as wide as the column, so the
-                // outer tiles had their glow — and the edge of the card itself, once scaled —
-                // sliced off. The container is widened past the column and the content is
-                // pushed back in by the same amount, which leaves the tiles where they were
-                // and the clip out of reach.
+                //
                 ScrollView(.vertical) {
                     // Real padding at the top rather than a negative inset on the container:
                     // the heading has to clip what scrolls under it, so the glow's room is
@@ -229,22 +229,23 @@ struct OverlayView: View {
                     grid.padding(.horizontal, Self.glowRoom)
                         .padding(.top, 18)
                         .padding(.bottom, 20)
-                        .measuredHeight()
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
+                // The negative padding is the room the hover glow needs. A ScrollView clips
+                // to its own bounds, and the grid is exactly as wide as the column, so the
+                // outer tiles had their glow — and the edge of the card itself, once scaled —
+                // sliced off.
                 .padding(.horizontal, -Self.glowRoom)
-                // A ScrollView takes every point it is offered, which put the fleet's frame
-                // below the bottom of the screen whatever was in it — so it is given the height
-                // of the tiles themselves, up to what the screen has room for.
-                //
-                // An explicit height, not `fixedSize` and a cap. That pair reports the right
-                // number and draws the wrong thing: the scroll view is sized to its content and
-                // then squeezed by the frame, so the rows past the cap are still painted, out
-                // in the open under the block's own background. A frame the scroll view is
-                // actually laid out at is one it clips to.
-                .onPreferenceChange(ContentHeight.self) { gridHeight = $0 }
-                .frame(height: min(max(gridHeight, 1), Self.columnHeight), alignment: .top)
+                // Told how tall it is, rather than left to take the screen. A ScrollView takes
+                // every point it is offered, so the block's frame ran off the bottom whatever
+                // was in it; `fixedSize` and a cap draw the rows past the cap out in the open;
+                // a height measured from inside never comes back, because a preference does
+                // not cross a scroll view; and `ViewThatFits` builds the grid twice, which
+                // cost 140ms a tick on a fleet of seven. The tiles are a fixed height in a
+                // fixed number of columns, so this is arithmetic.
+                .frame(height: min(Self.gridHeight(controller.sessions.count),
+                                   Self.columnHeight), alignment: .top)
             } else {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
@@ -516,7 +517,7 @@ struct SessionTile: View {
     @State private var hovering = false
 
     /// Fixed so the name's 30% line is the same on every tile, whatever the history under it.
-    private static let height: CGFloat = 186
+    static let height: CGFloat = 186
     /// Roughly the name's line height at its font size, to centre it on that 30% mark.
     /// Tracks `name`'s point size — if one moves the other has to.
     private static let nameLine: CGFloat = 37
@@ -948,21 +949,6 @@ extension View {
                     .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
-    }
-}
-
-/// How tall something inside a scroll view turned out to be, reported to whatever is sizing
-/// the scroll view around it.
-struct ContentHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-extension View {
-    func measuredHeight() -> some View {
-        background(GeometryReader { proxy in
-            Color.clear.preference(key: ContentHeight.self, value: proxy.size.height)
-        })
     }
 }
 

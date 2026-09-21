@@ -58,8 +58,6 @@ struct TodoColumn: View {
     /// move under different rules — the list rearranges itself with an animation, and the row
     /// under your hand must not.
     @State private var dragOffset: CGFloat = 0
-    /// How tall the rows are, as measured from inside the scroll view.
-    @State private var listHeight: CGFloat = 0
 
     private struct Dragging: Equatable {
         let id: String
@@ -91,17 +89,16 @@ struct TodoColumn: View {
             // and given back outside, so the clip lands out of its reach.
             if scrolling {
                 ScrollView(.vertical) {
-                    VStack(spacing: 8) { rows }
-                        .padding(.horizontal, Self.glowRoom)
-                        .measuredHeight()
+                    VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                // Sized to the rows rather than to the space on offer — see the fleet's own
-                // scroll view for why this is a height and not a cap.
-                .onPreferenceChange(ContentHeight.self) { listHeight = $0 }
-                .frame(height: min(max(listHeight, 1), Self.maxHeight), alignment: .top)
+                // A cap, not a height: unlike the fleet's tiles a row here is whatever its text
+                // makes it, so there is no arithmetic to do — and the one way to find out costs
+                // a second build of every row, which measured 140ms a tick on eighteen todos.
+                // The column takes the screen's ceiling and its frame comes down with it.
+                .frame(maxHeight: Self.maxHeight, alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
             }
