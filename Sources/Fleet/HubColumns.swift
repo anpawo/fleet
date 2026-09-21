@@ -901,6 +901,33 @@ struct EpitechColumn: View {
     }
 }
 
+/// What a card in the EPITECH block is: the block holds two kinds of thing, and they used to
+/// be told apart only by their shape — a module was a card and a mail was bare text under
+/// them. Same card for both now, and the pill says which you are looking at.
+///
+/// The panel's own pill, the one the tiles wear: 9pt bold on a wash of its own colour.
+struct KindPill: View {
+    let text: String
+    let tint: Color
+
+    /// Grey for a module — it is the block's own subject, and a colour on every card is a
+    /// colour that means nothing. Brass for a mail, off the star in the MAIL column: the two
+    /// are the same thing arriving from two places.
+    static let module = Color(white: 0.55)
+    static let mail = Color(red: 0.78, green: 0.65, blue: 0.40)
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .fixedSize()
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.16), in: Capsule())
+    }
+}
+
 /// One mail, in the few words it comes down to. The date is the mail's, not a deadline: what it
 /// answers is "is this still current", which is the question a fortnight of mail raises.
 struct MailLine: View {
@@ -914,19 +941,37 @@ struct MailLine: View {
     }()
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                KindPill(text: "MAIL", tint: KindPill.mail)
+                Spacer(minLength: 4)
+                Text(Self.day.string(from: mail.date))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
             // The ones that want something done are the reason the list exists; the ones that
             // only warn sit a shade back, so the first kind is findable without reading.
             Text(mail.gist)
                 .font(.system(size: 11, weight: mail.action ? .medium : .regular))
                 .foregroundStyle(.white.opacity(mail.action ? 0.85 : 0.5))
                 .lineLimit(2)
-            Spacer(minLength: 4)
-            Text(Self.day.string(from: mail.date))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.28))
         }
-        .padding(.horizontal, 2)
+        .epitechCard()
+    }
+}
+
+extension View {
+    /// The card every row of the EPITECH block sits on.
+    func epitechCard(lit: Bool = false) -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(.white.opacity(lit ? 0.2 : 0.07), lineWidth: 1)
+            )
     }
 }
 
@@ -961,10 +1006,7 @@ struct ModuleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(module.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(2)
+                KindPill(text: "MODULE", tint: KindPill.module)
                 Spacer(minLength: 4)
                 // Said, not implied. Two bare dates on one card is two dates you have to work
                 // out: this one is when the module closes, the one under it is when the next
@@ -973,6 +1015,11 @@ struct ModuleCard: View {
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
             }
+
+            Text(module.name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(2)
 
             // The line the card exists for. It used to take ⌘ to find out whether a module
             // wanted anything handed in, which is the one thing a glance at this block is
@@ -1014,15 +1061,7 @@ struct ModuleCard: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
-        )
+        .epitechCard(lit: expanded)
         .onHover { onHover($0) }
     }
 }
