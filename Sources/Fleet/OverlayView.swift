@@ -161,6 +161,8 @@ struct OverlayView: View {
                     ReelsBlock(hub: controller.hub)
                         .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
+                        .padding(.bottom, 38)
+                    EpithequeColumn(hub: controller.hub)
                 }
                 .frame(width: sideWidth)
                 gap(Self.innerWeight)

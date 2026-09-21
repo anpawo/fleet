@@ -765,6 +765,71 @@ enum FirstLine {
     }
 }
 
+/// The school, under the mail: the modules you are in the middle of and when each one closes.
+///
+/// The number on the heading is not the number of modules — it is how many projects still want
+/// a rendu, which is the only figure here that is a size of work rather than a list of names.
+struct EpithequeColumn: View {
+    @ObservedObject var hub: HubStore
+
+    var body: some View {
+        HubColumn(title: "EPITHEQUE",
+                  count: hub.epitheque?.projectsDue ?? 0,
+                  showsZero: true,
+                  note: note) {
+            if let snapshot = hub.epitheque, !snapshot.modules.isEmpty {
+                ForEach(snapshot.modules) { ModuleCard(module: $0) }
+            } else {
+                HubEmptyLine(text: hub.epitheque == nil ? "No scan" : "Nothing running")
+            }
+        }
+    }
+
+    /// The scan runs three times a day, so a file older than a day is a scan that has stopped —
+    /// and a list of modules nobody has checked since Tuesday has to say so rather than pass
+    /// for this morning's.
+    private var note: String? {
+        guard let readAt = hub.epitheque?.readAt,
+              Date().timeIntervalSince(readAt) > 86_400 else { return nil }
+        return shortAge(since: readAt)
+    }
+}
+
+/// One module: its name, and the day it ends. Nothing else — a module is a container, and what
+/// is actually due inside it is the count on the heading.
+struct ModuleCard: View {
+    let module: Epitheque.Module
+
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d MMM"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(module.name)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(Self.day.string(from: module.end))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.28))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 10)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+        )
+    }
+}
+
 /// The Reels are read in the background now — see `ReelDigest` — so the panel says one thing
 /// about them: how many went through today. Written like the column headings beside it rather
 /// than as a small coloured pill: it is a heading with its number in it, not a badge on

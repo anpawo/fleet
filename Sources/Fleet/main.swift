@@ -312,6 +312,21 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
+// The EPITHEQUE block without the panel: the modules under way and the rendus still ahead.
+if CommandLine.arguments.contains("--epitheque") {
+    guard let snapshot = Epitheque.read() else {
+        print("no \(Epitheque.file.path) — the scan has never run here")
+        exit(1)
+    }
+    let day = DateFormatter()
+    day.dateFormat = "dd/MM/yyyy"
+    for module in snapshot.modules {
+        print("  \(day.string(from: module.end))  \(module.name)")
+    }
+    print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
+    exit(0)
+}
+
 // The Reels block without the panel: every Reel the phone was handed, its state, its verdict.
 if CommandLine.arguments.contains("--reels") {
     Task { @MainActor in
