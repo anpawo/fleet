@@ -82,17 +82,6 @@ struct OverlayView: View {
     /// default spread.
     private static let blockSpread: CGFloat = 13
 
-    /// Three rows of two, and the fleet is that tall whatever is in it: under six sessions the
-    /// last row is empty air, over six the rest scrolls. A block that grew a row every other
-    /// session pushed the two columns beside it down the screen and back up again all day —
-    /// the panel is meant to be glanced at, and a layout that moves has to be re-read.
-    static var gridHeight: CGFloat {
-        let rows = CGFloat(rowsShown)
-        return rows * SessionTile.height + (rows - 1) * 26 + 18 + 20
-    }
-
-    private static let rowsShown = 3
-
     /// What the panel leaves above its first block — 100 over the board and 26 more inside it
     /// — and, now, under its last one. The same gap at both ends: a column that stopped where
     /// the screen did read as the panel having been cut off rather than laid out.
@@ -196,6 +185,7 @@ struct OverlayView: View {
                     MailColumn(hub: controller.hub)
                     EpitechColumn(hub: controller.hub,
                                   commandHeld: controller.commandHeld,
+                                  onDismiss: { controller.hidePanel() },
                                   scrolling: !eagerLayout)
                         // What is left of the column once the blocks above have had theirs —
                         // the block scrolls inside it, like the todo list beside the fleet.
@@ -219,7 +209,8 @@ struct OverlayView: View {
                 .padding(.top, -Self.blockSpread)
                 gap(Self.innerWeight)
             }
-            fleet(scrolling: scrolling).frame(width: centerWidth)
+            fleet(scrolling: scrolling)
+                .frame(width: centerWidth, height: Self.columnHeight, alignment: .top)
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
@@ -280,17 +271,16 @@ struct OverlayView: View {
                 // not cross a scroll view; and `ViewThatFits` builds the grid twice, which
                 // cost 140ms a tick on a fleet of seven. The tiles are a fixed height in a
                 // fixed number of columns, so this is arithmetic.
-                .frame(height: min(Self.gridHeight, Self.columnHeight), alignment: .top)
+                // The height the block was given — the same one the two columns either side
+                // were given, so all three end on the same line. Whatever is past it scrolls.
+                .frame(maxHeight: .infinity, alignment: .top)
             } else {
-                // A minimum rather than the height: an offscreen render has to draw every row,
-                // including the ones the scroll view would have hidden.
                 grid.padding(.top, 18).padding(.bottom, 20)
-                    .frame(minHeight: Self.gridHeight, alignment: .top)
             }
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
         // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.4), spread: 26, bottomSpread: 6)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.4), spread: 26, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -1010,7 +1000,9 @@ extension View {
 /// only thing here that uses colour to mean something — a session's state.
 enum BlockTint {
     static let mail = Color(red: 0.40, green: 0.32, blue: 0.05)
-    static let epitech = Color(red: 0.10, green: 0.17, blue: 0.40)
+    /// Deeper and more violet than the todo column's steel blue, and as light: the outline is
+    /// drawn in the tint itself, and at the old navy the block had no visible edge at all.
+    static let epitech = Color(red: 0.18, green: 0.24, blue: 0.62)
     /// Gris, comme SOCIAL MEDIA : ces deux blocs constatent, ils ne demandent rien. Seule la
     /// jauge de RAM garde une couleur, et elle la tient de son propre taux.
     static let memory = Color(white: 0.24)

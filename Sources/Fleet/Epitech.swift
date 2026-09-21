@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// The Epitech side of the day, read off `~/.epitech/state.json`.
@@ -16,9 +17,15 @@ enum Epitech {
         /// mail about it, and the only thing on the card you could search for.
         var code: String
         var instance: String
-        /// What it still wants handed in. The card is a name and a date until you hold ⌘; this
-        /// is what is underneath.
+        /// The school year the intra files it under — the year the registration started, which
+        /// is the only part of a module's URL that is not already on the card.
+        var year: Int
         var rendus: [Rendu]
+
+        /// Its page on the intra — where ⌘-clicking the card lands.
+        var url: URL? {
+            URL(string: "https://intra.epitech.eu/module/\(year)/\(code)/\(instance)/")
+        }
     }
 
     /// A project of a module, still to hand in.
@@ -42,6 +49,10 @@ enum Epitech {
         var gist: String
         /// It wants something done, as opposed to telling you something. Drawn louder.
         var action: Bool
+        /// Where the mail itself is, when the scan knew how to say so. ⌘-clicking the card
+        /// opens it; without one, the copy `run.sh` already left on this disk is opened
+        /// instead — see `open(_:)`.
+        var url: URL?
     }
 
     struct Snapshot {
@@ -72,6 +83,7 @@ enum Epitech {
             let date: String
             let gist: String
             let action: Bool?
+            let url: String?
         }
         let mails: [Item]
     }
@@ -117,6 +129,49 @@ enum Epitech {
         URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".epitech/state.json")
     }
 
+    /// Open a mail, ⌘-clicked on its card.
+    ///
+    /// The scan's own link when it left one. Otherwise the copy already on this disk:
+    /// `run.sh` reads the fortnight's mail over IMAP into `mail.json`, whole body and all, so
+    /// the mail can be read in full without a login, a browser or a round trip. Which is the
+    /// point of the click — not to visit Outlook, but to see what the six words are about.
+    @MainActor static func open(_ mail: Mail) {
+        if let url = mail.url {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        guard let text = body(ofMailID: mail.id) else { return }
+        let path = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "fleet-mail-\(mail.id).txt")
+        try? text.write(to: path, atomically: true, encoding: .utf8)
+        NSWorkspace.shared.open(path)
+    }
+
+    /// The whole mail, out of the mailbox dump `run.sh` leaves beside `state.json`.
+    private static func body(ofMailID id: String) -> String? {
+        struct Box: Decodable {
+            struct Message: Decodable {
+                let id: String
+                let date: String?
+                let from: String?
+                let subject: String?
+                let text: String?
+            }
+            let messages: [Message]
+        }
+        let box = file.deletingLastPathComponent().appending(path: "mail.json")
+        guard let data = try? Data(contentsOf: box),
+              let decoded = try? JSONDecoder().decode(Box.self, from: data),
+              let message = decoded.messages.first(where: { $0.id == id }) else { return nil }
+        return """
+        \(message.subject ?? "")
+        \(message.from ?? "")
+        \(message.date ?? "")
+
+        \(message.text ?? "")
+        """
+    }
+
     /// What each reader came back with on the last run — written by `run.sh`, one exit code per
     /// source. A non-zero code is a key or a token that no longer passes.
     struct Sources: Decodable {
@@ -154,7 +209,8 @@ enum Epitech {
             .flatMap { try? JSONDecoder().decode(MailFile.self, from: $0) }?.mails ?? [])
             .compactMap { item -> Mail? in
                 guard let at = date(item.date) else { return nil }
-                return Mail(id: item.id, date: at, gist: item.gist, action: item.action ?? false)
+                return Mail(id: item.id, date: at, gist: item.gist, action: item.action ?? false,
+                            url: item.url.flatMap(URL.init(string:)))
             }
             .sorted { $0.date > $1.date }
         guard let data = try? Data(contentsOf: file),
@@ -176,6 +232,8 @@ enum Epitech {
         // count of rendus, so what is listed under it had better add up to it.
         let modules = state.registrations.compactMap { registration -> Module? in
             guard let end = date(registration.end) else { return nil }
+            let year = Calendar.current.component(.year,
+                                                  from: date(registration.start) ?? end)
             let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
             var rendus: [Rendu] = ids.compactMap { due[$0] }
             guard !rendus.isEmpty else { return nil }
@@ -188,7 +246,7 @@ enum Epitech {
             return Module(id: registration.code + registration.instance,
                           name: registration.name, end: end,
                           code: registration.code, instance: registration.instance,
-                          rendus: rendus)
+                          year: year, rendus: rendus)
         }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
         let readAt = date(state.generatedAt) ?? .distantPast

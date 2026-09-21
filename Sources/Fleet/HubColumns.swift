@@ -837,14 +837,17 @@ enum FirstLine {
 /// a rendu, which is the only figure here that is a size of work rather than a list of names.
 struct EpitechColumn: View {
     @ObservedObject var hub: HubStore
-    /// Whether ⌘ is down. The cards are names and dates while it is not, and open onto what
-    /// each module still wants handed in while it is — the same bargain the todo column makes.
+    /// Whether ⌘ is down. The cards are a list while it is not, and every one of them opens
+    /// what it is about while it is — the mail itself, the module's page on the intra. The
+    /// same bargain the todo column makes.
     let commandHeld: Bool
+    /// A plain click puts the panel away, like everywhere else on it.
+    let onDismiss: () -> Void
     /// Off for an offscreen render, like the todo column's: `ImageRenderer` draws nothing
     /// inside a `ScrollView`.
     var scrolling = true
 
-    /// The card under the pointer, which is the only one that opens. On the column rather than
+    /// The card under the pointer, which is the one ⌘ would open. On the column rather than
     /// the card, for the same reason the todo column keeps it here: a card is rebuilt every tick.
     @State private var hovered: String?
 
@@ -882,14 +885,9 @@ struct EpitechColumn: View {
     @ViewBuilder private var rows: some View {
         if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
             ForEach(snapshot.modules) { module in
-                ModuleCard(module: module,
-                           expanded: commandHeld && hovered == module.id,
-                           onHover: { inside in
-                               withAnimation(TodoColumn.unroll) {
-                                   if inside { hovered = module.id }
-                                   else if hovered == module.id { hovered = nil }
-                               }
-                           })
+                ModuleCard(module: module, lit: lit(module.id))
+                    .epitechOpen(commandHeld: commandHeld, url: module.url,
+                                 onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
             }
         } else {
             HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
@@ -897,7 +895,18 @@ struct EpitechColumn: View {
 
         // Under the modules, not inside them: a mail rarely belongs to one, and the thing
         // it is asking for is worth reading whether or not a module is open.
-        ForEach(hub.epitech?.mails ?? []) { MailLine(mail: $0) }
+        ForEach(hub.epitech?.mails ?? []) { mail in
+            MailLine(mail: mail, lit: lit(mail.id))
+                .epitechOpen(commandHeld: commandHeld,
+                             open: { Epitech.open(mail) },
+                             onHover: { hover(mail.id, $0) }, onDismiss: onDismiss)
+        }
+    }
+
+    private func lit(_ id: String) -> Bool { commandHeld && hovered == id }
+
+    private func hover(_ id: String, _ inside: Bool) {
+        if inside { hovered = id } else if hovered == id { hovered = nil }
     }
 
     /// Whether the light is blinking: when the scan cannot see, or when it has been switched
@@ -955,6 +964,8 @@ struct KindPill: View {
 /// answers is "is this still current", which is the question a fortnight of mail raises.
 struct MailLine: View {
     let mail: Epitech.Mail
+    /// ⌘ is down and the pointer is here: this is the card that would open.
+    var lit = false
 
     private static let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -979,11 +990,27 @@ struct MailLine: View {
                 .foregroundStyle(.white.opacity(mail.action ? 0.85 : 0.5))
                 .lineLimit(2)
         }
-        .epitechCard()
+        .epitechCard(lit: lit)
     }
 }
 
 extension View {
+    /// What ⌘ does to a card in the EPITECH block: it opens what the card is about. Without
+    /// ⌘ a click is a click anywhere else on the panel — it puts the panel away.
+    ///
+    /// The cards used to unroll under ⌘ instead, which answered a question the card had
+    /// already answered: how many rendus, and when. What it could not do is show you the mail.
+    func epitechOpen(commandHeld: Bool, url: URL? = nil, open: (() -> Void)? = nil,
+                     onHover: @escaping (Bool) -> Void,
+                     onDismiss: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onHover { onHover($0) }
+            .onTapGesture {
+                guard commandHeld else { return onDismiss() }
+                if let open { open() } else if let url { NSWorkspace.shared.open(url) }
+            }
+    }
+
     /// The card every row of the EPITECH block sits on.
     func epitechCard(lit: Bool = false) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
@@ -1002,8 +1029,8 @@ extension View {
 /// it goes by on the intra, and every rendu it still wants, each with its own day.
 struct ModuleCard: View {
     let module: Epitech.Module
-    let expanded: Bool
-    let onHover: (Bool) -> Void
+    /// ⌘ is down and the pointer is here: this is the card that would open.
+    let lit: Bool
 
     private static let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -1062,30 +1089,8 @@ struct ModuleCard: View {
                 }
             }
 
-            if expanded {
-                ForEach(module.rendus) { rendu in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(rendu.title)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(rendu.optional ? 0.45 : 0.75))
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        // Only the optional ones are marked. Being graded on a project is the
-                        // norm here, and a tag on every line is a tag nobody reads.
-                        if rendu.optional {
-                            Text("opt")
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.3))
-                        }
-                        Text(Self.day.string(from: rendu.date))
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.28))
-                    }
-                }
-            }
         }
-        .epitechCard(lit: expanded)
-        .onHover { onHover($0) }
+        .epitechCard(lit: lit)
     }
 }
 
