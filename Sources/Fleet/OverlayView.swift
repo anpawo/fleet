@@ -71,8 +71,8 @@ struct OverlayView: View {
 
     /// The one space between two blocks of a side column. A frame reaches 13pt below its
     /// content and its own line sits 7pt down from the top of the next, so what the eye sees
-    /// is eighteen of this.
-    private static let blockGap: CGFloat = 24
+    /// is twenty-six of this.
+    private static let blockGap: CGFloat = 32
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
