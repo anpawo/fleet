@@ -23,7 +23,8 @@ struct MailColumn: View {
                   count: hub.mail.count,
                   showsZero: true,
                   note: hub.failure ?? (hub.showingSeen ? "seen" : nil),
-                  tint: BlockTint.mail) {
+                  tint: BlockTint.mail,
+                  minRows: 3) {
             if !hub.loaded {
                 HubEmptyLine(text: "Loading\u{2026}")
             }
@@ -39,8 +40,8 @@ struct TodoColumn: View {
     /// Whether ⌘ is down. The column is a list while it is not, and a set of controls while it
     /// is — see `TodoCard`.
     let commandHeld: Bool
-    /// How tall the list is allowed to get, handed down from the fleet beside it — a ceiling,
-    /// not a height. A short list stops where it stops; a long one is cut off here and scrolls.
+    /// How tall the list is, handed down from the fleet beside it. A height and not a
+    /// ceiling: a short list keeps the room anyway, a long one is cut off here and scrolls.
     /// See `OverlayView.todoHeight`.
     let listHeight: CGFloat
     /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
@@ -62,10 +63,6 @@ struct TodoColumn: View {
     /// move under different rules — the list rearranges itself with an animation, and the row
     /// under your hand must not.
     @State private var dragOffset: CGFloat = 0
-    /// How tall the rows came out, read back from the layout. Starts at the ceiling so the
-    /// column never opens taller than it will settle at.
-    @State private var contentHeight: CGFloat = .greatestFiniteMagnitude
-
     private struct Dragging: Equatable {
         let id: String
         let from: Int
@@ -98,24 +95,15 @@ struct TodoColumn: View {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) { rows }
                         .padding(.horizontal, Self.glowRoom)
-                        // Read, not computed: a row is whatever its text makes it, and the
-                        // rows are laid out once either way — the reader only asks the layout
-                        // what it already decided.
-                        .background(GeometryReader { geo in
-                            Color.clear.onChange(of: geo.size.height, initial: true) {
-                                contentHeight = $1
-                            }
-                        })
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                // A ScrollView takes every point it is offered, so the height it is offered is
-                // the list's own until that passes the fleet's — past there the rest is cut off
-                // and scrolls.
-                .frame(height: min(listHeight, contentHeight), alignment: .top)
+                // The fleet's height, whatever the list holds — the rows past it scroll.
+                .frame(height: listHeight, alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
+                    .frame(minHeight: listHeight, alignment: .top)
             }
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
@@ -280,6 +268,10 @@ struct HubColumn<Content: View>: View {
     /// How round the frame's corners are. A one-line block wears the same 12pt as a column of
     /// cards as a capsule; the short ones ask for less.
     var radius: CGFloat = 12
+    /// How many rows of room the column keeps whether or not it has them to show. An empty
+    /// MAIL that collapses to a line, and grows back the moment something lands, moves every
+    /// block under it — the left column would rearrange itself all morning.
+    var minRows = 0
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -328,6 +320,7 @@ struct HubColumn<Content: View>: View {
             // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.
             VStack(spacing: 8) { content }
+                .frame(minHeight: MailCard.room(forRows: minRows), alignment: .top)
                 .padding(.top, 9)
         }
         .blockFrame(tint, radius: radius)
@@ -395,6 +388,15 @@ struct MailCard: View {
     /// Brass rather than gold: desaturated and dimmed off the amber the tiles use for a state,
     /// because this is not a state and should not answer to the same reflex.
     private static let starTint = Color(red: 0.78, green: 0.65, blue: 0.40)
+
+    /// How much room a given number of these takes, gaps included — what MAIL and EPITECH
+    /// keep clear whether or not they have that much to put in it. Neither line wraps, so
+    /// this is the two line heights and the padding round them.
+    static func room(forRows rows: Int) -> CGFloat {
+        guard rows > 0 else { return 0 }
+        let card = FirstLine.lineHeight(size: 12) + 3 + FirstLine.lineHeight(size: 9.5) + 16
+        return CGFloat(rows) * card + CGFloat(rows - 1) * 8
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -851,7 +853,8 @@ struct EpitechColumn: View {
                   tint: BlockTint.epitech,
                   badge: credits,
                   noteIsAlarm: hub.epitech?.failure != nil,
-                  alarm: alarming) {
+                  alarm: alarming,
+                  minRows: 3) {
             if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
                 ForEach(snapshot.modules) { module in
                     ModuleCard(module: module,

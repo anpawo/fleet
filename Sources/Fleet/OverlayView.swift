@@ -78,22 +78,25 @@ struct OverlayView: View {
     /// 310pt card.
     private static let glowRoom: CGFloat = 22
 
-    /// How tall the tiles come out, before the screen has its say: whole rows of a fixed-height
-    /// card, plus the air above and below them. Nothing here is measured because nothing here
-    /// varies — a tile is `SessionTile.height` tall whatever is in it.
-    static func gridHeight(_ sessions: Int) -> CGFloat {
-        let rows = CGFloat(max(1, (sessions + tilesPerRow - 1) / tilesPerRow))
+    /// Three rows of two, and the fleet is that tall whatever is in it: under six sessions the
+    /// last row is empty air, over six the rest scrolls. A block that grew a row every other
+    /// session pushed the two columns beside it down the screen and back up again all day —
+    /// the panel is meant to be glanced at, and a layout that moves has to be re-read.
+    static var gridHeight: CGFloat {
+        let rows = CGFloat(rowsShown)
         return rows * SessionTile.height + (rows - 1) * 26 + 18 + 20
     }
 
-    /// How tall the todo list is allowed to get: a ceiling, not a height. A short list ends
-    /// where it ends; a long one is cut off on the fleet's own last line and scrolls.
+    private static let rowsShown = 3
+
+    /// How tall the todo list is: the fleet's own height, not a ceiling it creeps up to. The
+    /// two blocks are the two lists you are answerable to and they end on the same line.
     ///
-    /// Fifteen points short of the tiles, because the two blocks hold their content at
-    /// different depths: the fleet's heading leaves 9pt above the grid and its frame 6pt under
-    /// it, while a HubColumn leaves 17 above its rows and 13 under them. 9 + 6 - 17 - 13.
-    static func todoHeight(_ sessions: Int) -> CGFloat {
-        min(gridHeight(sessions), columnHeight) - 15
+    /// Fifteen points short of the tiles, because the two hold their content at different
+    /// depths: the fleet's heading leaves 9pt above the grid and its frame 6pt under it, while
+    /// a HubColumn leaves 17 above its rows and 13 under them. 9 + 6 - 17 - 13.
+    static var todoHeight: CGFloat {
+        min(gridHeight, columnHeight) - 15
     }
 
     /// As tall as the screen has room for under the panel's own insets — the ceiling a column
@@ -199,7 +202,7 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
-                           listHeight: Self.todoHeight(controller.sessions.count),
+                           listHeight: Self.todoHeight,
                            onDismiss: { controller.hidePanel() },
                            scrolling: !eagerLayout)
                     .frame(width: sideWidth)
@@ -254,10 +257,12 @@ struct OverlayView: View {
                 // not cross a scroll view; and `ViewThatFits` builds the grid twice, which
                 // cost 140ms a tick on a fleet of seven. The tiles are a fixed height in a
                 // fixed number of columns, so this is arithmetic.
-                .frame(height: min(Self.gridHeight(controller.sessions.count),
-                                   Self.columnHeight), alignment: .top)
+                .frame(height: min(Self.gridHeight, Self.columnHeight), alignment: .top)
             } else {
+                // A minimum rather than the height: an offscreen render has to draw every row,
+                // including the ones the scroll view would have hidden.
                 grid.padding(.top, 18).padding(.bottom, 20)
+                    .frame(minHeight: Self.gridHeight, alignment: .top)
             }
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
