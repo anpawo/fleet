@@ -72,6 +72,7 @@ struct ControlCenterView: View {
     @State private var idle = Settings.idleThreshold
     @State private var panelChord = Settings.panelChord
     @State private var muteChord = Settings.muteChord
+    @State private var muteDuration = Settings.muteDuration
     @State private var newDesktopChord = Settings.newDesktopChord
     @State private var closeDesktopChord = Settings.closeDesktopChord
 
@@ -81,7 +82,14 @@ struct ControlCenterView: View {
         VStack(alignment: .leading, spacing: 26) {
             header
             mute
-            section("WHEN IT APPEARS") { idlePicker }
+            section("WHEN IT APPEARS") {
+                idlePicker
+                row("Mute lasts") {
+                    menu(Settings.muteDurationChoices, label: Self.muteLabel,
+                         selection: Binding(get: { muteDuration },
+                                            set: { muteDuration = $0; Settings.muteDuration = $0 }))
+                }
+            }
             section("SHORTCUTS") {
                 chordPicker("Open the panel", choices: Settings.panelChoices,
                             selection: Binding(get: { panelChord }, set: {
@@ -160,8 +168,8 @@ struct ControlCenterView: View {
                                                      : "Muted until \(muteEndTime)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                Text("\(muteChord.label) mutes it for "
-                     + "\(Int(Settings.muteDuration / 60)) minutes. It still opens when you ask.")
+                Text("\(muteChord.label) mutes it for \(Self.muteLabel(muteDuration)). "
+                     + "It still opens when you ask.")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
             }
@@ -349,6 +357,13 @@ struct ControlCenterView: View {
     private static func idleLabel(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite else { return "Never — only when I ask" }
         return seconds < 60 ? "\(Int(seconds)) seconds" : "\(Int(seconds / 60)) minutes"
+    }
+
+    private static func muteLabel(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        guard minutes >= 60 else { return "\(minutes) minutes" }
+        let hours = minutes / 60
+        return hours == 1 ? "1 hour" : "\(hours) hours"
     }
 
     /// Asks first, because this writes to a file the user owns and Fleet did not create.

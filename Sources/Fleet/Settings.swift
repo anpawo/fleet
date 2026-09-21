@@ -94,8 +94,17 @@ enum Settings {
         }
     }
 
+    /// Offered mute lengths, in seconds.
+    static let muteDurationChoices: [TimeInterval] = [10 * 60, 30 * 60, 3600, 2 * 3600, 4 * 3600]
+
     /// How long the mute chord silences the idle trigger for.
-    static let muteDuration: TimeInterval = 10 * 60
+    static var muteDuration: TimeInterval {
+        get {
+            let stored = UserDefaults.standard.double(forKey: "muteDuration")
+            return stored > 0 ? stored : muteDurationChoices[0]
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "muteDuration") }
+    }
 
     private static func chord(forKey key: String) -> Chord? {
         let parts = (UserDefaults.standard.string(forKey: key) ?? "").split(separator: ":")
