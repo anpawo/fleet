@@ -104,7 +104,7 @@ struct TodoColumn: View {
                   note: nil,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
-                  fill: BlockTint.todo.darkened(0.76),
+                  fill: BlockTint.todo.darkened(0.62),
                   fills: true) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
@@ -904,7 +904,7 @@ struct EpitechColumn: View {
                   // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
                   note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
-                  fill: BlockTint.epitech.darkened(0.76),
+                  fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
                   alarm: alarming,
                   minRows: 3,
@@ -1239,7 +1239,7 @@ struct AlertsBlock: View {
         // The fleet's own spread, so the two frames end on the same line either side. Tinted
         // rather than coloured, like every other block: at the tint's own strength the bar was
         // a red slab across the panel, and the words on it were the quietest thing on it.
-        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.70),
+        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.58),
                     spread: 26, bottomSpread: 8, radius: 8)
         // The whole bar, frame and sentence included — not the name alone as on a block that
         // is merely stale. This one has nothing else to say, so the pulse is all of it.
