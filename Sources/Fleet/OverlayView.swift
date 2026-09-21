@@ -88,6 +88,16 @@ struct OverlayView: View {
         return rows * SessionTile.height + (rows - 1) * 26 + 18 + 20
     }
 
+    /// How tall the todo list is given to be, so that its frame ends on the same line as the
+    /// fleet's rather than wherever the list happens to stop.
+    ///
+    /// Fifteen points short of the tiles, because the two blocks hold their content at
+    /// different depths: the fleet's heading leaves 9pt above the grid and its frame 6pt under
+    /// it, while a HubColumn leaves 17 above its rows and 13 under them. 9 + 6 - 17 - 13.
+    static func todoHeight(_ sessions: Int) -> CGFloat {
+        min(gridHeight(sessions), columnHeight) - 15
+    }
+
     /// As tall as the screen has room for under the panel's own insets — the ceiling a column
     /// scrolls under rather than a height it takes.
     static var columnHeight: CGFloat {
@@ -173,8 +183,8 @@ struct OverlayView: View {
                         .padding(.bottom, 18)
                         .frame(minHeight: Self.podiumDrop, alignment: .top)
                     HStack(alignment: .top, spacing: 36) {
-                        ReelsBlock(hub: controller.hub).frame(width: 112)
-                        YoutubeBlock().frame(width: 112)
+                        ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
+                        YoutubeBlock().frame(maxWidth: .infinity)
                     }
                     .padding(.bottom, 38)
                     MailColumn(hub: controller.hub)
@@ -190,6 +200,7 @@ struct OverlayView: View {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,
                            commandHeld: controller.commandHeld,
+                           listHeight: Self.todoHeight(controller.sessions.count),
                            onDismiss: { controller.hidePanel() },
                            scrolling: !eagerLayout)
                     .frame(width: sideWidth)
@@ -252,7 +263,7 @@ struct OverlayView: View {
         }
         // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
         // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.6), spread: 26, bottomSpread: 6)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.4), spread: 26, bottomSpread: 6)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the

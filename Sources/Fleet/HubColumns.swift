@@ -39,6 +39,9 @@ struct TodoColumn: View {
     /// Whether ⌘ is down. The column is a list while it is not, and a set of controls while it
     /// is — see `TodoCard`.
     let commandHeld: Bool
+    /// How tall the list itself is drawn, handed down so this column and the fleet end on the
+    /// same line — see `OverlayView.todoHeight`.
+    let listHeight: CGFloat
     /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
     /// notification board, and getting out of it must never take aim.
     let onDismiss: () -> Void
@@ -94,11 +97,11 @@ struct TodoColumn: View {
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                // A cap, not a height: unlike the fleet's tiles a row here is whatever its text
-                // makes it, so there is no arithmetic to do — and the one way to find out costs
-                // a second build of every row, which measured 140ms a tick on eighteen todos.
-                // The column takes the screen's ceiling and its frame comes down with it.
-                .frame(maxHeight: Self.maxHeight, alignment: .top)
+                // Not measured and not capped: given. A row here is whatever its text makes
+                // it, so there is no arithmetic to do and the one way to find out costs a
+                // second build of every row — 140ms a tick on eighteen todos. What the column
+                // is worth being is exactly as tall as the fleet beside it.
+                .frame(height: listHeight, alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
             }
@@ -109,14 +112,6 @@ struct TodoColumn: View {
         // Letting ⌘ go mid-drag drops the row where it stands rather than leaving the column
         // holding a drag nothing can finish.
         .onChange(of: commandHeld) { if !commandHeld { drop() } }
-    }
-
-    /// As tall as the screen has room for under the panel's own inset. A number rather than
-    /// `.infinity`: in an HStack that sizes to its tallest child, `.infinity` resolves to the
-    /// content's own height and the list runs off the bottom edge instead of scrolling.
-    /// ponytail: the insets are mirrored from OverlayView; measure them if the panel moves.
-    private static var maxHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 900) - 100 - 26 - 34 - 40)
     }
 
     /// How far a lifted card's shadow reaches past the column, and the room the scroll view
