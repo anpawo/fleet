@@ -180,9 +180,6 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    if RunsBlock.alarming(controller.hub) {
-                        RunsBlock(hub: controller.hub)
-                    }
                     HStack(alignment: .top, spacing: 36) {
                         ReelsBlock(hub: controller.hub).frame(maxWidth: .infinity)
                         YoutubeBlock().frame(maxWidth: .infinity)
@@ -215,8 +212,18 @@ struct OverlayView: View {
                 .padding(.top, -Self.blockSpread)
                 gap(Self.innerWeight)
             }
-            fleet(scrolling: scrolling)
-                .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
+            // What is broken rides over the fleet, centred, and only when something is —
+            // see `AlertsBlock`. The tiles lose the bar's height on the days it is there,
+            // which is an alert doing its job.
+            VStack(spacing: Self.blockGap) {
+                let alerts = AlertsBlock.alerts(controller.hub)
+                if !alerts.isEmpty {
+                    AlertsBlock(hub: controller.hub)
+                }
+                fleet(scrolling: scrolling)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,

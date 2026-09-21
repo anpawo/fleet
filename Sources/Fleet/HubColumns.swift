@@ -857,11 +857,11 @@ struct EpitechColumn: View {
                   showsZero: true,
                   // The rendus move beside the name only once the credits have taken the
                   // corner. Until the intra answers, the corner is the count of rendus and
-                  // saying it twice on one line says nothing twice.
-                  note: hub.epitech?.failure ?? (credits != nil ? rendus : nil),
+                  // saying it twice on one line says nothing twice. What is wrong with the
+                  // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
+                  note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
                   badge: credits,
-                  noteIsAlarm: hub.epitech?.failure != nil,
                   alarm: alarming,
                   minRows: 3,
                   fills: true) {
@@ -1116,39 +1116,53 @@ struct ReelsBlock: View {
     }
 }
 
-/// A bar under the memory: whether anything that runs on its own came back broken.
+/// Everything that runs on its own and came back broken, in one bar over the fleet: a check
+/// the phone gave up on, a scan that could not log in.
 ///
-/// Grey and silent when nothing has. Red and blinking — the whole block, not just its name —
-/// when something has, because this is the one thing on the panel nobody would otherwise go
-/// looking for: a pipeline that fails leaves no trace on a screen anyone reads.
-struct RunsBlock: View {
+/// Over the middle rather than beside the block each failure came from. A warning that only
+/// its own block can carry is a warning you find afterwards — the red word sat in a corner of
+/// the left column, at the size of a footnote, next to a heading that reads the same whether
+/// or not it is there. Over the fleet it is in the one place the eye already goes.
+///
+/// Off the panel entirely when nothing is wrong: a grey bar reporting that all is well is a
+/// line of furniture you stop seeing, and the day it turns red you would not notice it had.
+struct AlertsBlock: View {
     @ObservedObject var hub: HubStore
 
-    /// Whether there is anything to say — which is also whether the bar is on the panel at
-    /// all. A grey bar reporting that nothing is wrong is a line of furniture you stop seeing,
-    /// and the day it turns red you would not notice it had.
+    /// What is broken, each source in its own words — which is also whether the bar is on the
+    /// panel at all.
     ///
     /// Forced on to be looked at: `defaults write com.mr.fleet runsAlarm -bool true`.
-    static func alarming(_ hub: HubStore) -> Bool {
-        !hub.failedRuns.isEmpty || UserDefaults.standard.bool(forKey: "runsAlarm")
-    }
-
-    private var alarming: Bool { Self.alarming(hub) }
-
-    var body: some View {
-        HubColumn(title: "RUNS",
-                  count: 0,
-                  note: nil,
-                  tint: alarming ? SessionState.running.tint : Color(white: 0.24),
-                  badge: badge,
-                  radius: 8) {}
-            .blinking(alarming)
-    }
-
-    private var badge: String {
+    static func alerts(_ hub: HubStore) -> [String] {
+        var out: [String] = []
+        if let failure = hub.epitech?.failure { out.append(failure) }
         let failed = hub.failedRuns.count
-        if failed == 0 { return "check" }
-        return failed == 1 ? "1 failed" : "\(failed) failed"
+        if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
+        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append("check") }
+        return out
+    }
+
+    /// One line, not a block: what is wrong is a handful of words, and a framed box with a
+    /// heading and an empty body under it is a column waiting for rows that never come. Built
+    /// like the state legend on the fleet's own heading — the same near-black ground, the same
+    /// 8pt corners — so it belongs to the line it sits on.
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("ALERT")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(3.2)
+            Text(Self.alerts(hub).joined(separator: "  \u{00B7}  "))
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(SessionState.running.tint)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(SessionState.running.tint, lineWidth: 1))
+        .blinking(true)
     }
 }
 
