@@ -212,18 +212,21 @@ struct OverlayView: View {
                 .padding(.top, -Self.blockSpread)
                 gap(Self.innerWeight)
             }
-            // What is broken rides over the fleet, centred, and only when something is —
-            // see `AlertsBlock`. The tiles lose the bar's height on the days it is there,
-            // which is an alert doing its job.
-            VStack(spacing: Self.blockGap) {
-                let alerts = AlertsBlock.alerts(controller.hub)
-                if !alerts.isEmpty {
-                    AlertsBlock(hub: controller.hub)
+            fleet(scrolling: scrolling)
+                .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
+                // What is broken rides over the fleet, centred, and only when something is —
+                // see `AlertsBlock`. Hung over the top edge rather than stacked on it: in the
+                // stack it pushed the whole fleet down the axis the day something broke, and a
+                // grid that moves is a grid you have to find again. The panel leaves 126pt of
+                // room above this line, so the bar has somewhere to hang.
+                .overlay(alignment: .top) {
+                    if !AlertsBlock.alerts(controller.hub).isEmpty {
+                        AlertsBlock(hub: controller.hub)
+                            // Clear of the line it hangs over: its own height, and the gap a
+                            // block leaves under its heading.
+                            .offset(y: -(AlertsBlock.height + 14))
+                    }
                 }
-                fleet(scrolling: scrolling)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
-            .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
                 TodoColumn(hub: controller.hub,

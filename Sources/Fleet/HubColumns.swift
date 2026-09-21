@@ -1129,6 +1129,9 @@ struct ReelsBlock: View {
 struct AlertsBlock: View {
     @ObservedObject var hub: HubStore
 
+    /// One line of 11pt with room either side of it.
+    static let height: CGFloat = 30
+
     /// What is broken, each source in its own words — which is also whether the bar is on the
     /// panel at all.
     ///
@@ -1158,7 +1161,9 @@ struct AlertsBlock: View {
         }
         .foregroundStyle(SessionState.running.tint)
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        // A height it states rather than one it works out, because what hangs the bar over the
+        // fleet has to know it from outside — see `board`.
+        .frame(height: Self.height)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
