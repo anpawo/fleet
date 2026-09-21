@@ -86,8 +86,8 @@ struct OverlayView: View {
         return rows * SessionTile.height + (rows - 1) * 26 + 18 + 20
     }
 
-    /// How tall the todo list is given to be, so that its frame ends on the same line as the
-    /// fleet's rather than wherever the list happens to stop.
+    /// How tall the todo list is allowed to get: a ceiling, not a height. A short list ends
+    /// where it ends; a long one is cut off on the fleet's own last line and scrolls.
     ///
     /// Fifteen points short of the tiles, because the two blocks hold their content at
     /// different depths: the fleet's heading leaves 9pt above the grid and its frame 6pt under

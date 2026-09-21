@@ -39,8 +39,9 @@ struct TodoColumn: View {
     /// Whether ⌘ is down. The column is a list while it is not, and a set of controls while it
     /// is — see `TodoCard`.
     let commandHeld: Bool
-    /// How tall the list itself is drawn, handed down so this column and the fleet end on the
-    /// same line — see `OverlayView.todoHeight`.
+    /// How tall the list is allowed to get, handed down from the fleet beside it — a ceiling,
+    /// not a height. A short list stops where it stops; a long one is cut off here and scrolls.
+    /// See `OverlayView.todoHeight`.
     let listHeight: CGFloat
     /// A plain click anywhere puts the panel away, which is the panel's whole contract: it is a
     /// notification board, and getting out of it must never take aim.
@@ -61,6 +62,9 @@ struct TodoColumn: View {
     /// move under different rules — the list rearranges itself with an animation, and the row
     /// under your hand must not.
     @State private var dragOffset: CGFloat = 0
+    /// How tall the rows came out, read back from the layout. Starts at the ceiling so the
+    /// column never opens taller than it will settle at.
+    @State private var contentHeight: CGFloat = .greatestFiniteMagnitude
 
     private struct Dragging: Equatable {
         let id: String
@@ -92,16 +96,24 @@ struct TodoColumn: View {
             // and given back outside, so the clip lands out of its reach.
             if scrolling {
                 ScrollView(.vertical) {
-                    VStack(spacing: 8) { rows }.padding(.horizontal, Self.glowRoom)
+                    VStack(spacing: 8) { rows }
+                        .padding(.horizontal, Self.glowRoom)
+                        // Read, not computed: a row is whatever its text makes it, and the
+                        // rows are laid out once either way — the reader only asks the layout
+                        // what it already decided.
+                        .background(GeometryReader { geo in
+                            Color.clear.onChange(of: geo.size.height, initial: true) {
+                                contentHeight = $1
+                            }
+                        })
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
                 .padding(.horizontal, -Self.glowRoom)
-                // Not measured and not capped: given. A row here is whatever its text makes
-                // it, so there is no arithmetic to do and the one way to find out costs a
-                // second build of every row — 140ms a tick on eighteen todos. What the column
-                // is worth being is exactly as tall as the fleet beside it.
-                .frame(height: listHeight, alignment: .top)
+                // A ScrollView takes every point it is offered, so the height it is offered is
+                // the list's own until that passes the fleet's — past there the rest is cut off
+                // and scrolls.
+                .frame(height: min(listHeight, contentHeight), alignment: .top)
             } else {
                 VStack(spacing: 8) { rows }
             }
