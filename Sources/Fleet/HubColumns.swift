@@ -87,6 +87,9 @@ struct CronColumn: View {
     let commandHeld: Bool
     /// Off for an offscreen render, like every other scrolling block.
     var scrolling = true
+    /// The tallest the block may be. It takes what its cards need up to this, and no more —
+    /// what it does not take goes to the list underneath.
+    var limit: CGFloat = .infinity
 
     /// The card under the pointer — the only one ⌘ unfolds. On the column rather than the
     /// card, like the two grids above it: a card is rebuilt every tick.
@@ -126,7 +129,8 @@ struct CronColumn: View {
                 .scrollBounceBehavior(.basedOnSize)
                 // The cap is what the block was given; the floor is what the cards need. The
                 // scroll only ever appears when the second is the larger.
-                .frame(maxHeight: natural > 0 ? natural : nil, alignment: .top)
+                .frame(maxHeight: min(natural > 0 ? natural : .infinity,
+                                      max(40, limit - Self.chrome)), alignment: .top)
             } else {
                 VStack(spacing: 6) { rows(all) }
             }
@@ -137,7 +141,15 @@ struct CronColumn: View {
         // And the block's own height with it: it is capped at what the cards measure.
         .animation(TodoColumn.unroll, value: hovered)
         .animation(TodoColumn.unroll, value: natural)
+        // Its own height, not the slot's. A `maxHeight` alone reads as "flexible up to", so
+        // the stack handed it the whole third and the block sat centred in the empty half.
+        .fixedSize(horizontal: false, vertical: true)
     }
+
+    /// What the block costs around its cards: the heading line, the gap under it, and the
+    /// frame's own padding. Measured once rather than laid out, because the cap has to be
+    /// decided before the content is asked how tall it is.
+    private static let chrome: CGFloat = 52
 
     @ViewBuilder private func rows(_ all: [Launchd.Job]) -> some View {
         if all.isEmpty {

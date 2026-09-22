@@ -249,18 +249,21 @@ struct OverlayView: View {
                     VStack(alignment: .leading, spacing: Self.blockGap) {
                         CronColumn(title: "ROUTINE", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
-                                   scrolling: !eagerLayout)
-                            .frame(maxHeight: max(0, free / 3))
+                                   scrolling: !eagerLayout, limit: max(0, free / 3))
                         CronColumn(title: "KEEPALIVE", jobs: controller.launchd.alive,
                                    commandHeld: controller.commandHeld,
-                                   scrolling: !eagerLayout)
-                            .frame(maxHeight: max(0, free / 3))
+                                   scrolling: !eagerLayout, limit: max(0, free / 3))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
                             .frame(maxHeight: .infinity)
                     }
+                    // Pinned to the top of the column. The two agent blocks take only what
+                    // their cards need, so the stack is shorter than the space it is given —
+                    // and a stack left to sit in the middle of that space starts the routines
+                    // below the fleet's own line.
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
                     // The same height as the column on the other side, so the two lists you
                     // are answerable to end on the same line at the foot of the panel.
