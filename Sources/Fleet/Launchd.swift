@@ -66,7 +66,7 @@ enum Launchd {
         return names.compactMap { file -> Job? in
             guard file.hasSuffix(".plist") else { return nil }
             let label = String(file.dropLast(6))
-            guard mine.contains(where: label.hasPrefix) else { return nil }
+            guard mine.contains(where: label.hasPrefix), !hidden.contains(label) else { return nil }
             guard let data = try? Data(contentsOf: folder.appending(path: file)),
                   let plist = try? PropertyListSerialization.propertyList(
                       from: data, format: nil) as? [String: Any] else { return nil }
@@ -144,6 +144,10 @@ enum Launchd {
     /// for ever.
     private static let guards: Set<String> = ["fr.marius.revive"]
 
+    /// The panel does not report on itself. If you can read this block, Fleet is running —
+    /// a green card saying so is a line that can never say anything.
+    private static let hidden: Set<String> = ["com.mr.fleet"]
+
     private static let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     /// What an agent with no trigger is doing there: it is a program launchd has been told to
@@ -157,7 +161,6 @@ enum Launchd {
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
-        "com.mr.fleet": "This panel.",
         "com.mr.fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
         "fr.marius.revive": "Starts back what should be running and is not.",
         "eu.epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
