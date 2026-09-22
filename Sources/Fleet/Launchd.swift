@@ -10,10 +10,11 @@ import SwiftUI
 /// Only his own are listed. The prefixes are the giveaway — everything else in that folder is
 /// Google's updater and Zoom's helper, which are not routines anybody chose.
 ///
-/// And only the ones that actually run on a trigger: a clock, a calendar, a file being written.
-/// The same folder holds the agents that only keep a program alive — Fleet itself, the S14
-/// servers, the window switcher — and those are applications, not routines. They were in the
-/// block and made it unreadable: fourteen lines of which four were the thing you came to see.
+/// Two kinds live in that folder and they are not the same thing: the ones that run on a
+/// trigger — a clock, a calendar, a file being written — and the ones that only keep a program
+/// alive. Routines and applications. `triggered` says which, and the panel gives each its own
+/// block: fourteen lines of which four were the thing you came to see is fourteen lines
+/// nobody reads.
 enum Launchd {
     static let folder = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/LaunchAgents")
@@ -40,11 +41,18 @@ enum Launchd {
         /// signal as minus the signal, and `install.sh` ends Fleet with a SIGTERM on every
         /// single run. Counting those, this block's own row was red for ever.
         var failing: Bool
+        /// Runs on its own — a clock, a calendar, a watched file. The other kind is an
+        /// application launchd has been told to keep up.
+        var triggered: Bool
+
+        /// What the border says, and it does not mean the same thing for the two kinds. A
+        /// routine is well when launchd knows about it and its last run did not end badly; a
+        /// resident is well when it is actually up. A calendar job has no pid between runs and
+        /// is perfectly alive; a server with no pid is the thing you needed to see.
+        var ok: Bool
+
         /// What it is for, in one sentence. Written by hand — see `notes`.
         var note: String
-
-        /// On, and its last run did not end badly. The whole of what the border says.
-        var ok: Bool { enabled && !failing }
     }
 
     /// Every agent of his, with what launchd currently says about it.
@@ -58,14 +66,17 @@ enum Launchd {
             guard let data = try? Data(contentsOf: folder.appending(path: file)),
                   let plist = try? PropertyListSerialization.propertyList(
                       from: data, format: nil) as? [String: Any] else { return nil }
-            // No trigger, no line. This is what keeps the resident apps out.
-            guard let schedule = schedule(plist) else { return nil }
             let state = live[label]
+            let trigger = schedule(plist)
+            let enabled = state != nil
+            let failing = (state?.exit ?? 0) > 0
             return Job(id: label,
                        name: shorten(label),
-                       schedule: schedule,
-                       enabled: state != nil,
-                       failing: (state?.exit ?? 0) > 0,
+                       schedule: trigger ?? resting(plist),
+                       enabled: enabled,
+                       failing: failing,
+                       triggered: trigger != nil,
+                       ok: trigger != nil ? (enabled && !failing) : (state?.pid != nil && !failing),
                        note: notes[label] ?? fallbackNote(plist))
         }.sorted { $0.name < $1.name }
     }
@@ -96,7 +107,8 @@ enum Launchd {
     /// running. `KeepAlive` and `RunAtLoad` are not schedules; that is an app being started.
     private static func schedule(_ plist: [String: Any]) -> String? {
         if let seconds = plist["StartInterval"] as? Int {
-            return seconds % 3600 == 0 ? "every \(seconds / 3600)h"
+            return seconds % 86400 == 0 ? "every \(seconds / 86400 == 1 ? "day" : "\(seconds / 86400) days")"
+                 : seconds % 3600 == 0 ? "every \(seconds / 3600)h"
                  : seconds >= 60 ? "every \(seconds / 60) min"
                  : "every \(seconds)s"
         }
@@ -113,6 +125,15 @@ enum Launchd {
             return "on \((first as NSString).lastPathComponent)"
         }
         return nil
+    }
+
+    private static let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    /// What an agent with no trigger is doing there: it is a program launchd has been told to
+    /// keep running, or to start once at login.
+    private static func resting(_ plist: [String: Any]) -> String {
+        if plist["KeepAlive"] != nil { return "always on" }
+        return plist["RunAtLoad"] as? Bool == true ? "at login" : "on demand"
     }
 
     /// One sentence per job, written here rather than in the plists: several of these files are
@@ -172,14 +193,21 @@ enum Launchd {
 /// does not need better, and nothing here changes unless an agent is installed or dies.
 @MainActor
 final class LaunchdStore: ObservableObject {
-    @Published private(set) var jobs: [Launchd.Job]
+    /// The routines — what runs on its own.
+    @Published private(set) var crons: [Launchd.Job]
+    /// The residents — programs launchd keeps up.
+    @Published private(set) var alive: [Launchd.Job]
 
     private var lastScan = Date()
     private var scanning = false
 
     /// The first read is synchronous, once, at launch — the panel can open before the first
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
-    init() { jobs = Launchd.jobs() }
+    init() {
+        let scanned = Launchd.jobs()
+        crons = scanned.filter(\.triggered)
+        alive = scanned.filter { !$0.triggered }
+    }
 
     /// Called from `AppController.tick`, on the timer that is already running.
     func tick(now: Date = Date()) {
@@ -189,7 +217,8 @@ final class LaunchdStore: ObservableObject {
         Task.detached(priority: .utility) {
             let scanned = Launchd.jobs()
             await MainActor.run {
-                self.jobs = scanned
+                self.crons = scanned.filter(\.triggered)
+                self.alive = scanned.filter { !$0.triggered }
                 self.scanning = false
             }
         }

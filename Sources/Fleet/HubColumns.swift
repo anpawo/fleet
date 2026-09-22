@@ -78,8 +78,10 @@ struct MailColumn: View {
 /// Blue, off the RAM's own blue: the two blocks that report on the machine rather than on
 /// what you owe anyone.
 struct CronColumn: View {
-    /// The last scan of `~/Library/LaunchAgents`, kept by the controller — see `LaunchdStore`.
-    @ObservedObject var launchd: LaunchdStore
+    /// What the block is called — CRONS for the routines, KEEPALIVE for the residents.
+    let title: String
+    /// The agents this block shows, already picked by kind — see `LaunchdStore`.
+    let jobs: [Launchd.Job]
     /// Whether ⌘ is down. A wall of names at rest; the one under the pointer says what it is
     /// for and how often it runs while it is held.
     let commandHeld: Bool
@@ -94,13 +96,16 @@ struct CronColumn: View {
     /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
     static let tint = SessionState.awaitingAnswer.tint
 
-    private static let pair = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
+    // Topped rather than centred: only the card being pointed at unfolds, and a grid row that
+    // centres its two cards moves the one you are not looking at down the screen.
+    private static let pair = [GridItem(.flexible(), spacing: 6, alignment: .top),
+                               GridItem(.flexible(), spacing: 6, alignment: .top)]
 
     var body: some View {
         // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
         // is the two that are not, and they have to be in the same place every time.
-        let all = launchd.jobs.sorted { $0.name < $1.name }
-        HubColumn(title: "CRONS",
+        let all = jobs.sorted { $0.name < $1.name }
+        HubColumn(title: title,
                   count: all.count,
                   showsZero: true,
                   tint: Self.tint,
@@ -179,7 +184,6 @@ struct CronCard: View {
                     .foregroundStyle(.white.opacity(0.32))
             }
         }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
         .padding(.vertical, 7)
         .padding(.horizontal, 12)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))

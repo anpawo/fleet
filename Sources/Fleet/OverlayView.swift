@@ -237,25 +237,30 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                // A third to the routines, the rest to the list. They were half each while the
-                // block still carried the resident agents; seven cards three rows deep leave
-                // the todos the room they had.
+                // Three tenths each to what the machine runs on its own — the routines on a
+                // clock, and the programs launchd keeps up — and four to the list. Two kinds
+                // in one block made fourteen lines nobody read; a quarter each made both of
+                // them scroll for six cards.
                 //
                 // No podium here: both start on the fleet's own line. They are the other
                 // lists you are answerable to, and a step below the sessions read as a
                 // footnote to them.
                 GeometryReader { space in
-                    let free = space.size.height - Self.blockGap
+                    let free = space.size.height - 2 * Self.blockGap
                     VStack(alignment: .leading, spacing: Self.blockGap) {
-                        CronColumn(launchd: controller.launchd,
+                        CronColumn(title: "CRONS", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 3))
+                            .frame(height: max(0, free * 3 / 10))
+                        CronColumn(title: "KEEPALIVE", jobs: controller.launchd.alive,
+                                   commandHeld: controller.commandHeld,
+                                   scrolling: !eagerLayout)
+                            .frame(height: max(0, free * 3 / 10))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free * 2 / 3))
+                            .frame(height: max(0, free * 4 / 10))
                     }
                 }
                     // The same height as the column on the other side, so the two lists you
