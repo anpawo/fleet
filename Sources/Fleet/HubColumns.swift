@@ -78,10 +78,15 @@ struct MailColumn: View {
 /// Blue, off the RAM's own blue: the two blocks that report on the machine rather than on
 /// what you owe anyone.
 struct CronColumn: View {
-    /// Whether ⌘ is down. A list of names at rest; the name and what it does while it is held.
+    /// Whether ⌘ is down. A wall of names at rest; the one under the pointer says what it is
+    /// for and how often it runs while it is held.
     let commandHeld: Bool
     /// Off for an offscreen render, like every other scrolling block.
     var scrolling = true
+
+    /// The card under the pointer — the only one ⌘ unfolds. On the column rather than the
+    /// card, like the two grids above it: a card is rebuilt every tick.
+    @State private var hovered: String?
 
     /// Read once a tick, like everything else on the panel: `launchctl list` is a pipe and a
     /// folder listing, and the panel is redrawn at a second's rhythm.
@@ -91,8 +96,12 @@ struct CronColumn: View {
     /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
     static let tint = SessionState.awaitingAnswer.tint
 
+    private static let pair = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
+
     var body: some View {
-        let all = jobs
+        // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
+        // is the two that are not, and they have to be in the same place every time.
+        let all = jobs.sorted { ($0.ok ? 0 : 1, $0.name) < ($1.ok ? 0 : 1, $1.name) }
         HubColumn(title: "CRON",
                   count: all.count,
                   showsZero: true,
@@ -112,51 +121,63 @@ struct CronColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
+        .animation(TodoColumn.unroll, value: hovered)
     }
 
     @ViewBuilder private func rows(_ all: [Launchd.Job]) -> some View {
         if all.isEmpty {
             HubEmptyLine(text: "No agent installed")
         }
-        ForEach(all) { CronRow(job: $0, expanded: commandHeld) }
+        LazyVGrid(columns: Self.pair, spacing: 6) {
+            ForEach(all) { job in
+                CronCard(job: job, expanded: commandHeld && hovered == job.id)
+                    .onHover { inside in
+                        if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
+                    }
+            }
+        }
     }
 }
 
-/// One job: what it is called, when it runs, and — under ⌘ — what it is for.
-struct CronRow: View {
+/// One agent, half the block wide. A name and a border: green for one launchd has loaded and
+/// whose last run was clean, red for one that is unloaded or came back on an error. Under ⌘,
+/// and only the one being pointed at, what it does and how often it does it.
+struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                // Red for a job whose last run ended badly, and nothing at all otherwise: a
-                // green light on fifteen rows is fifteen lights nobody reads.
-                if job.failing {
-                    Circle()
-                        .fill(SessionState.running.tint)
-                        .frame(width: 5, height: 5)
-                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
-                }
-                Text(job.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(job.failing ? 0.92 : 0.78))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Text(job.schedule)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.32))
-                    .lineLimit(1)
-                    .fixedSize()
-            }
+            Text(job.name)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if expanded {
                 Text(job.note)
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
+                Text(job.schedule)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.32))
             }
         }
-        .panelCard()
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(border.opacity(expanded ? 0.95 : 0.5), lineWidth: 1)
+        )
+    }
+
+    private var border: Color {
+        job.ok ? SessionState.ready.tint : SessionState.running.tint
     }
 }
 

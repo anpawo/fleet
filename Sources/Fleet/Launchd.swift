@@ -23,9 +23,10 @@ enum Launchd {
         var name: String
         /// When it runs, in the fewest words that say it.
         var schedule: String
-        /// Loaded and holding a pid right now. A calendar job is between runs nearly always,
-        /// so this is not a health check — it is only ever read next to `failing`.
-        var running: Bool
+        /// Loaded in launchd. Not "has a pid": a job that runs at 9:15 has none for the other
+        /// twenty-three hours and is perfectly alive. A plist sitting in the folder that
+        /// launchd has never been told about is the one that is off, and that is what shows.
+        var enabled: Bool
         /// The last run exited on an error of its own. The one thing here worth a colour: a
         /// routine that has been failing since Tuesday looks exactly like one that works.
         ///
@@ -35,6 +36,9 @@ enum Launchd {
         var failing: Bool
         /// What it is for, in one sentence. Written by hand — see `notes`.
         var note: String
+
+        /// On, and its last run did not end badly. The whole of what the border says.
+        var ok: Bool { enabled && !failing }
     }
 
     /// Every agent of his, with what launchd currently says about it.
@@ -52,7 +56,7 @@ enum Launchd {
             return Job(id: label,
                        name: shorten(label),
                        schedule: schedule(plist),
-                       running: state?.pid != nil,
+                       enabled: state != nil,
                        failing: (state?.exit ?? 0) > 0,
                        note: notes[label] ?? fallbackNote(plist))
         }.sorted { $0.name < $1.name }
