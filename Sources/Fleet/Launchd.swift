@@ -62,8 +62,13 @@ enum Launchd {
         }.sorted { $0.name < $1.name }
     }
 
-    /// The label without the part that only says whose it is.
+    /// The label without the part that only says whose it is — except for the S14 agents, whose
+    /// two prefixes (`scient.` and `io.scient.`) both mean the same job and neither of which is
+    /// the word he uses. They all come back as "s14.<name>".
     private static func shorten(_ label: String) -> String {
+        for prefix in ["io.scient.", "scient."] where label.hasPrefix(prefix) {
+            return "s14." + label.dropFirst(prefix.count)
+        }
         for prefix in mine where label.hasPrefix(prefix) {
             return String(label.dropFirst(prefix.count))
         }
