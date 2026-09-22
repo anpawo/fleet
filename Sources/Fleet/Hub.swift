@@ -654,7 +654,7 @@ final class HubStore: ObservableObject {
         // Off the disk, before anything goes near the network: the Epitech block has no fetch
         // of its own and must not be held up by — or lost with — the one the columns make.
         epitech = Epitech.read()
-        NSLog("Fleet: epitech — \(epitech?.modules.count ?? -1) modules, \(epitech?.mails.count ?? -1) mails")
+        NSLog("Fleet: epitech — \(epitech?.modules.count ?? -1) modules")
         do {
             // All three at once: they are independent collections and the panel is already
             // on screen waiting for them.

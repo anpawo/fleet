@@ -46,21 +46,6 @@ enum Epitech {
         var optional = false
     }
 
-    /// A mail that asks something, or warns of something, said in the few words it comes down
-    /// to. The scan's own agent writes these: deciding which of forty mails matters, and saying
-    /// one in six words, is the judgement it is there for. Fleet only draws the line.
-    struct Mail: Identifiable {
-        var id: String
-        var date: Date
-        var gist: String
-        /// It wants something done, as opposed to telling you something. Drawn louder.
-        var action: Bool
-        /// Where the mail itself is, when the scan knew how to say so. ⌘-clicking the card
-        /// opens it; without one, the copy `run.sh` already left on this disk is opened
-        /// instead — see `open(_:)`.
-        var url: URL?
-    }
-
     struct Snapshot {
         var modules: [Module]
         /// Projects still wanting a rendu, whatever module they hang off.
@@ -73,27 +58,11 @@ enum Epitech {
         var failure: String?
         /// When the scan last wrote the file — the block says so when it goes stale.
         var readAt: Date
-        /// What the mailbox is saying this fortnight, already sifted and shortened.
-        var mails: [Mail] = []
-
     }
 
     /// Sixty ECTS is what a year at Epitech is worth. Not read from anywhere: it is the rule,
     /// and the intra reports the year's tally against it without ever stating it.
     static let creditsPerYear = 60
-
-    /// `mails.json`, written beside `state.json` by the same agent — kept apart because the
-    /// readers write `state.json` and the judgement about mails is made after they are done.
-    private struct MailFile: Decodable {
-        struct Item: Decodable {
-            let id: String
-            let date: String
-            let gist: String
-            let action: Bool?
-            let url: String?
-        }
-        let mails: [Item]
-    }
 
     private struct State: Decodable {
         struct Registration: Decodable {
@@ -137,49 +106,6 @@ enum Epitech {
 
     static var file: URL {
         URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".epitech/state.json")
-    }
-
-    /// Open a mail, ⌘-clicked on its card.
-    ///
-    /// The scan's own link when it left one. Otherwise the copy already on this disk:
-    /// `run.sh` reads the fortnight's mail over IMAP into `mail.json`, whole body and all, so
-    /// the mail can be read in full without a login, a browser or a round trip. Which is the
-    /// point of the click — not to visit Outlook, but to see what the six words are about.
-    @MainActor static func open(_ mail: Mail) {
-        if let url = mail.url {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        guard let text = body(ofMailID: mail.id) else { return }
-        let path = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appending(path: "fleet-mail-\(mail.id).txt")
-        try? text.write(to: path, atomically: true, encoding: .utf8)
-        NSWorkspace.shared.open(path)
-    }
-
-    /// The whole mail, out of the mailbox dump `run.sh` leaves beside `state.json`.
-    private static func body(ofMailID id: String) -> String? {
-        struct Box: Decodable {
-            struct Message: Decodable {
-                let id: String
-                let date: String?
-                let from: String?
-                let subject: String?
-                let text: String?
-            }
-            let messages: [Message]
-        }
-        let box = file.deletingLastPathComponent().appending(path: "mail.json")
-        guard let data = try? Data(contentsOf: box),
-              let decoded = try? JSONDecoder().decode(Box.self, from: data),
-              let message = decoded.messages.first(where: { $0.id == id }) else { return nil }
-        return """
-        \(message.subject ?? "")
-        \(message.from ?? "")
-        \(message.date ?? "")
-
-        \(message.text ?? "")
-        """
     }
 
     /// What each reader came back with on the last run — written by `run.sh`, one exit code per
@@ -231,15 +157,6 @@ enum Epitech {
         let sourcesFile = file.deletingLastPathComponent().appending(path: "sources.json")
         let sources = (try? Data(contentsOf: sourcesFile))
             .flatMap { try? JSONDecoder().decode(Sources.self, from: $0) }
-        let mailsFile = file.deletingLastPathComponent().appending(path: "mails.json")
-        let mails = ((try? Data(contentsOf: mailsFile))
-            .flatMap { try? JSONDecoder().decode(MailFile.self, from: $0) }?.mails ?? [])
-            .compactMap { item -> Mail? in
-                guard let at = date(item.date) else { return nil }
-                return Mail(id: item.id, date: at, gist: item.gist, action: item.action ?? false,
-                            url: item.url.flatMap(URL.init(string:)))
-            }
-            .sorted { $0.date > $1.date }
         guard let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(State.self, from: data) else { return nil }
 
@@ -281,8 +198,7 @@ enum Epitech {
         return Snapshot(modules: modules, projectsDue: due.count,
                         credits: state.intra?.ok == true ? state.intra?.credits : nil,
                         failure: failure(state, readAt: readAt, sources: sources),
-                        readAt: readAt,
-                        mails: mails)
+                        readAt: readAt)
     }
 
     /// Why what is on screen may not be true any more, in the fewest words that say it.

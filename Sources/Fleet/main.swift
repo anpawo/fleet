@@ -338,9 +338,6 @@ if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
             print("      \(day.string(from: rendu.date))  \(rendu.title)")
         }
     }
-    for mail in snapshot.mails {
-        print("  \(day.string(from: mail.date))  \(mail.action ? "!" : " ") \(mail.gist)")
-    }
     print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
     print("credits: \(snapshot.credits.map { "\($0)/\(Epitech.creditsPerYear)" } ?? "unknown")")
     print("trouble: \(snapshot.failure ?? "none")")

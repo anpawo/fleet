@@ -938,16 +938,6 @@ struct EpitechColumn: View {
         } else {
             HubEmptyLine(text: hub.epitech == nil ? "No scan" : "No module open")
         }
-
-        // Under the grid, the one thing that is not a module: the mail. What is due is not
-        // here because it is already a todo — the scan writes every rendu to Firestore, and the
-        // TODO column dates it. Printing it twice on one screen is one list too many.
-        ForEach(hub.epitech?.mails ?? []) { mail in
-            MailLine(mail: mail, lit: lit(mail.id))
-                .epitechOpen(commandHeld: commandHeld,
-                             open: { Epitech.open(mail) },
-                             onHover: { hover(mail.id, $0) }, onDismiss: onDismiss)
-        }
     }
 
     private func lit(_ id: String) -> Bool { commandHeld && hovered == id }
@@ -964,9 +954,7 @@ struct EpitechColumn: View {
 
 }
 
-/// What a card in the EPITECH block is: the block holds two kinds of thing, and they used to
-/// be told apart only by their shape — a module was a card and a mail was bare text under
-/// them. Same card for both now, and the pill says which you are looking at.
+/// What a card in the EPITECH block is, said in a word.
 ///
 /// The panel's own pill, the one the tiles wear: 9pt bold on a wash of its own colour.
 struct KindPill: View {
@@ -974,10 +962,8 @@ struct KindPill: View {
     let tint: Color
 
     /// Grey for a module — it is the block's own subject, and a colour on every card is a
-    /// colour that means nothing. Brass for a mail, off the star in the MAIL column: the two
-    /// are the same thing arriving from two places.
+    /// colour that means nothing.
     static let module = Color(white: 0.55)
-    static let mail = Color(red: 0.78, green: 0.65, blue: 0.40)
 
     var body: some View {
         Text(text)
@@ -988,40 +974,6 @@ struct KindPill: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(tint.opacity(0.16), in: Capsule())
-    }
-}
-
-/// One mail, in the few words it comes down to. The date is the mail's, not a deadline: what it
-/// answers is "is this still current", which is the question a fortnight of mail raises.
-struct MailLine: View {
-    let mail: Epitech.Mail
-    /// ⌘ is down and the pointer is here: this is the card that would open.
-    var lit = false
-
-    private static let day: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "d MMM"
-        return formatter
-    }()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                KindPill(text: "MAIL", tint: KindPill.mail)
-                Spacer(minLength: 4)
-                Text(Self.day.string(from: mail.date))
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.28))
-            }
-            // The ones that want something done are the reason the list exists; the ones that
-            // only warn sit a shade back, so the first kind is findable without reading.
-            Text(mail.gist)
-                .font(.system(size: 11, weight: mail.action ? .medium : .regular))
-                .foregroundStyle(.white.opacity(mail.action ? 0.85 : 0.5))
-                .lineLimit(2)
-        }
-        .epitechCard(lit: lit)
     }
 }
 
