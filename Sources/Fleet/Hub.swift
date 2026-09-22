@@ -33,10 +33,16 @@ struct Mail: Identifiable {
         self.state = state
         id = doc.id
         gist = doc.string("gist")
-        sender = doc.string("sender")
+        // Un transfert porte le nom de la boîte qui a fait suivre, pas celui de l'expéditeur :
+        // tout le courrier @epitech.eu arrivait ici signé « Marius Rousset ». Le moteur range
+        // le vrai expéditeur à part, et le téléphone lit déjà ce couple-là — y compris pour
+        // reconnaître un favori, d'où le même choix sur les deux champs.
+        let origin = doc.string("originSender")
+        sender = origin.isEmpty ? doc.string("sender") : origin
         importance = doc.int("importance", default: 2)
         receivedAt = doc.date("receivedAt") ?? doc.date("createdAt") ?? .distantPast
-        fromEmail = doc.string("fromEmail")
+        let originEmail = doc.string("originEmail")
+        fromEmail = originEmail.isEmpty ? doc.string("fromEmail") : originEmail
         starred = doc.bool("favorite")
     }
 }
