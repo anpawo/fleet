@@ -76,14 +76,6 @@ enum Epitech {
         /// What the mailbox is saying this fortnight, already sifted and shortened.
         var mails: [Mail] = []
 
-        /// Everything still to hand in, soonest first, whatever module it hangs off — the list
-        /// under the grid. By id, because a project listed under two units is one rendu.
-        var rendus: [Rendu] {
-            var seen: Set<String> = []
-            return modules.flatMap(\.rendus)
-                .filter { seen.insert($0.id).inserted }
-                .sorted { $0.date == $1.date ? $0.title < $1.title : $0.date < $1.date }
-        }
     }
 
     /// Sixty ECTS is what a year at Epitech is worth. Not read from anywhere: it is the rule,

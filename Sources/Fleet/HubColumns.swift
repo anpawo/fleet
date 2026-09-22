@@ -939,13 +939,9 @@ struct EpitechColumn: View {
             HubEmptyLine(text: hub.epitech == nil ? "No scan" : "No module open")
         }
 
-        // Everything the grid above left out, in one list under it: what is actually due, then
-        // what the mailbox is asking. Neither belongs on a module card — a rendu is a date, not
-        // a module, and a mail rarely belongs to one at all.
-        ForEach(hub.epitech?.rendus ?? []) { rendu in
-            RenduLine(rendu: rendu)
-        }
-
+        // Under the grid, the one thing that is not a module: the mail. What is due is not
+        // here because it is already a todo — the scan writes every rendu to Firestore, and the
+        // TODO column dates it. Printing it twice on one screen is one list too many.
         ForEach(hub.epitech?.mails ?? []) { mail in
             MailLine(mail: mail, lit: lit(mail.id))
                 .epitechOpen(commandHeld: commandHeld,
@@ -1092,6 +1088,8 @@ struct ModuleCard: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            Spacer(minLength: 6)
+
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // my.epitech does not publish what a module is worth — the figures come from
                 // the term's opening amphi, kept by hand in ~/.epitech/credits.json. A module
@@ -1101,59 +1099,14 @@ struct ModuleCard: View {
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
                 }
+                Spacer(minLength: 4)
                 Text("due \(Self.day.string(from: module.end))")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
-                Spacer(minLength: 0)
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .epitechCard(lit: lit)
-    }
-}
-
-/// One thing to hand in: the day it is due, and what it is. Under the grid rather than on a
-/// module card — the question this line answers is "what is next", which is a question about
-/// the week, not about a module.
-struct RenduLine: View {
-    let rendu: Epitech.Rendu
-
-    private static let day: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "d MMM"
-        return formatter
-    }()
-
-    /// How soon, in the four colours the todo column already uses for a deadline. The same
-    /// reflex has to mean the same thing on both sides of the panel.
-    static func dueTint(_ due: Date) -> Color {
-        let calendar = Calendar.current
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
-                                           to: calendar.startOfDay(for: due)).day ?? 0
-        switch days {
-        case ..<1: return SessionState.running.tint
-        case ..<8: return SessionState.apiError.tint
-        case ..<15: return SessionState.awaitingAnswer.tint
-        default: return SessionState.ready.tint
-        }
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(Self.day.string(from: rendu.date))
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(Self.dueTint(rendu.date))
-                .frame(width: 42, alignment: .leading)
-            // The ones the module is graded on read plainly; the ones merely on offer sit back.
-            Text(rendu.title)
-                .font(.system(size: 11, weight: rendu.optional ? .regular : .medium))
-                .foregroundStyle(.white.opacity(rendu.optional ? 0.45 : 0.8))
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 2)
     }
 }
 
