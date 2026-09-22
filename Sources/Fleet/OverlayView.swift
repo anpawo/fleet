@@ -37,15 +37,17 @@ struct OverlayView: View {
     /// so `--render` drops the scroll container to draw every tile.
     var eagerLayout = false
 
-    /// The one directory group showing its tiles. On the panel rather than on a row, like
-    /// `CronColumn.hovered`: every row is rebuilt from scratch each tick, so a group that
-    /// remembered its own fold would snap shut once a second.
-    @State private var openGroup: String?
 
     /// How tall the grid's own area is, measured rather than worked out: the heading above it
     /// is laid out, not arithmetic, and an open directory has to end exactly where the two
     /// columns either side of it do.
     @State private var gridSpace: CGFloat = 0
+
+    /// Which directory is unfolded. On the controller, not here: Esc and the panel chord fold
+    /// it before they dismiss, and a piece of `@State` is not something they can reach. It is
+    /// also rebuilt-proof — every row is rebuilt each tick, so a fold kept on a row would snap
+    /// shut once a second.
+    private var openGroup: String? { controller.openGroup }
 
     /// What the grid takes off that height — its own padding, top and bottom.
     private static let gridPadding: CGFloat = 38
@@ -460,7 +462,8 @@ struct OverlayView: View {
                 GroupTile(name: group.name, sessions: group.sessions, open: true,
                           height: gridSpace > 0 ? gridSpace - Self.gridPadding : nil,
                           inner: innerTileWidth, spacing: tileSpacing,
-                          onToggle: { withAnimation(Self.fold) { openGroup = nil } },
+                          scrolling: !eagerLayout,
+                          onToggle: { withAnimation(Self.fold) { controller.openGroup = nil } },
                           onActivate: { controller.activate($0) })
                     .frame(width: centerWidth)
             }
@@ -472,8 +475,9 @@ struct OverlayView: View {
                             case let .group(name, sessions):
                                 GroupTile(name: name, sessions: sessions, open: false,
                                           inner: innerTileWidth, spacing: tileSpacing,
+                                          scrolling: !eagerLayout,
                                           onToggle: {
-                                              withAnimation(Self.fold) { openGroup = name }
+                                              withAnimation(Self.fold) { controller.openGroup = name }
                                           },
                                           onActivate: { controller.activate($0) })
                             case let .session(session, heading):
@@ -686,6 +690,8 @@ struct GroupTile: View {
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
+    /// Offscreen renders drop the scroll container, which never materialises its rows.
+    var scrolling = true
     let onToggle: () -> Void
     let onActivate: (Session) -> Void
 
@@ -776,6 +782,32 @@ struct GroupTile: View {
             }
             .buttonStyle(.plain)
 
+            // Scrolled, not stacked: nine sessions are five rows and the card is the height
+            // of the block, so without this the rows ran straight through its own border and
+            // over whatever the grid had underneath.
+            if scrolling {
+                ScrollView(.vertical) { sessionRows }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+            } else {
+                sessionRows
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(Self.padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: height, alignment: .top)
+        // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // The empty room inside the card belongs to the directory: clicking it folds the
+        // directory back up rather than falling through to the panel's dismiss layer. The
+        // cards inside are buttons and take their own clicks first.
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
+    }
+
+    private var sessionRows: some View {
+        VStack(alignment: .leading, spacing: spacing) {
             ForEach(rows, id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: spacing) {
                     ForEach(row) { session in
@@ -789,11 +821,8 @@ struct GroupTile: View {
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(Self.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: height, alignment: .top)
     }
 
     private var rows: [[Session]] {

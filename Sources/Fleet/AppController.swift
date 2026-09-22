@@ -27,6 +27,11 @@ final class AppController: ObservableObject {
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
 
+    /// The one directory group showing its sessions, if any. On the controller rather than on
+    /// the view: Esc and the panel chord fold it before they take the panel away, and a piece
+    /// of `@State` inside `OverlayView` is not something they can reach.
+    @Published var openGroup: String?
+
     /// The two side columns: the mail worth reading and the todo list, both from the phone's
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
@@ -136,8 +141,9 @@ final class AppController: ObservableObject {
         HotKey.register(Settings.panelChord, id: 1) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.isPanelVisible { self.hidePanel() }
-                else { self.forceShow() }
+                if self.isPanelVisible {
+                    if !self.foldOpenGroup() { self.hidePanel() }
+                } else { self.forceShow() }
             }
         }
         HotKey.register(Settings.muteChord, id: 2) { [weak self] in
@@ -178,7 +184,7 @@ final class AppController: ObservableObject {
     /// so triggering it twice puts it away again.
     func toggleOnDemand() {
         if isPanelVisible {
-            hidePanel()
+            if !foldOpenGroup() { hidePanel() }
             return
         }
         forceShow()
@@ -312,6 +318,7 @@ final class AppController: ObservableObject {
     }
 
     func hidePanel() {
+        openGroup = nil
         guard isPanelVisible else { return }
         isPanelVisible = false
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
@@ -375,7 +382,18 @@ final class AppController: ObservableObject {
         guard isPanelVisible else { return }
         if hub.stopEditing() { return }
         if hub.stopComposing() { return }
+        if foldOpenGroup() { return }
         hidePanel()
+    }
+
+    /// Folds the open directory, and says whether there was one. What Esc and the panel chord
+    /// do before they dismiss: an open group is a step you took inside the panel, and backing
+    /// out of it should not also take the fleet off screen.
+    @discardableResult
+    func foldOpenGroup() -> Bool {
+        guard openGroup != nil else { return false }
+        openGroup = nil
+        return true
     }
 
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately
