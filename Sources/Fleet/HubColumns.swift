@@ -121,7 +121,13 @@ struct CronColumn: View {
                         .background(
                             GeometryReader { inside in
                                 Color.clear.onAppear { natural = inside.size.height }
-                                    .onChange(of: inside.size.height) { natural = $1 }
+                                    // Inside the animation, not beside it: the measurement
+                                    // lands a frame after the card has begun to unfold, and a
+                                    // plain assignment there made the block snap to its new
+                                    // height while the card was still opening.
+                                    .onChange(of: inside.size.height) { _, height in
+                                        withAnimation(TodoColumn.unroll) { natural = height }
+                                    }
                             }
                         )
                 }
