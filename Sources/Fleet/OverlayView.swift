@@ -54,7 +54,13 @@ struct OverlayView: View {
 
     /// Opening a directory moves every other card at once. Cut rather than animated, the grid
     /// reads as a different grid each click.
-    private static let fold = Animation.easeOut(duration: 0.22)
+    private static let unfold = Animation.easeOut(duration: 0.28)
+
+    /// Ties the folded card to the open one. They are two different views — one is removed as
+    /// the other is inserted — so without this the card vanished from the middle of the grid
+    /// and a block appeared at the top. With it, the same rectangle slides up to the corner
+    /// and grows into the block on the way.
+    @Namespace private var fold
 
     /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a
     /// one-session fleet, start at the same left edge as every full row rather than drifting
@@ -445,7 +451,7 @@ struct OverlayView: View {
     /// The width a session card gets inside an open directory: the block, less the directory
     /// card's own padding, split in two.
     private var innerTileWidth: CGFloat {
-        (centerWidth - 2 * GroupTile.padding - tileSpacing) / 2
+        (centerWidth - 3 * tileSpacing) / 2
     }
 
     /// Every card, in rows of two. However long the fleet gets, it grows downwards — the
@@ -463,9 +469,10 @@ struct OverlayView: View {
                           height: gridSpace > 0 ? gridSpace - Self.gridPadding : nil,
                           inner: innerTileWidth, spacing: tileSpacing,
                           scrolling: !eagerLayout,
-                          onToggle: { withAnimation(Self.fold) { controller.openGroup = nil } },
+                          onToggle: { withAnimation(Self.unfold) { controller.openGroup = nil } },
                           onActivate: { controller.activate($0) })
                     .frame(width: centerWidth)
+                    .matchedGeometryEffect(id: "group:" + group.name, in: fold)
             }
             ForEach(rows(of: cells), id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: tileSpacing) {
@@ -477,7 +484,7 @@ struct OverlayView: View {
                                           inner: innerTileWidth, spacing: tileSpacing,
                                           scrolling: !eagerLayout,
                                           onToggle: {
-                                              withAnimation(Self.fold) { controller.openGroup = name }
+                                              withAnimation(Self.unfold) { controller.openGroup = name }
                                           },
                                           onActivate: { controller.activate($0) })
                             case let .session(session, heading):
@@ -487,6 +494,9 @@ struct OverlayView: View {
                             }
                         }
                         .frame(width: tileWidth)
+                        .matchedGeometryEffect(id: cell.id.hasPrefix("dir:")
+                                               ? "group:" + cell.id.dropFirst(4) : cell.id,
+                                               in: fold)
                     }
                 }
             }
@@ -700,8 +710,6 @@ struct GroupTile: View {
     /// and a card that borrowed one of those would read as a session in that state.
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
-    /// The border's inset, which is also what the grid subtracts to size the cards inside.
-    static let padding: CGFloat = 14
 
     @State private var hovering = false
 
@@ -794,7 +802,9 @@ struct GroupTile: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(Self.padding)
+        // The same gap the cards inside keep between them: a tile a hair from the border it
+        // sits in reads as a tile that did not fit.
+        .padding(spacing)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height, alignment: .top)
         // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
