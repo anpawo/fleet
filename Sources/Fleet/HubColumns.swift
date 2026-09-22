@@ -1097,14 +1097,14 @@ struct ModuleCard: View {
                 // the term's opening amphi, kept by hand in ~/.epitech/credits.json. A module
                 // missing from that table says nothing rather than a made-up number.
                 if let credits = module.credits {
-                    Text("\(credits) ECTS")
+                    Text("\(credits) CR")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
                 }
-                Spacer(minLength: 4)
-                Text("ends \(Self.day.string(from: module.end))")
+                Text("due \(Self.day.string(from: module.end))")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.28))
+                Spacer(minLength: 0)
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
