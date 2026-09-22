@@ -271,8 +271,16 @@ enum Epitech {
     /// A scan whose Microsoft session has died exits before it writes anything, so the loudest
     /// signal is the file's own age: today's modules and last Tuesday's look identical. Six
     /// hours is two missed runs — the scan goes three times a day.
+    ///
+    /// The verdicts are only worth reading while they are about the state on screen: `run.sh`
+    /// writes them once, after its readers, and a rescan that repairs the run writes a newer
+    /// state.json underneath them. Older than what it judges means it is judging a run that
+    /// has been replaced — a morning of no wifi that cried all afternoon.
     private static func failure(_ state: State, readAt: Date, sources: Sources?) -> String? {
-        if let broken = sources?.broken, !broken.isEmpty { return broken.joined(separator: ", ") }
+        let current = sources.flatMap { date($0.at).map { $0 >= readAt } ?? true } ?? false
+        if current, let broken = sources?.broken, !broken.isEmpty {
+            return broken.joined(separator: ", ")
+        }
         if state.sessionOk == false { return "epitech session expired — log in again" }
         if let intra = state.intra, !intra.ok { return "intra cookie expired — no credits" }
         if state.edsquare?.ok == false { return "edsquare unreachable — no timetable this run" }

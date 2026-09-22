@@ -907,7 +907,6 @@ struct EpitechColumn: View {
                   tint: BlockTint.epitech,
                   fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
-                  alarm: alarming,
                   minRows: 3,
                   fills: true) {
             // The todo column's block, down to the scroll: a term of modules and a fortnight
@@ -952,16 +951,6 @@ struct EpitechColumn: View {
 
     private func hover(_ id: String, _ inside: Bool) {
         if inside { hovered = id } else if hovered == id { hovered = nil }
-    }
-
-    /// Whether the light is blinking: when the scan cannot see, or when it has been switched
-    /// on by hand to be looked at —
-    ///
-    ///     defaults write com.mr.fleet epitechAlarm -bool true    # and false to stop
-    ///
-    /// A default rather than a constant, so turning it off is a command rather than a build.
-    private var alarming: Bool {
-        hub.epitech?.failure != nil || UserDefaults.standard.bool(forKey: "epitechAlarm")
     }
 
     /// Banked, and what is left of the year's sixty — the two figures the heading is for. The
