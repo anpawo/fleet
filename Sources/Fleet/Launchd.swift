@@ -8,6 +8,11 @@ import Foundation
 ///
 /// Only his own are listed. The prefixes are the giveaway — everything else in that folder is
 /// Google's updater and Zoom's helper, which are not routines anybody chose.
+///
+/// And only the ones that actually run on a trigger: a clock, a calendar, a file being written.
+/// The same folder holds the agents that only keep a program alive — Fleet itself, the S14
+/// servers, the window switcher — and those are applications, not routines. They were in the
+/// block and made it unreadable: fourteen lines of which four were the thing you came to see.
 enum Launchd {
     static let folder = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/LaunchAgents")
@@ -52,10 +57,12 @@ enum Launchd {
             guard let data = try? Data(contentsOf: folder.appending(path: file)),
                   let plist = try? PropertyListSerialization.propertyList(
                       from: data, format: nil) as? [String: Any] else { return nil }
+            // No trigger, no line. This is what keeps the resident apps out.
+            guard let schedule = schedule(plist) else { return nil }
             let state = live[label]
             return Job(id: label,
                        name: shorten(label),
-                       schedule: schedule(plist),
+                       schedule: schedule,
                        enabled: state != nil,
                        failing: (state?.exit ?? 0) > 0,
                        note: notes[label] ?? fallbackNote(plist))
@@ -81,9 +88,10 @@ enum Launchd {
         return label
     }
 
-    /// What makes the job run, read off the plist in the order launchd itself would: an
-    /// explicit trigger first, and "at login" only when there is nothing else to say.
-    private static func schedule(_ plist: [String: Any]) -> String {
+    /// What makes the job run, read off the plist in the order launchd itself would — or
+    /// nothing at all, for an agent that has no trigger and only exists to keep a program
+    /// running. `KeepAlive` and `RunAtLoad` are not schedules; that is an app being started.
+    private static func schedule(_ plist: [String: Any]) -> String? {
         if let seconds = plist["StartInterval"] as? Int {
             return seconds % 3600 == 0 ? "every \(seconds / 3600)h"
                  : seconds >= 60 ? "every \(seconds / 60) min"
@@ -101,8 +109,7 @@ enum Launchd {
         if let paths = plist["WatchPaths"] as? [String], let first = paths.first {
             return "on \((first as NSString).lastPathComponent)"
         }
-        if plist["KeepAlive"] != nil { return "always on" }
-        return plist["RunAtLoad"] as? Bool == true ? "at login" : "on demand"
+        return nil
     }
 
     /// One sentence per job, written here rather than in the plists: several of these files are

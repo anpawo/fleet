@@ -102,7 +102,7 @@ struct CronColumn: View {
         // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
         // is the two that are not, and they have to be in the same place every time.
         let all = jobs.sorted { $0.name < $1.name }
-        HubColumn(title: "LAUNCHD",
+        HubColumn(title: "CRONS",
                   count: all.count,
                   showsZero: true,
                   tint: Self.tint,
