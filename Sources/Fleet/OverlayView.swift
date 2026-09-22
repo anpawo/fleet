@@ -56,11 +56,6 @@ struct OverlayView: View {
     /// reads as a different grid each click.
     private static let unfold = Animation.easeOut(duration: 0.28)
 
-    /// Ties the folded card to the open one. They are two different views — one is removed as
-    /// the other is inserted — so without this the card vanished from the middle of the grid
-    /// and a block appeared at the top. With it, the same rectangle slides up to the corner
-    /// and grows into the block on the way.
-    @Namespace private var fold
 
     /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a
     /// one-session fleet, start at the same left edge as every full row rather than drifting
@@ -444,8 +439,21 @@ struct OverlayView: View {
             if group.sessions.count == 1, let only = group.sessions.first {
                 return .session(only, heading: nil)
             }
-            return openGroup == group.name ? nil : .group(group.name, group.sessions)
+            return .group(group.name, group.sessions)
         }
+    }
+
+    /// Which card is open, as a place in `cells` — what the layout needs to know.
+    private var openIndex: Int? {
+        guard let name = openGroup else { return nil }
+        return cells.firstIndex { $0.id == "dir:" + name }
+    }
+
+    /// How tall the open card is: the room the grid has. Offscreen nothing has been laid out
+    /// to measure, so a fleet's worth of rows stands in.
+    private var openHeight: CGFloat {
+        gridSpace > 0 ? gridSpace - Self.gridPadding
+                      : max(0, Self.blockHeight - Self.gridPadding - 132)
     }
 
     /// The width a session card gets inside an open directory: the block, less the directory
@@ -454,49 +462,32 @@ struct OverlayView: View {
         (centerWidth - 3 * tileSpacing) / 2
     }
 
-    /// Every card, in rows of two. However long the fleet gets, it grows downwards — the
-    /// panel's own vertical scroll carries it.
-    ///
-    /// An open directory takes the block: it is drawn first, as tall as the room the grid has,
-    /// with its sessions inside its own border, and everything else is pushed out the bottom.
-    /// A directory you opened is the only thing you are looking at, and half a neighbouring
-    /// grid under it is the state the fold was meant to get rid of.
+    /// Every card, in rows of two, laid out by hand rather than by stacks — see `FleetLayout`.
+    /// One view per card, whatever is open: the card you click is the card that grows, moving
+    /// and resizing from where it sits to the whole block, and the others are placed off the
+    /// bottom edge on the way out. Nested stacks could not do that. A card in one row and a
+    /// block at the top are two different places in the view tree, so the first was removed and
+    /// the second inserted — the card blinked out of the grid and the block arrived from above.
     private var grid: some View {
-        VStack(alignment: .leading, spacing: tileSpacing) {
-            if let name = openGroup,
-               let group = groups(of: controller.sessions).first(where: { $0.name == name }) {
-                GroupTile(name: group.name, sessions: group.sessions, open: true,
-                          height: gridSpace > 0 ? gridSpace - Self.gridPadding : nil,
-                          inner: innerTileWidth, spacing: tileSpacing,
-                          scrolling: !eagerLayout,
-                          onToggle: { withAnimation(Self.unfold) { controller.openGroup = nil } },
-                          onActivate: { controller.activate($0) })
-                    .frame(width: centerWidth)
-                    .matchedGeometryEffect(id: "group:" + group.name, in: fold)
-            }
-            ForEach(rows(of: cells), id: \.first?.id) { row in
-                HStack(alignment: .top, spacing: tileSpacing) {
-                    ForEach(row) { cell in
-                        Group {
-                            switch cell {
-                            case let .group(name, sessions):
-                                GroupTile(name: name, sessions: sessions, open: false,
-                                          inner: innerTileWidth, spacing: tileSpacing,
-                                          scrolling: !eagerLayout,
-                                          onToggle: {
-                                              withAnimation(Self.unfold) { controller.openGroup = name }
-                                          },
-                                          onActivate: { controller.activate($0) })
-                            case let .session(session, heading):
-                                SessionTile(session: session, heading: heading) {
-                                    controller.activate(session)
-                                }
-                            }
-                        }
-                        .frame(width: tileWidth)
-                        .matchedGeometryEffect(id: cell.id.hasPrefix("dir:")
-                                               ? "group:" + cell.id.dropFirst(4) : cell.id,
-                                               in: fold)
+        FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
+                    spacing: tileSpacing, columns: Self.tilesPerRow,
+                    open: openIndex, openHeight: openHeight) {
+            ForEach(cells) { cell in
+                switch cell {
+                case let .group(name, sessions):
+                    GroupTile(name: name, sessions: sessions,
+                              open: openGroup == name,
+                              inner: innerTileWidth, spacing: tileSpacing,
+                              scrolling: !eagerLayout,
+                              onToggle: {
+                                  withAnimation(Self.unfold) {
+                                      controller.openGroup = openGroup == name ? nil : name
+                                  }
+                              },
+                              onActivate: { controller.activate($0) })
+                case let .session(session, heading):
+                    SessionTile(session: session, heading: heading) {
+                        controller.activate(session)
                     }
                 }
             }
@@ -672,6 +663,61 @@ struct PromptBar: View {
     }
 }
 
+/// The fleet's grid, placed by hand.
+///
+/// Two columns of a fixed card, and — when a directory is open — that one card taking the whole
+/// block at the top left while every other card is placed past the bottom edge, where the block
+/// clips them away. Written as a `Layout` rather than as stacks because the opening has to be
+/// one card moving: in nested stacks the open card and the folded one are two different places
+/// in the view tree, so SwiftUI removes one and inserts the other, and what you see is a card
+/// blinking out of the grid and a block arriving from above. Here every card is the same view
+/// at both ends, so SwiftUI animates it from where it sat to where it lands.
+struct FleetLayout: Layout {
+    /// A folded card's size, which is every card's size until one is opened.
+    var tile: CGSize
+    var spacing: CGFloat
+    var columns: Int
+    /// The open card's place in the list, if one is open.
+    var open: Int?
+    /// What the open card is given: the room the grid has.
+    var openHeight: CGFloat
+
+    private var width: CGFloat { tile.width * CGFloat(columns) + spacing * CGFloat(columns - 1) }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        // Open, the grid is exactly the open card: the others are off the bottom, and counting
+        // them would give the scroll view somewhere to scroll them back into view.
+        if open != nil { return CGSize(width: width, height: openHeight) }
+        let rows = (subviews.count + columns - 1) / columns
+        return CGSize(width: width,
+                      height: max(0, CGFloat(rows) * tile.height
+                                   + CGFloat(max(0, rows - 1)) * spacing))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                       cache: inout ()) {
+        for (i, subview) in subviews.enumerated() {
+            if i == open {
+                subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY),
+                              anchor: .topLeading,
+                              proposal: ProposedViewSize(width: width, height: openHeight))
+                continue
+            }
+            // Where this card sits in the plain grid — and, while a directory is open, that
+            // same place pushed below the open card, which is the whole block: off the edge,
+            // on its way out rather than parked underneath.
+            let slot = open.map { i > $0 ? i - 1 : i } ?? i
+            let column = slot % columns, row = slot / columns
+            let drop = open == nil ? 0 : openHeight + spacing
+            subview.place(
+                at: CGPoint(x: bounds.minX + CGFloat(column) * (tile.width + spacing),
+                            y: bounds.minY + drop + CGFloat(row) * (tile.height + spacing)),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(tile))
+        }
+    }
+}
+
 /// What the grid holds: a directory, or one of its sessions.
 enum FleetCell: Identifiable {
     case group(String, [Session])
@@ -694,9 +740,6 @@ struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
-    /// The room the grid has, when open. Nil offscreen, where nothing has been laid out yet to
-    /// measure — the card then takes what its rows need.
-    var height: CGFloat?
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
@@ -760,7 +803,7 @@ struct GroupTile: View {
                 }
                 .padding(11)
             }
-            .frame(height: SessionTile.height, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             // The card's ground and border are drawn outside this button, so without a shape
             // of its own the label is its text and its dots: a click anywhere else on the card
             // fell through to the panel's own dismiss layer and put the panel away.
@@ -805,8 +848,9 @@ struct GroupTile: View {
         // The same gap the cards inside keep between them: a tile a hair from the border it
         // sits in reads as a tile that did not fit.
         .padding(spacing)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: height, alignment: .top)
+        // Both dimensions come from the layout, which proposes the whole block: the card fills
+        // what it is given rather than measuring itself.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         // The empty room inside the card belongs to the directory: clicking it folds the
