@@ -247,7 +247,7 @@ struct OverlayView: View {
                 GeometryReader { space in
                     let free = space.size.height - 2 * Self.blockGap
                     VStack(alignment: .leading, spacing: Self.blockGap) {
-                        CronColumn(title: "CRONS", jobs: controller.launchd.crons,
+                        CronColumn(title: "ROUTINE", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
                             .frame(maxHeight: max(0, free / 3))
