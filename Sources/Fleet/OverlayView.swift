@@ -821,11 +821,9 @@ struct GroupTile: View {
     /// and a card that borrowed one of those would read as a session in that state.
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
-    /// The name is drawn at one size and *scaled* to the other. A font size is not animatable
-    /// — the text is simply redrawn at the new points — so an open card set in 22 would snap
-    /// where the card itself glides.
+    /// One size, open or folded. The name only moves: a title that also shrank was a second
+    /// thing happening in an animation that is already a card growing.
     private static let nameSize: CGFloat = 31
-    private static let openScale: CGFloat = 22 / 31
     /// Roughly the name's line height, to centre it on the folded card's 30% mark.
     private static let nameLine: CGFloat = 37
 
@@ -853,11 +851,9 @@ struct GroupTile: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
-                    .scaleEffect(open ? Self.openScale : 1, anchor: .topLeading)
-                    // Centred in both states — the scaled width is what lands on screen, so
-                    // the open card centres on that rather than on the 31pt one.
-                    .offset(x: max(12, (box.size.width
-                                        - nameWidth * (open ? Self.openScale : 1)) / 2),
+                    // Centred in both states, on the same width: the title does not change
+                    // size, it only travels.
+                    .offset(x: max(12, (box.size.width - nameWidth) / 2),
                             y: open ? spacing
                                      : 12 + SessionTile.height * 0.30 - Self.nameLine / 2)
 
@@ -932,7 +928,7 @@ struct GroupTile: View {
         }
         // Clear of the name, which is drawn over this rather than above it — and clear by a
         // margin: a row of cards starting five points under the title read as its underline.
-        .padding(.top, spacing + Self.nameSize + 18)
+        .padding(.top, spacing + Self.nameLine + 18)
         .padding([.horizontal, .bottom], spacing)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
