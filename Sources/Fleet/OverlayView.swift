@@ -454,6 +454,12 @@ struct OverlayView: View {
         return cells.firstIndex { $0.id == "dir:" + name }
     }
 
+    /// Whether this card is the directory that is open.
+    private func isOpen(_ cell: FleetCell) -> Bool {
+        guard let name = openGroup else { return false }
+        return cell.id == "dir:" + name
+    }
+
     /// How tall the open card is: the room the grid has. Offscreen nothing has been laid out
     /// to measure, so a fleet's worth of rows stands in.
     private var openHeight: CGFloat {
@@ -479,24 +485,31 @@ struct OverlayView: View {
                     open: openIndex, openHeight: openHeight,
                     progress: openGroup == nil ? 0 : 1) {
             ForEach(cells) { cell in
-                switch cell {
-                case let .group(name, sessions):
-                    GroupTile(name: name, sessions: sessions,
-                              open: openGroup == name,
-                              inner: innerTileWidth, spacing: tileSpacing,
-                              scrolling: !eagerLayout,
-                              onToggle: {
-                                  lastGroup = name
-                                  withAnimation(Self.unfold) {
-                                      controller.openGroup = openGroup == name ? nil : name
-                                  }
-                              },
-                              onActivate: { controller.activate($0) })
-                case let .session(session, heading):
-                    SessionTile(session: session, heading: heading) {
-                        controller.activate(session)
+                Group {
+                    switch cell {
+                        case let .group(name, sessions):
+                        GroupTile(name: name, sessions: sessions,
+                                  open: openGroup == name,
+                                  inner: innerTileWidth, spacing: tileSpacing,
+                                  scrolling: !eagerLayout,
+                                  onToggle: {
+                                      lastGroup = name
+                                      withAnimation(Self.unfold) {
+                                          controller.openGroup = openGroup == name ? nil : name
+                                      }
+                                  },
+                                  onActivate: { controller.activate($0) })
+                    case let .session(session, heading):
+                        SessionTile(session: session, heading: heading) {
+                            controller.activate(session)
+                        }
                     }
                 }
+                // Gone, not merely elsewhere: a card leaving the block passes under the one
+                // that is growing, and is faded out by the time it reaches the edge. An open
+                // directory is the only thing on the block until you fold it.
+                .opacity(openGroup == nil || isOpen(cell) ? 1 : 0)
+                .zIndex(isOpen(cell) ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -732,11 +745,11 @@ struct FleetLayout: Layout {
             if i == open {
                 to = CGRect(origin: bounds.origin, size: CGSize(width: width, height: openHeight))
             } else {
-                // Its place in the grid the open card left behind, pushed below that card —
-                // which is the whole block, so this is off the edge: on its way out rather
-                // than parked underneath.
-                let slotIndex = open.map { i > $0 ? i - 1 : i } ?? i
-                to = slot(i, in: bounds, at: slotIndex, drop: openHeight + spacing)
+                // Out of the block, the shortest way: a card above the open one leaves by the
+                // top, one below by the bottom, one beside it sideways. Not all of them down
+                // past the open card — a column of cards sliding the length of the panel is
+                // more movement than the opening itself, and half of it goes the wrong way.
+                to = exit(from, mine: i, open: open, in: bounds)
             }
             let frame = CGRect(x: from.minX + (to.minX - from.minX) * progress,
                                y: from.minY + (to.minY - from.minY) * progress,
@@ -745,6 +758,24 @@ struct FleetLayout: Layout {
             subview.place(at: frame.origin, anchor: .topLeading,
                           proposal: ProposedViewSize(frame.size))
         }
+    }
+
+    /// Where a card that is not the open one goes: off the nearest edge of the block, which
+    /// clips it. It fades on the way — see the grid's own `opacity`.
+    private func exit(_ from: CGRect, mine: Int, open: Int?, in bounds: CGRect) -> CGRect {
+        guard let open else { return from }
+        var out = from
+        let row = mine / columns, column = mine % columns
+        let openRow = open / columns, openColumn = open % columns
+        if row < openRow {
+            out.origin.y = bounds.minY - tile.height - spacing
+        } else if row > openRow {
+            out.origin.y = bounds.minY + openHeight + spacing
+        } else {
+            out.origin.x = from.minX
+                + (column >= openColumn ? 1 : -1) * (width + spacing)
+        }
+        return out
     }
 
     private func slot(_ i: Int, in bounds: CGRect, at index: Int, drop: CGFloat) -> CGRect {
