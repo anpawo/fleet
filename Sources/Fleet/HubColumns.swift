@@ -132,6 +132,11 @@ struct CronColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
+        // The card unfolds under the pointer, so the spring has to follow the pointer too —
+        // on ⌘ alone it only animated the first card of a hold and every one after it snapped.
+        // And the block's own height with it: it is capped at what the cards measure.
+        .animation(TodoColumn.unroll, value: hovered)
+        .animation(TodoColumn.unroll, value: natural)
     }
 
     @ViewBuilder private func rows(_ all: [Launchd.Job]) -> some View {
