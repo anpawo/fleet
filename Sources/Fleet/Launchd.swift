@@ -51,8 +51,12 @@ enum Launchd {
 
         /// What the border says, and it does not mean the same thing for the two kinds. A
         /// routine is well when launchd knows about it and its last run did not end badly; a
-        /// resident is well when it is actually up. A calendar job has no pid between runs and
-        /// is perfectly alive; a server with no pid is the thing you needed to see.
+        /// resident is well when it is up, and nothing else. A calendar job has no pid between
+        /// runs and is perfectly alive; a server with no pid is the thing you needed to see.
+        ///
+        /// A resident's last exit status is history, not health: tailscaled died once when brew
+        /// relinked it, KeepAlive brought it straight back, and the 78 it left behind kept its
+        /// card red for the rest of the day while the daemon served traffic.
         var ok: Bool
 
         /// What it is for, in one sentence. Written by hand — see `notes`.
@@ -81,7 +85,7 @@ enum Launchd {
                        failing: failing,
                        triggered: trigger != nil,
                        resident: trigger == nil || guards.contains(label),
-                       ok: trigger != nil ? (enabled && !failing) : (state?.pid != nil && !failing),
+                       ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist))
         }.sorted { $0.name < $1.name }
     }
