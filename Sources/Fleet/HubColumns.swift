@@ -1001,7 +1001,7 @@ extension View {
     /// The card every row of the EPITECH block sits on.
     func epitechCard(lit: Bool = false) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 10)
+            .padding(.vertical, 7)
             .padding(.horizontal, 12)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -1028,7 +1028,7 @@ struct ModuleCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             // One line, whatever the name costs: twelve cards of equal height read as a term,
             // and a name that wraps makes its card taller than the one beside it. The long
             // ones shrink a fifth before they are cut.
@@ -1040,7 +1040,7 @@ struct ModuleCard: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 6)
+            Spacer(minLength: 2)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // my.epitech does not publish what a module is worth — the figures come from
