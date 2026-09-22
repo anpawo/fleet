@@ -122,7 +122,6 @@ enum Launchd {
         "com.mr.fleet": "This panel.",
         "com.mr.fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
         "fr.marius.revive": "Restarts what must always be running — alt-tab, and whatever else is in its list.",
-        "com.mr.handy-uielement": "Re-signs Handy after a Tauri update so it stays out of the Dock.",
         "eu.epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
         "fr.marius.agents-report": "Counts what the agents did, for the portfolio's live page.",
         "fr.marius.finance-vol-binance_1h": "Keeps the volatility model fed with Binance hourly candles.",
