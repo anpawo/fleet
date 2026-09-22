@@ -1093,8 +1093,9 @@ struct ModuleCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                // Nothing at all rather than a zero: until the scan finds where my.epitech
-                // keeps the ECTS, "0 ECTS" would be a number we made up.
+                // my.epitech does not publish what a module is worth — the figures come from
+                // the term's opening amphi, kept by hand in ~/.epitech/credits.json. A module
+                // missing from that table says nothing rather than a made-up number.
                 if let credits = module.credits {
                     Text("\(credits) ECTS")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))

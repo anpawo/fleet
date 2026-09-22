@@ -279,7 +279,7 @@ enum Epitech {
                 return a.title < b.title
             }
             return Module(id: registration.code + registration.instance,
-                          name: registration.name, end: end,
+                          name: shortenModule(registration.name), end: end,
                           code: registration.code, instance: registration.instance,
                           credits: registration.credits,
                           year: year, rendus: rendus)
@@ -323,6 +323,27 @@ enum Epitech {
             return "scan \(shortAge(since: readAt)) old — nothing here is current"
         }
         return nil
+    }
+
+    /// The name my.epitech gives a module, minus the words that are on every card or on none.
+    ///
+    /// "G5 - EIP Seminar - Technical - Quality Assurance" does not fit on a line at half the
+    /// block's width, and what it loses first is the only part that tells it from the other
+    /// seminar. So: the year goes — every module this term is G5, and a word repeated twelve
+    /// times down a column is furniture — and "Technical", which distinguishes nothing either.
+    /// What is left is what the module is called when you talk about it.
+    private static func shortenModule(_ name: String) -> String {
+        var short = name
+        if let dash = short.range(of: " - "), short.prefix(2).hasPrefix("G"),
+           short[short.startIndex ..< dash.lowerBound].count <= 3,
+           short[short.startIndex ..< dash.lowerBound].dropFirst().allSatisfy(\.isNumber) {
+            short = String(short[dash.upperBound...])
+        }
+        for (long, short_) in [(" - Technical - ", " - "), ("Quality Assurance", "QA"),
+                               ("Google Cloud", "GCP"), ("& Communication", "& Comms")] {
+            short = short.replacingOccurrences(of: long, with: short_)
+        }
+        return short
     }
 
     /// "Rendu — [PRIMARY] - Cloud Architecting (User Group - AWS)" is the scan's line, written
