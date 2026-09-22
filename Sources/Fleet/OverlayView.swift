@@ -821,13 +821,58 @@ struct GroupTile: View {
     /// and a card that borrowed one of those would read as a session in that state.
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
+    /// The name is drawn at one size and *scaled* to the other. A font size is not animatable
+    /// — the text is simply redrawn at the new points — so an open card set in 22 would snap
+    /// where the card itself glides.
+    private static let nameSize: CGFloat = 31
+    private static let openScale: CGFloat = 22 / 31
+    /// Roughly the name's line height, to centre it on the folded card's 30% mark.
+    private static let nameLine: CGFloat = 37
 
     @State private var hovering = false
 
     var body: some View {
-        Group {
-            if open { unfolded } else { folded }
+        GeometryReader { box in
+            ZStack(alignment: .topLeading) {
+                if open {
+                    sessions(in: box.size)
+                } else {
+                    // One dot per session, so a folded directory still says what is waiting
+                    // inside it — the glance the grid was for, kept through the fold.
+                    dots
+                        .padding([.horizontal, .bottom], 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
+
+                // One text, two places. Not a folded name and an open one: those are two views,
+                // so SwiftUI fades the first out and the second in, and the name blinks while
+                // the card around it glides. This is the same `Text` at both ends, moved and
+                // scaled — which is what a name sliding into the corner actually is.
+                Text(name)
+                    .font(.system(size: Self.nameSize, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .scaleEffect(open ? Self.openScale : 1, anchor: .topLeading)
+                    .offset(x: open ? spacing : max(12, (box.size.width - nameWidth) / 2),
+                            y: open ? spacing
+                                     : 12 + SessionTile.height * 0.30 - Self.nameLine / 2)
+
+                HStack(spacing: 7) {
+                    count
+                    chevron
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(11)
+            }
+            // The empty room inside the card belongs to the directory: clicking it opens it,
+            // and clicking it again folds it back up rather than falling through to the
+            // panel's dismiss layer. The cards inside are buttons and take their own clicks.
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onToggle)
         }
+        // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
@@ -842,95 +887,22 @@ struct GroupTile: View {
         // and a block that grows under the pointer pushes its own contents around.
         .scaleEffect(!open && hovering ? 1.015 : 1.0)
         .animation(.easeOut(duration: 0.18), value: hovering)
-    }
-
-    private var folded: some View {
-        Button(action: onToggle) {
-            ZStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // The same 30% line the session tiles set their names on, so a directory
-                    // card and the cards beside it read as one row rather than two.
-                    Spacer().frame(height: SessionTile.height * 0.30 - 37 / 2)
-                    Text(name)
-                        .font(.system(size: 31, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer(minLength: 8)
-                    dots
-                }
-                .padding([.horizontal, .top], 12)
-                .padding(.bottom, (2.5 + 3) * 3)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                HStack(spacing: 7) {
-                    Spacer(minLength: 6)
-                    count
-                    chevron
-                }
-                .padding(11)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // The card's ground and border are drawn outside this button, so without a shape
-            // of its own the label is its text and its dots: a click anywhere else on the card
-            // fell through to the panel's own dismiss layer and put the panel away.
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
     }
 
-    /// The header line, and the sessions under it. The line is the button rather than the whole
-    /// card: the cards inside are buttons of their own, and a click on one has to reach the
-    /// session, not fold the directory back up.
-    private var unfolded: some View {
-        VStack(alignment: .leading, spacing: spacing) {
-            Button(action: onToggle) {
-                HStack(spacing: 10) {
-                    chevron
-                    Text(name)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    dots
-                    Spacer(minLength: 8)
-                    count
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // Scrolled, not stacked: nine sessions are five rows and the card is the height
-            // of the block, so without this the rows ran straight through its own border and
-            // over whatever the grid had underneath.
-            if scrolling {
-                ScrollView(.vertical) { sessionRows }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
-            } else {
-                sessionRows
-                Spacer(minLength: 0)
-            }
-        }
-        // The same gap the cards inside keep between them: a tile a hair from the border it
-        // sits in reads as a tile that did not fit.
-        .padding(spacing)
-        // Both dimensions come from the layout, which proposes the whole block: the card fills
-        // what it is given rather than measuring itself.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        // The empty room inside the card belongs to the directory: clicking it folds the
-        // directory back up rather than falling through to the panel's dismiss layer. The
-        // cards inside are buttons and take their own clicks first.
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onToggle)
+    /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
+    /// centring it on the folded card needs a number before anything is drawn.
+    private var nameWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: Self.nameSize, weight: .semibold)
+        return (name as NSString).size(withAttributes: [.font: font]).width
     }
 
-    private var sessionRows: some View {
-        VStack(alignment: .leading, spacing: spacing) {
-            ForEach(rows, id: \.first?.id) { row in
+    /// The sessions, under the name. Scrolled, not stacked: nine sessions are five rows and the
+    /// card is the height of the block, so without this the rows ran straight through its own
+    /// border and over whatever the grid had underneath.
+    @ViewBuilder private func sessions(in size: CGSize) -> some View {
+        let rows = VStack(alignment: .leading, spacing: spacing) {
+            ForEach(self.rows, id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: spacing) {
                     ForEach(row) { session in
                         // Inside a directory the card wears its topic: the directory is what
@@ -945,6 +917,20 @@ struct GroupTile: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+
+        Group {
+            if scrolling {
+                ScrollView(.vertical) { rows }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+            } else {
+                rows
+            }
+        }
+        // Clear of the name, which is drawn over this rather than above it.
+        .padding(.top, spacing + Self.nameSize)
+        .padding([.horizontal, .bottom], spacing)
+        .frame(width: size.width, height: size.height, alignment: .top)
     }
 
     private var rows: [[Session]] {
@@ -953,8 +939,6 @@ struct GroupTile: View {
         }
     }
 
-    /// One dot per session, so a folded directory still says what is waiting inside it — the
-    /// glance the grid was for, kept through the fold.
     private var dots: some View {
         HStack(spacing: 6) {
             ForEach(sessions) { session in
