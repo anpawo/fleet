@@ -10,9 +10,16 @@ import SwiftUI
 /// a click anywhere in these columns dismisses the panel, like any other empty space.
 struct MailColumn: View {
     @ObservedObject var hub: HubStore
+    /// ⌘ est enfoncée : la carte sous le pointeur se déplie et montre ses quatre boutons. Le
+    /// même marché que la colonne TODO — sans ⌘ il n'y a rien à viser et rien à rater.
+    var commandHeld = false
     /// Off for an offscreen render, like the two columns below it: `ImageRenderer` draws
     /// nothing inside a `ScrollView`.
     var scrolling = true
+
+    /// La carte sous le pointeur. Sur la colonne et pas sur la carte : une carte est reconstruite
+    /// à chaque tick.
+    @State private var hovered: String?
 
     /// What fits beside three rows of tiles now that a card is two lines rather than four.
     private static let maxItems = 10
@@ -51,7 +58,13 @@ struct MailColumn: View {
         if !hub.loaded {
             HubEmptyLine(text: "Loading\u{2026}")
         }
-        ForEach(hub.mail.prefix(Self.maxItems)) { MailCard(mail: $0) }
+        ForEach(hub.mail.prefix(Self.maxItems)) { mail in
+            MailCard(hub: hub, mail: mail,
+                     expanded: commandHeld && hovered == mail.id,
+                     onHover: { inside in
+                         if inside { hovered = mail.id } else if hovered == mail.id { hovered = nil }
+                     })
+        }
     }
 }
 
@@ -410,7 +423,11 @@ struct HubEmptyLine: View {
 /// this column is to be *counted*, not read. The name and the subject answer the only question
 /// a glance is asking, which is whether any of this needs you before the sessions do.
 struct MailCard: View {
+    @ObservedObject var hub: HubStore
     let mail: Mail
+    /// ⌘ est enfoncée et le pointeur est ici.
+    var expanded = false
+    var onHover: (Bool) -> Void = { _ in }
 
     /// The one mark on a card, and it is four points wide.
     ///
@@ -456,6 +473,31 @@ struct MailCard: View {
                 .font(.system(size: 9.5, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.42))
                 .lineLimit(1)
+
+            if expanded {
+                // Ce que le moteur a compris, puis ce qu'on peut en faire. Le résumé d'abord :
+                // les quatre boutons ne veulent rien dire tant qu'on n'a pas lu le mail.
+                if !mail.summary.isEmpty {
+                    Text(mail.summary)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
+                // Deux par ligne : quatre boutons sur une ligne dans un cinquième de panneau
+                // sont quatre cibles de vingt points.
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        MailActionButton(.seen) { hub.act(.seen, on: mail) }
+                        MailActionButton(.done) { hub.act(.done, on: mail) }
+                    }
+                    HStack(spacing: 4) {
+                        MailActionButton(.trash) { hub.act(.trash, on: mail) }
+                        MailActionButton(.later) { hub.act(.later, on: mail) }
+                    }
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
@@ -464,8 +506,42 @@ struct MailCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onHover { onHover($0) }
+    }
+}
+
+/// Un des quatre boutons du bas d'une carte dépliée. La corbeille en rouge, le reste en gris :
+/// c'est la seule des quatre qui ne se reprend pas depuis le téléphone.
+struct MailActionButton: View {
+    let action: HubStore.MailAction
+    let run: () -> Void
+    @State private var hovering = false
+
+    init(_ action: HubStore.MailAction, run: @escaping () -> Void) {
+        self.action = action
+        self.run = run
+    }
+
+    private var tint: Color {
+        action == .trash ? Color(red: 0.90, green: 0.42, blue: 0.42) : Color(white: 0.75)
+    }
+
+    var body: some View {
+        Button(action: run) {
+            Text(action.label)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(tint.opacity(hovering ? 1 : 0.75))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(tint.opacity(hovering ? 0.22 : 0.10)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 

@@ -10,6 +10,9 @@ struct Mail: Identifiable {
     /// exists in the collection.
     var gist: String
     var sender: String
+    /// Ce que le moteur a compris du mail, en une phrase ou deux. Hors de la carte au repos —
+    /// la colonne se compte d'un œil — et c'est ce que ⌘ déplie.
+    var summary: String = ""
     /// 1–3, the engine's score. 3 is the mail you would be annoyed to have missed.
     var importance: Int
     var receivedAt: Date
@@ -30,9 +33,15 @@ struct Mail: Identifiable {
               !doc.bool("archived"),
               !doc.bool("trashRequested") else { return nil }
 
+        // Remis à plus tard depuis le panneau : le champ n'existe que pour Fleet, et il est
+        // facultatif — un APK installé qui ne le connaît pas montre le mail, ce qui est le
+        // comportement d'avant.
+        if let until = doc.date("snoozedUntil"), until > Date() { return nil }
+
         self.state = state
         id = doc.id
         gist = doc.string("gist")
+        summary = doc.string("summary")
         // Un transfert porte le nom de la boîte qui a fait suivre, pas celui de l'expéditeur :
         // tout le courrier @epitech.eu arrivait ici signé « Marius Rousset ». Le moteur range
         // le vrai expéditeur à part, et le téléphone lit déjà ce couple-là — y compris pour
@@ -453,6 +462,53 @@ final class HubStore: ObservableObject {
             }
         }
         return true
+    }
+
+    /// Ce que le panneau sait faire d'un mail — le vocabulaire du téléphone, mot pour mot,
+    /// sauf `later`, qui n'existe que côté Fleet.
+    enum MailAction: String, CaseIterable {
+        case seen, done, trash, later
+
+        var label: String {
+            switch self {
+            case .seen: return "SEEN"
+            case .done: return "DONE"
+            case .trash: return "TRASH"
+            case .later: return "LATER"
+            }
+        }
+    }
+
+    /// Combien de temps « later » fait disparaître un mail : une nuit. Il revient en tête de la
+    /// pile `new`, là où il était, plutôt qu'à la corbeille.
+    private static let snooze: TimeInterval = 20 * 3600
+
+    /// Agir sur un mail depuis le panneau. La carte part tout de suite — le téléphone fait
+    /// pareil — et un refus de Firestore la ramène au prochain fetch.
+    func act(_ action: MailAction, on mail: Mail) {
+        self.mail.removeAll { $0.id == mail.id }
+        Task {
+            let fields: [String: Any]
+            switch action {
+            case .seen:
+                fields = ["state": ["stringValue": "ongoing"],
+                          "ongoingAt": Firestore.timestamp(Date())]
+            case .done:
+                fields = ["state": ["stringValue": "done"],
+                          "doneAt": Firestore.timestamp(Date())]
+            case .trash:
+                fields = ["trashRequested": ["booleanValue": true]]
+            case .later:
+                fields = ["snoozedUntil":
+                            Firestore.timestamp(Date().addingTimeInterval(Self.snooze))]
+            }
+            do {
+                try await Firestore.patch("mail/\(mail.id)", fields: fields)
+            } catch {
+                NSLog("Fleet: could not \(action.rawValue) mail \(mail.id) — \(error.localizedDescription)")
+                refresh()
+            }
+        }
     }
 
     func markDone(_ todo: Todo) {

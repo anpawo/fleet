@@ -188,7 +188,9 @@ struct OverlayView: View {
                     GeometryReader { space in
                         let free = space.size.height - Self.blockGap
                         VStack(alignment: .leading, spacing: Self.blockGap) {
-                            MailColumn(hub: controller.hub, scrolling: !eagerLayout)
+                            MailColumn(hub: controller.hub,
+                                       commandHeld: controller.commandHeld,
+                                       scrolling: !eagerLayout)
                                 .frame(height: max(0, free * 3 / 7))
                             EpitechColumn(hub: controller.hub,
                                           commandHeld: controller.commandHeld,
