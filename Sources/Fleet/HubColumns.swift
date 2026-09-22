@@ -68,6 +68,98 @@ struct MailColumn: View {
     }
 }
 
+/// What this machine does on its own: one line per LaunchAgent of his, and what it is for
+/// under ⌘.
+///
+/// Over the todos rather than beside them, and half the column each. These are the jobs that
+/// run whether or not anyone is looking — the reason a deadline appears in the block below
+/// without anybody typing it — and the only time you think about one is the day it stops.
+///
+/// Blue, off the RAM's own blue: the two blocks that report on the machine rather than on
+/// what you owe anyone.
+struct CronColumn: View {
+    /// Whether ⌘ is down. A list of names at rest; the name and what it does while it is held.
+    let commandHeld: Bool
+    /// Off for an offscreen render, like every other scrolling block.
+    var scrolling = true
+
+    /// Read once a tick, like everything else on the panel: `launchctl list` is a pipe and a
+    /// folder listing, and the panel is redrawn at a second's rhythm.
+    private var jobs: [Launchd.Job] { Launchd.jobs() }
+
+    /// The RAM block's blue, which is the one the panel already uses for "the machine is
+    /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
+    static let tint = SessionState.awaitingAnswer.tint
+
+    var body: some View {
+        let all = jobs
+        HubColumn(title: "CRON",
+                  count: all.count,
+                  showsZero: true,
+                  tint: Self.tint,
+                  fill: Self.tint.darkened(0.48),
+                  minRows: 3,
+                  fills: true) {
+            if scrolling {
+                ScrollView(.vertical) {
+                    VStack(spacing: 6) { rows(all) }
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                VStack(spacing: 6) { rows(all) }
+            }
+        }
+        .animation(TodoColumn.unroll, value: commandHeld)
+    }
+
+    @ViewBuilder private func rows(_ all: [Launchd.Job]) -> some View {
+        if all.isEmpty {
+            HubEmptyLine(text: "No agent installed")
+        }
+        ForEach(all) { CronRow(job: $0, expanded: commandHeld) }
+    }
+}
+
+/// One job: what it is called, when it runs, and — under ⌘ — what it is for.
+struct CronRow: View {
+    let job: Launchd.Job
+    let expanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // Red for a job whose last run ended badly, and nothing at all otherwise: a
+                // green light on fifteen rows is fifteen lights nobody reads.
+                if job.failing {
+                    Circle()
+                        .fill(SessionState.running.tint)
+                        .frame(width: 5, height: 5)
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                }
+                Text(job.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(job.failing ? 0.92 : 0.78))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(job.schedule)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.32))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            if expanded {
+                Text(job.note)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .panelCard()
+    }
+}
+
 /// The panel's right column: the todo list, oldest first — the one that has been sitting there
 /// longest is the one worth being reminded of.
 struct TodoColumn: View {
@@ -1083,7 +1175,7 @@ extension View {
     }
 
     /// The card every row of the EPITECH block sits on.
-    func epitechCard(lit: Bool = false) -> some View {
+    func panelCard(lit: Bool = false) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
@@ -1142,7 +1234,7 @@ struct ModuleCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .epitechCard(lit: lit)
+        .panelCard(lit: lit)
     }
 }
 

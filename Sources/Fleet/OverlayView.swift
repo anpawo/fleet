@@ -237,16 +237,28 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                TodoColumn(hub: controller.hub,
-                           commandHeld: controller.commandHeld,
-                           onDismiss: { controller.hidePanel() },
-                           scrolling: !eagerLayout)
+                // Half the column each. The todos used to have all of it, and the machine's
+                // own routines had nowhere: what runs on its own is the reason half the list
+                // below appears without anyone typing it.
+                //
+                // No podium here: both start on the fleet's own line. They are the other
+                // lists you are answerable to, and a step below the sessions read as a
+                // footnote to them.
+                GeometryReader { space in
+                    let free = space.size.height - Self.blockGap
+                    VStack(alignment: .leading, spacing: Self.blockGap) {
+                        CronColumn(commandHeld: controller.commandHeld,
+                                   scrolling: !eagerLayout)
+                            .frame(height: max(0, free / 2))
+                        TodoColumn(hub: controller.hub,
+                                   commandHeld: controller.commandHeld,
+                                   onDismiss: { controller.hidePanel() },
+                                   scrolling: !eagerLayout)
+                            .frame(height: max(0, free / 2))
+                    }
+                }
                     // The same height as the column on the other side, so the two lists you
                     // are answerable to end on the same line at the foot of the panel.
-                    //
-                    // No podium here: the todos start on the fleet's own line. They are the
-                    // other list you are answerable to, and a step below the sessions read as
-                    // a footnote to them.
                     .frame(width: sideWidth, height: Self.blockHeight, alignment: .top)
             }
             gap(Self.edgeWeight)
