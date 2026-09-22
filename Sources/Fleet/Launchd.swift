@@ -107,8 +107,7 @@ enum Launchd {
         "io.scient.outline": "Syncs the S14 Outline wiki.",
         "io.scient.tailscaled-userspace": "Tailscale in userspace — the way onto the S14 boxes.",
         "scient.hermes-map": "Serves the Hermes dependency map on :8766.",
-        "scient.journal": "Serves the S14 journal on :8767.",
-        "scient.journal-board": "Rebuilds the journal board whenever its database changes.",
+        "scient.recon-journal": "Serves the S14 recon journal on :8767.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a
