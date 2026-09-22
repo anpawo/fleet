@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// The jobs this machine runs on its own — the LaunchAgents in `~/Library/LaunchAgents`.
 ///
@@ -159,5 +160,37 @@ enum Launchd {
             out[String(columns[2])] = (Int(columns[0]), Int(columns[1]) ?? 0)
         }
         return out
+    }
+}
+
+/// What the panel reads. Not the enum above straight from `body`: `launchctl list` is a
+/// process spawn and a pipe, and reading it on every redraw put 30 ms of main thread between
+/// the panel and every hover — the day it shipped the columns drew themselves in pieces.
+///
+/// Scanned off the main thread, at most once every ten seconds. A routine that runs hourly
+/// does not need better, and nothing here changes unless an agent is installed or dies.
+@MainActor
+final class LaunchdStore: ObservableObject {
+    @Published private(set) var jobs: [Launchd.Job]
+
+    private var lastScan = Date()
+    private var scanning = false
+
+    /// The first read is synchronous, once, at launch — the panel can open before the first
+    /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
+    init() { jobs = Launchd.jobs() }
+
+    /// Called from `AppController.tick`, on the timer that is already running.
+    func tick(now: Date = Date()) {
+        guard !scanning, now.timeIntervalSince(lastScan) > 10 else { return }
+        scanning = true
+        lastScan = now
+        Task.detached(priority: .utility) {
+            let scanned = Launchd.jobs()
+            await MainActor.run {
+                self.jobs = scanned
+                self.scanning = false
+            }
+        }
     }
 }

@@ -78,6 +78,8 @@ struct MailColumn: View {
 /// Blue, off the RAM's own blue: the two blocks that report on the machine rather than on
 /// what you owe anyone.
 struct CronColumn: View {
+    /// The last scan of `~/Library/LaunchAgents`, kept by the controller — see `LaunchdStore`.
+    @ObservedObject var launchd: LaunchdStore
     /// Whether ⌘ is down. A wall of names at rest; the one under the pointer says what it is
     /// for and how often it runs while it is held.
     let commandHeld: Bool
@@ -88,10 +90,6 @@ struct CronColumn: View {
     /// card, like the two grids above it: a card is rebuilt every tick.
     @State private var hovered: String?
 
-    /// Read once a tick, like everything else on the panel: `launchctl list` is a pipe and a
-    /// folder listing, and the panel is redrawn at a second's rhythm.
-    private var jobs: [Launchd.Job] { Launchd.jobs() }
-
     /// The RAM block's blue, which is the one the panel already uses for "the machine is
     /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
     static let tint = SessionState.awaitingAnswer.tint
@@ -101,7 +99,7 @@ struct CronColumn: View {
     var body: some View {
         // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
         // is the two that are not, and they have to be in the same place every time.
-        let all = jobs.sorted { $0.name < $1.name }
+        let all = launchd.jobs.sorted { $0.name < $1.name }
         HubColumn(title: "CRONS",
                   count: all.count,
                   showsZero: true,
@@ -121,7 +119,6 @@ struct CronColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
-        .animation(TodoColumn.unroll, value: hovered)
     }
 
     @ViewBuilder private func rows(_ all: [Launchd.Job]) -> some View {

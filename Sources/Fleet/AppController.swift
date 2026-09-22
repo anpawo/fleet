@@ -31,6 +31,11 @@ final class AppController: ObservableObject {
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
 
+    /// The machine's own routines — the launchd agents that run on a clock. Owned here for
+    /// the same reason as the two above: the scan is off the main thread, and the panel must
+    /// find the last one already done rather than start one of its own while it is drawing.
+    let launchd = LaunchdStore()
+
     /// Frees memory before the machine starts swapping itself to a standstill, and names what
     /// it will not touch. See `Reaper` for the rule it applies.
     let reaper = Reaper()
@@ -221,6 +226,7 @@ final class AppController: ObservableObject {
         if reaper.struggling { publishMachineState() }
         // Ahead of the dormant gate too: a Reel arrives from the phone, not from a session.
         hub.pollReelsIfDue()
+        launchd.tick(now: now)
         // Same reason: a terminal left empty behind a session that ended is not a session, so
         // nothing below this line would ever see it.
         EmptyTerminals.sweepIfDue()
