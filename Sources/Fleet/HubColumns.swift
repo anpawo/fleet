@@ -134,9 +134,9 @@ struct CronColumn: View {
         if !good.isEmpty && !bad.isEmpty {
             Rectangle()
                 .fill(.white.opacity(0.22))
-                .frame(height: 1)
+                .frame(height: 2)
                 .scaleEffect(x: 0.9)
-                .padding(.vertical, 2)
+                .padding(.vertical, 5)
         }
         grid(bad)
     }
