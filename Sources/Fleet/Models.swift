@@ -43,9 +43,9 @@ enum Config {
     static let reapInterval: TimeInterval = 5
 
     /// How often the `factcheck` collection is read for a Reel the phone has just been handed,
-    /// panel or no panel. One GET; the check it may start is the expensive part, and that is
-    /// gated on the machine having room.
-    static let reelPoll: TimeInterval = 300
+    /// panel or no panel. One GET, but Firestore bills it one read per document: every five
+    /// minutes it was 14k of the 50k free daily reads on its own (2026-09-23).
+    static let reelPoll: TimeInterval = 1800
 
     static let idlePollActive: TimeInterval = 5
     /// Poll cadence when no session is alive (pure "is anything running yet" check).
