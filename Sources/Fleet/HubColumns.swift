@@ -1081,12 +1081,16 @@ struct ModuleCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // One line, whatever the name costs: twelve cards of equal height read as a term,
+            // and a name that wraps makes its card taller than the one beside it. The long
+            // ones shrink a fifth before they are cut.
             Text(module.name)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // Nothing at all rather than a zero: until the scan finds where my.epitech
