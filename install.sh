@@ -77,6 +77,13 @@ echo "==> Starting"
 launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null || true
 launchctl kickstart -k "gui/$UID/$LABEL"
 
+# The hook script lives in ~/.claude, not in the bundle: a rebuilt app with an old hook on
+# disk is the one thing install.sh used to leave behind, and it costs the exact session state
+# the hooks exist for. Rewriting it here is idempotent — same marker, same entries, replaced
+# rather than stacked.
+echo "==> Installing the Claude Code hooks"
+"$DEST/Contents/MacOS/Fleet" --install-hooks
+
 # Register the bundle with LaunchServices so Spotlight can find "Fleet" straight away
 # instead of waiting for the next indexing pass.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
