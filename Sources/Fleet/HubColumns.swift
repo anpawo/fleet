@@ -96,11 +96,6 @@ struct CronColumn: View {
     /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
     static let tint = SessionState.awaitingAnswer.tint
 
-    // Topped rather than centred: only the card being pointed at unfolds, and a grid row that
-    // centres its two cards moves the one you are not looking at down the screen.
-    private static let pair = [GridItem(.flexible(), spacing: 6, alignment: .top),
-                               GridItem(.flexible(), spacing: 6, alignment: .top)]
-
     var body: some View {
         // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
         // is the two that are not, and they have to be in the same place every time.
@@ -147,7 +142,18 @@ struct CronColumn: View {
     }
 
     @ViewBuilder private func grid(_ jobs: [Launchd.Job]) -> some View {
-        LazyVGrid(columns: Self.pair, spacing: 6) {
+        // Two independent stacks rather than a grid. In a grid the two cards of a row share a
+        // height, so unfolding one pushed the card beside it — and everything under it on the
+        // other side — down the block. Here a card only ever moves what is under it in its own
+        // stack. Odds and evens, so the reading order across the two is still 1 2 / 3 4.
+        HStack(alignment: .top, spacing: 6) {
+            stack(jobs.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element))
+            stack(jobs.enumerated().filter { !$0.offset.isMultiple(of: 2) }.map(\.element))
+        }
+    }
+
+    @ViewBuilder private func stack(_ jobs: [Launchd.Job]) -> some View {
+        VStack(spacing: 6) {
             ForEach(jobs) { job in
                 CronCard(job: job, expanded: commandHeld && hovered == job.id)
                     .onHover { inside in
@@ -155,6 +161,7 @@ struct CronColumn: View {
                     }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
