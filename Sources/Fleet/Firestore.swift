@@ -84,6 +84,8 @@ enum Firestore {
             switch self {
             case .noKey:
                 return "No Firebase key in the Keychain"
+            case .http(429, _):
+                return "daily read quota exhausted, resets at 09:00"
             case .http(let status, let body):
                 return "HTTP \(status): \(body.prefix(200))"
             }

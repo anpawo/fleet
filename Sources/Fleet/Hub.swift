@@ -267,8 +267,10 @@ final class HubStore: ObservableObject {
     /// The panel opens on every idle stretch, which on a quiet afternoon is often. Mail is
     /// triaged every six hours and todos come from a phone in someone's pocket; a minute of
     /// staleness is invisible either way, and it keeps a panel that opens twice in a row from
-    /// making four round trips.
-    private static let freshness: TimeInterval = 60
+    /// making four round trips. Ten minutes, not one: every fetch reads the whole `mail`
+    /// collection, handled mail included, and at one a minute that alone emptied the free
+    /// tier's 50k daily reads (429 on 2026-09-23).
+    private static let freshness: TimeInterval = 600
 
     private var fetchedAt = Date.distantPast
     private var inFlight: Task<Void, Never>?
