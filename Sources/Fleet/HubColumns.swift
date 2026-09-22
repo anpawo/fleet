@@ -101,7 +101,7 @@ struct CronColumn: View {
     var body: some View {
         // The healthy ones first. Fourteen green borders are wallpaper; what the block is for
         // is the two that are not, and they have to be in the same place every time.
-        let all = jobs.sorted { ($0.ok ? 0 : 1, $0.name) < ($1.ok ? 0 : 1, $1.name) }
+        let all = jobs.sorted { $0.name < $1.name }
         HubColumn(title: "CRON",
                   count: all.count,
                   showsZero: true,
@@ -128,8 +128,25 @@ struct CronColumn: View {
         if all.isEmpty {
             HubEmptyLine(text: "No agent installed")
         }
+        let good = all.filter(\.ok)
+        let bad = all.filter { !$0.ok }
+        grid(good)
+        // The two halves are the whole point of the block, and a border colour alone made you
+        // read every card to find where one ended. Drawn at nine tenths rather than edge to
+        // edge: a rule that touches the block's sides reads as the end of the block.
+        if !good.isEmpty && !bad.isEmpty {
+            Rectangle()
+                .fill(.white.opacity(0.22))
+                .frame(height: 1)
+                .scaleEffect(x: 0.9)
+                .padding(.vertical, 2)
+        }
+        grid(bad)
+    }
+
+    @ViewBuilder private func grid(_ jobs: [Launchd.Job]) -> some View {
         LazyVGrid(columns: Self.pair, spacing: 6) {
-            ForEach(all) { job in
+            ForEach(jobs) { job in
                 CronCard(job: job, expanded: commandHeld && hovered == job.id)
                     .onHover { inside in
                         if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
