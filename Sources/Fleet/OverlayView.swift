@@ -237,9 +237,9 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                // Half the column each. The todos used to have all of it, and the machine's
-                // own routines had nowhere: what runs on its own is the reason half the list
-                // below appears without anyone typing it.
+                // A third to the routines, the rest to the list. They were half each while the
+                // block still carried the resident agents; seven cards three rows deep leave
+                // the todos the room they had.
                 //
                 // No podium here: both start on the fleet's own line. They are the other
                 // lists you are answerable to, and a step below the sessions read as a
@@ -250,12 +250,12 @@ struct OverlayView: View {
                         CronColumn(launchd: controller.launchd,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 2))
+                            .frame(height: max(0, free / 3))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 2))
+                            .frame(height: max(0, free * 2 / 3))
                     }
                 }
                     // The same height as the column on the other side, so the two lists you

@@ -76,6 +76,8 @@ enum Launchd {
     /// Names he uses that the label does not carry.
     private static let names = [
         "fr.marius.mac-guard": "mac.guard",
+        "eu.epitech.scan": "epitech.scan",
+        "fr.marius.my-setup-sync": "my-setup.sync",
     ]
 
     private static func shorten(_ label: String) -> String {
