@@ -237,10 +237,8 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                // Three tenths each to what the machine runs on its own — the routines on a
-                // clock, and the programs launchd keeps up — and four to the list. Two kinds
-                // in one block made fourteen lines nobody read; a quarter each made both of
-                // them scroll for six cards.
+                // A third each: the routines on a clock, the programs launchd keeps up, and
+                // the list. Two kinds of agent in one block made fourteen lines nobody read.
                 //
                 // No podium here: both start on the fleet's own line. They are the other
                 // lists you are answerable to, and a step below the sessions read as a
@@ -251,16 +249,16 @@ struct OverlayView: View {
                         CronColumn(title: "CRONS", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free * 3 / 10))
+                            .frame(height: max(0, free / 3))
                         CronColumn(title: "KEEPALIVE", jobs: controller.launchd.alive,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free * 3 / 10))
+                            .frame(height: max(0, free / 3))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free * 4 / 10))
+                            .frame(height: max(0, free / 3))
                     }
                 }
                     // The same height as the column on the other side, so the two lists you
