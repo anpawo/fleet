@@ -90,9 +90,10 @@ echo "==> Installing the Claude Code hooks"
 	-f "$DEST" 2>/dev/null || true
 
 # The Reels analyser is not the app: the app reads the collection, this job does the work —
-# yt-dlp, whisper and the read — four times a day rather than whenever a Reel happens to land
-# while you are working. Four fixed hours, none of them at night: the machine is asleep then,
-# and launchd would pile the missed runs onto the lid opening.
+# yt-dlp, whisper and the read. Once an hour rather than at four fixed times: what it costs is
+# a folder listing when there is nothing new, and a Reel saved at 10:20 is read at 11 instead
+# of waiting until 13:15. A run missed while the lid is shut is coalesced by launchd into one
+# catch-up run on waking, not twelve.
 REELS="com.mr.fleet.reels"
 REELS_PLIST="$HOME/Library/LaunchAgents/$REELS.plist"
 echo "==> Writing $REELS_PLIST"
@@ -108,13 +109,8 @@ cat > "$REELS_PLIST.new" <<PLIST_EOF
 		<string>$DEST/Contents/MacOS/Fleet</string>
 		<string>--reels-run</string>
 	</array>
-	<key>StartCalendarInterval</key>
-	<array>
-		<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
-		<dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>15</integer></dict>
-		<dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>15</integer></dict>
-		<dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
-	</array>
+	<key>StartInterval</key>
+	<integer>3600</integer>
 	<key>ProcessType</key>
 	<string>Background</string>
 	<key>LowPriorityIO</key>

@@ -65,10 +65,8 @@ enum Launchd {
     /// The label without the part that only says whose it is — except for the S14 agents, whose
     /// two prefixes (`scient.` and `io.scient.`) both mean the same job and neither of which is
     /// the word he uses. They all come back as "s14.<name>".
-    /// Names he uses that the label does not carry — the repo is `alt-tab`, and mac-guard he
-    /// writes with a dot like the two-part agents above it.
+    /// Names he uses that the label does not carry.
     private static let names = [
-        "com.mr.alttab": "alt-tab",
         "fr.marius.mac-guard": "mac.guard",
     ]
 
@@ -111,9 +109,9 @@ enum Launchd {
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
-        "com.mr.alttab": "The window switcher that replaces ⌘-Tab.",
         "com.mr.fleet": "This panel.",
         "com.mr.fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
+        "fr.marius.revive": "Restarts what must always be running — alt-tab, and whatever else is in its list.",
         "com.mr.handy-uielement": "Re-signs Handy after a Tauri update so it stays out of the Dock.",
         "eu.epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
         "fr.marius.agents-report": "Counts what the agents did, for the portfolio's live page.",
