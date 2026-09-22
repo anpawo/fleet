@@ -250,7 +250,7 @@ struct OverlayView: View {
                         CronColumn(title: "ROUTINE", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 3))
-                        CronColumn(title: "KEEPALIVE", jobs: controller.launchd.alive,
+                        CronColumn(title: "KEEP ALIVE", jobs: controller.launchd.alive,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 3))
                         TodoColumn(hub: controller.hub,
