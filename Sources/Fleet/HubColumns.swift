@@ -513,8 +513,10 @@ struct MailCard: View {
     }
 }
 
-/// Un des quatre boutons du bas d'une carte dépliée. La corbeille en rouge, le reste en gris :
-/// c'est la seule des quatre qui ne se reprend pas depuis le téléphone.
+/// Un des quatre boutons du bas d'une carte dépliée.
+///
+/// Les couleurs sont celles du téléphone, au point près — my-hub montre le même verdict en
+/// glissant la carte, et un geste vert là-bas ne doit pas être un bouton gris ici.
 struct MailActionButton: View {
     let action: HubStore.MailAction
     let run: () -> Void
@@ -525,8 +527,14 @@ struct MailActionButton: View {
         self.run = run
     }
 
+    /// `MailUi.kt` : HintAnswer, HintDone, HintBanned, HintLater.
     private var tint: Color {
-        action == .trash ? Color(red: 0.90, green: 0.42, blue: 0.42) : Color(white: 0.75)
+        switch action {
+        case .seen: return Color(red: 0.039, green: 0.518, blue: 1.0)    // #0A84FF
+        case .done: return Color(red: 0.188, green: 0.820, blue: 0.345)  // #30D158
+        case .trash: return Color(red: 1.0, green: 0.271, blue: 0.227)   // #FF453A
+        case .later: return Color(red: 0.749, green: 0.353, blue: 0.949) // #BF5AF2
+        }
     }
 
     var body: some View {
