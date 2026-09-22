@@ -322,6 +322,50 @@
     <article class="entry">
       <div class="entry-head">
         <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Epitech · AlertsBlock</span>
+        <span class="chip chip-sha">HEAD</span>
+      </div>
+      <h3>Une matinée sans wifi qui a crié jusqu'à midi</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          La barre annonce <code>epitech scan failed</code> et <code>outlook token expired</code>
+          toute la matinée, alors que <code>state.json</code> est frais, <code>sessionOk</code>
+          vrai et les 41 mails du jour lus. Et le titre EPITECH clignotait en rouge la même
+          chose une deuxième fois.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le passage de 8h est parti avant que le Mac ait un DNS&nbsp;: <code>ENOTFOUND</code> sur
+          <code>login.microsoftonline.com</code>, watchdog de 180&nbsp;s sur my.epitech.
+          <code>run.sh</code> écrit <code>sources.json</code> une fois, <em>avant</em> le
+          réconciliateur&nbsp;; l'agent a rejoué le scan à 9h32 avec succès, et personne n'a
+          réécrit les verdicts. Le fichier jugeait un passage qui n'existait plus. Et
+          <code>outlook</code> disait «&nbsp;token expired&nbsp;» pour un code 1 qui est une
+          panne de réseau.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un state écrit après les verdicts réfute le verdict du scan — <em>et lui seul</em>&nbsp;:
+          outlook, discord, edsquare et la sonde agenda n'ont pas été rejoués, leur code tient.
+          «&nbsp;Token expiré&nbsp;» est réservé au code 3, le seul qui soit vraiment un jeton
+          mort. <code>edsquare.mjs</code> sort enfin non nul quand il échoue — sa phrase dans
+          Fleet était du code mort depuis le début. Le verrou de <code>run.sh</code> passe à
+          trois heures&nbsp;: le passage du jour a duré 95&nbsp;min.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>./test-epitech.sh — 7 cas, dont « un rescan réparateur fait taire le scan »
+                          et « mais pas outlook, que personne n'a rejoué »
+avant : trouble: epitech scan failed …, outlook token expired …
+après : trouble: outlook unreachable …, discord token expired …, agenda not writable …</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
         <span class="chip chip-where">Reels · ReelCheck</span>
         <span class="chip chip-sha">HEAD</span>
       </div>

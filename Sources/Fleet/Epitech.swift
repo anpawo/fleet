@@ -17,6 +17,8 @@ enum Epitech {
         /// mail about it, and the only thing on the card you could search for.
         var code: String
         var instance: String
+        /// What it pays in ECTS once it is signed off, when the scan knew.
+        var credits: Int?
         /// The school year the intra files it under — the year the registration started, which
         /// is the only part of a module's URL that is not already on the card.
         var year: Int
@@ -73,6 +75,15 @@ enum Epitech {
         var readAt: Date
         /// What the mailbox is saying this fortnight, already sifted and shortened.
         var mails: [Mail] = []
+
+        /// Everything still to hand in, soonest first, whatever module it hangs off — the list
+        /// under the grid. By id, because a project listed under two units is one rendu.
+        var rendus: [Rendu] {
+            var seen: Set<String> = []
+            return modules.flatMap(\.rendus)
+                .filter { seen.insert($0.id).inserted }
+                .sorted { $0.date == $1.date ? $0.title < $1.title : $0.date < $1.date }
+        }
     }
 
     /// Sixty ECTS is what a year at Epitech is worth. Not read from anywhere: it is the rule,
@@ -99,6 +110,9 @@ enum Epitech {
             let name: String
             let start: String
             let end: String
+            /// The ECTS the module is worth. Absent until the scan finds where my.epitech
+            /// keeps them — the card simply says nothing rather than guessing a number.
+            let credits: Int?
         }
 
         struct Deadline: Decodable {
@@ -192,13 +206,25 @@ enum Epitech {
         /// The ones that failed, each as a sentence: what broke, and what you are therefore
         /// not seeing. The bar over the fleet has a line to say it in, and "edsquare" on its
         /// own left the second half — the part that matters — to be remembered.
-        var broken: [String] {
+        ///
+        /// `scanRefuted` drops the scan's own verdict and only that one: when a later rescan
+        /// has written a state newer than this file, the scan has been re-run and passed —
+        /// while outlook, discord, edsquare and the calendar probe were not re-run at all and
+        /// their codes still stand. Dropping all six on one timestamp is how a dead outlook
+        /// token would go quiet for six hours.
+        func broken(scanRefuted: Bool = false) -> [String] {
             var out: [String] = []
-            if let scan, scan != 0 {
+            if let scan, scan != 0, !scanRefuted {
                 out.append(scan == 3 ? "epitech session expired — log in again"
                                      : "epitech scan failed — my.epitech did not answer")
             }
-            if let outlook, outlook != 0 { out.append("outlook token expired — no mail since the last run") }
+            // Only a 3 is a dead token — `outlook.mjs` exits 3 when Microsoft refuses the
+            // refresh, 4 on an IMAP error and 1 when the network is not there. Saying "token
+            // expired" to a morning with no wifi sends you off to log in for nothing.
+            if let outlook, outlook != 0 {
+                out.append(outlook == 3 ? "outlook token expired — no mail since the last run"
+                                        : "outlook unreachable — no mail since the last run")
+            }
             if let edsquare, edsquare != 0 { out.append("edsquare unreachable — no timetable this run") }
             if let discord, discord != 0 { out.append("discord token expired — announcements not read") }
             if let calendar, calendar != 0 { out.append("agenda not writable — deadlines were not filed") }
@@ -236,16 +262,16 @@ enum Epitech {
         let byUnit = Dictionary(grouping: state.deadlines.filter { due[$0.id] != nil },
                                 by: { $0.unit ?? "" })
 
-        // Only what still wants handing in. A module with nothing due is a line you read past
-        // — School Life runs all year and asks for nothing — and the count on the heading is a
-        // count of rendus, so what is listed under it had better add up to it.
+        // Every module still open, whether or not it wants anything handed in: the card is now
+        // the term at a glance — what you are in, what it pays, when it closes — and a module
+        // with nothing due is still a module you are registered to. The count on the heading
+        // stays a count of rendus, which is why it no longer matches the number of cards.
         let modules = state.registrations.compactMap { registration -> Module? in
-            guard let end = date(registration.end) else { return nil }
+            guard let end = date(registration.end), end > now else { return nil }
             let year = Calendar.current.component(.year,
                                                   from: date(registration.start) ?? end)
             let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
             var rendus: [Rendu] = ids.compactMap { due[$0] }
-            guard !rendus.isEmpty else { return nil }
             // What the module is graded on first, then what is merely on offer.
             rendus.sort { (a: Rendu, b: Rendu) in
                 if a.date != b.date { return a.date < b.date }
@@ -255,6 +281,7 @@ enum Epitech {
             return Module(id: registration.code + registration.instance,
                           name: registration.name, end: end,
                           code: registration.code, instance: registration.instance,
+                          credits: registration.credits,
                           year: year, rendus: rendus)
         }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
@@ -274,11 +301,16 @@ enum Epitech {
     ///
     /// The verdicts are only worth reading while they are about the state on screen: `run.sh`
     /// writes them once, after its readers, and a rescan that repairs the run writes a newer
-    /// state.json underneath them. Older than what it judges means it is judging a run that
-    /// has been replaced — a morning of no wifi that cried all afternoon.
+    /// state.json underneath them — a morning of no wifi that cried all afternoon. Which
+    /// verdict that refutes, and which it leaves standing, is `broken(scanRefuted:)`.
     private static func failure(_ state: State, readAt: Date, sources: Sources?) -> String? {
-        let current = sources.flatMap { date($0.at).map { $0 >= readAt } ?? true } ?? false
-        if current, let broken = sources?.broken, !broken.isEmpty {
+        // A state written after the verdicts means somebody re-ran the scan and it passed —
+        // which refutes the scan's verdict and nothing else. A second of slack: `at` is cut to
+        // the second while `generatedAt` carries milliseconds, so a run that writes both inside
+        // one second would otherwise refute itself.
+        let scanRefuted = sources.flatMap { date($0.at).map { $0 < readAt.addingTimeInterval(-1) } }
+            ?? false
+        if let broken = sources?.broken(scanRefuted: scanRefuted), !broken.isEmpty {
             return broken.joined(separator: ", ")
         }
         if state.sessionOk == false { return "epitech session expired — log in again" }

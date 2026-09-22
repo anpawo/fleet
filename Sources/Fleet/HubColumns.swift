@@ -926,19 +926,31 @@ struct EpitechColumn: View {
         .animation(TodoColumn.unroll, value: commandHeld)
     }
 
+    /// Two to a row. The card is three facts wide — a name, what it pays, when it closes —
+    /// and a term of twelve modules in one column of full-width cards was a scroll where a
+    /// grid is a glance.
+    private static let pair = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+
     @ViewBuilder private var rows: some View {
         if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
-            ForEach(snapshot.modules) { module in
-                ModuleCard(module: module, lit: lit(module.id))
-                    .epitechOpen(commandHeld: commandHeld, url: module.url,
-                                 onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
+            LazyVGrid(columns: Self.pair, spacing: 8) {
+                ForEach(snapshot.modules) { module in
+                    ModuleCard(module: module, lit: lit(module.id))
+                        .epitechOpen(commandHeld: commandHeld, url: module.url,
+                                     onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
+                }
             }
         } else {
-            HubEmptyLine(text: hub.epitech == nil ? "No scan" : "Nothing to hand in")
+            HubEmptyLine(text: hub.epitech == nil ? "No scan" : "No module open")
         }
 
-        // Under the modules, not inside them: a mail rarely belongs to one, and the thing
-        // it is asking for is worth reading whether or not a module is open.
+        // Everything the grid above left out, in one list under it: what is actually due, then
+        // what the mailbox is asking. Neither belongs on a module card — a rendu is a date, not
+        // a module, and a mail rarely belongs to one at all.
+        ForEach(hub.epitech?.rendus ?? []) { rendu in
+            RenduLine(rendu: rendu)
+        }
+
         ForEach(hub.epitech?.mails ?? []) { mail in
             MailLine(mail: mail, lit: lit(mail.id))
                 .epitechOpen(commandHeld: commandHeld,
@@ -1063,8 +1075,9 @@ extension View {
     }
 }
 
-/// One module: its name and the day it ends, and under ⌘ what is actually inside it — the code
-/// it goes by on the intra, and every rendu it still wants, each with its own day.
+/// One module, half the block wide: what it is called on my.epitech, what it pays in ECTS,
+/// and the day it closes. Written exactly as the school writes it — "G5 - Blockchain & dApps"
+/// is the module's name, and a card that title-cases or shouts it is showing a different word.
 struct ModuleCard: View {
     let module: Epitech.Module
     /// ⌘ is down and the pointer is here: this is the card that would open.
@@ -1077,9 +1090,50 @@ struct ModuleCard: View {
         return formatter
     }()
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(module.name)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // Nothing at all rather than a zero: until the scan finds where my.epitech
+                // keeps the ECTS, "0 ECTS" would be a number we made up.
+                if let credits = module.credits {
+                    Text("\(credits) ECTS")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                Spacer(minLength: 4)
+                Text("ends \(Self.day.string(from: module.end))")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.28))
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .epitechCard(lit: lit)
+    }
+}
+
+/// One thing to hand in: the day it is due, and what it is. Under the grid rather than on a
+/// module card — the question this line answers is "what is next", which is a question about
+/// the week, not about a module.
+struct RenduLine: View {
+    let rendu: Epitech.Rendu
+
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d MMM"
+        return formatter
+    }()
+
     /// How soon, in the four colours the todo column already uses for a deadline. The same
     /// reflex has to mean the same thing on both sides of the panel.
-    private static func dueTint(_ due: Date) -> Color {
+    static func dueTint(_ due: Date) -> Color {
         let calendar = Calendar.current
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
                                            to: calendar.startOfDay(for: due)).day ?? 0
@@ -1092,43 +1146,20 @@ struct ModuleCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                KindPill(text: "MODULE", tint: KindPill.module)
-                Spacer(minLength: 4)
-                // Said, not implied. Two bare dates on one card is two dates you have to work
-                // out: this one is when the module closes, the one under it is when the next
-                // thing is due, and nothing on the card was saying which was which.
-                Text("ends \(Self.day.string(from: module.end))")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.28))
-            }
-
-            Text(module.name)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(2)
-
-            // The line the card exists for. It used to take ⌘ to find out whether a module
-            // wanted anything handed in, which is the one thing a glance at this block is
-            // asking — so it is on the card, in the colour a deadline is drawn in.
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(module.rendus.count == 1 ? "1 rendu" : "\(module.rendus.count) rendus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.75))
-                Text(module.code)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.3))
-                Spacer(minLength: 4)
-                if let first = module.rendus.first {
-                    Text("next \(Self.day.string(from: first.date))")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Self.dueTint(first.date))
-                }
-            }
-
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(Self.day.string(from: rendu.date))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Self.dueTint(rendu.date))
+                .frame(width: 42, alignment: .leading)
+            // The ones the module is graded on read plainly; the ones merely on offer sit back.
+            Text(rendu.title)
+                .font(.system(size: 11, weight: rendu.optional ? .regular : .medium))
+                .foregroundStyle(.white.opacity(rendu.optional ? 0.45 : 0.8))
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
-        .epitechCard(lit: lit)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 2)
     }
 }
 
