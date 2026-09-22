@@ -42,6 +42,18 @@ struct OverlayView: View {
     /// remembered its own fold would snap shut once a second.
     @State private var openGroup: String?
 
+    /// How tall the grid's own area is, measured rather than worked out: the heading above it
+    /// is laid out, not arithmetic, and an open directory has to end exactly where the two
+    /// columns either side of it do.
+    @State private var gridSpace: CGFloat = 0
+
+    /// What the grid takes off that height — its own padding, top and bottom.
+    private static let gridPadding: CGFloat = 38
+
+    /// Opening a directory moves every other card at once. Cut rather than animated, the grid
+    /// reads as a different grid each click.
+    private static let fold = Animation.easeOut(duration: 0.22)
+
     /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a
     /// one-session fleet, start at the same left edge as every full row rather than drifting
     /// to the middle. A lone tile that centres itself reads as a different column each time
@@ -323,6 +335,11 @@ struct OverlayView: View {
                 // The height the block was given — the same one the two columns either side
                 // were given, so all three end on the same line. Whatever is past it scrolls.
                 .frame(maxHeight: .infinity, alignment: .top)
+                .background(GeometryReader { room in
+                    Color.clear
+                        .onAppear { gridSpace = room.size.height }
+                        .onChange(of: room.size.height) { _, height in gridSpace = height }
+                })
             } else {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
@@ -374,6 +391,10 @@ struct OverlayView: View {
                 legend(.running)
                 legend(.apiError)
                 legend(.paused)
+                // The group colour belongs on the key for the same reason the states do: it is
+                // a border you will see on the grid, and a colour you cannot place reads as
+                // something broken.
+                legend(GroupTile.tint)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -405,44 +426,56 @@ struct OverlayView: View {
         return order.map { ($0, byDir[$0] ?? []) }
     }
 
-    /// What the grid lays out, in the order it lays it out: one card per directory, and right
-    /// after the open one, a card per session it holds. Directories and sessions are the same
-    /// rectangle in the same flow — the fold changes how many cards there are, never their
-    /// shape, so the grid you point at does not become a list of lines the moment a fleet
-    /// spans two directories.
+    /// What is left in the grid once a directory is open: every *other* directory, and every
+    /// session that has one to itself. An open directory's sessions are drawn inside it, and
+    /// these are pushed off the bottom of the block by its height.
     private var cells: [FleetCell] {
-        groups(of: controller.sessions).flatMap { group -> [FleetCell] in
+        groups(of: controller.sessions).compactMap { group -> FleetCell? in
             // A directory holding one session has nothing to gather: its card is the session,
             // and one click goes there rather than unfolding a group of one on the way.
             if group.sessions.count == 1, let only = group.sessions.first {
-                return [.session(only, heading: nil)]
+                return .session(only, heading: nil)
             }
-            guard openGroup == group.name else { return [.group(group.name, group.sessions)] }
-            // Under an open directory the tile wears its topic: the directory is what these
-            // sessions have in common, and a row of cards all saying "portfolio" is a row you
-            // cannot choose from.
-            return [.group(group.name, group.sessions)]
-                + group.sessions.map { .session($0, heading: $0.topic) }
+            return openGroup == group.name ? nil : .group(group.name, group.sessions)
         }
+    }
+
+    /// The width a session card gets inside an open directory: the block, less the directory
+    /// card's own padding, split in two.
+    private var innerTileWidth: CGFloat {
+        (centerWidth - 2 * GroupTile.padding - tileSpacing) / 2
     }
 
     /// Every card, in rows of two. However long the fleet gets, it grows downwards — the
     /// panel's own vertical scroll carries it.
     ///
-    /// One directory open at a time. The panel is a fixed height between two columns that end
-    /// on its own bottom line, and two directories unfolded at once push the second one off it.
+    /// An open directory takes the block: it is drawn first, as tall as the room the grid has,
+    /// with its sessions inside its own border, and everything else is pushed out the bottom.
+    /// A directory you opened is the only thing you are looking at, and half a neighbouring
+    /// grid under it is the state the fold was meant to get rid of.
     private var grid: some View {
         VStack(alignment: .leading, spacing: tileSpacing) {
+            if let name = openGroup,
+               let group = groups(of: controller.sessions).first(where: { $0.name == name }) {
+                GroupTile(name: group.name, sessions: group.sessions, open: true,
+                          height: gridSpace > 0 ? gridSpace - Self.gridPadding : nil,
+                          inner: innerTileWidth, spacing: tileSpacing,
+                          onToggle: { withAnimation(Self.fold) { openGroup = nil } },
+                          onActivate: { controller.activate($0) })
+                    .frame(width: centerWidth)
+            }
             ForEach(rows(of: cells), id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: tileSpacing) {
                     ForEach(row) { cell in
                         Group {
                             switch cell {
                             case let .group(name, sessions):
-                                GroupTile(name: name, sessions: sessions,
-                                          open: openGroup == name) {
-                                    openGroup = openGroup == name ? nil : name
-                                }
+                                GroupTile(name: name, sessions: sessions, open: false,
+                                          inner: innerTileWidth, spacing: tileSpacing,
+                                          onToggle: {
+                                              withAnimation(Self.fold) { openGroup = name }
+                                          },
+                                          onActivate: { controller.activate($0) })
                             case let .session(session, heading):
                                 SessionTile(session: session, heading: heading) {
                                     controller.activate(session)
@@ -465,9 +498,11 @@ struct OverlayView: View {
     /// itself, which is worth having on the heading for a different reason: it says how many
     /// states there are, so a colour you have not seen this week still reads as one of a set
     /// rather than as something new.
-    private func legend(_ state: SessionState) -> some View {
+    private func legend(_ state: SessionState) -> some View { legend(state.tint) }
+
+    private func legend(_ tint: Color) -> some View {
         Circle()
-            .fill(state.tint)
+            .fill(tint)
             .frame(width: 7, height: 7)
     }
 }
@@ -636,24 +671,55 @@ enum FleetCell: Identifiable {
     }
 }
 
-/// One working directory, as a card: its name, a dot per session in that session's own state
-/// colour, and the count. The same rectangle a session gets — only the colour differs, and it
-/// is the one colour no state wears, so teal on this panel means "several sessions" and
-/// nothing else. Clicking it lays its sessions out after it.
+/// One working directory, as a card: folded, its name, a dot per session in that session's own
+/// state colour, and the count — the same rectangle a session gets, in the one colour no state
+/// wears. Open, the same rectangle grown to the whole block, with its sessions inside its own
+/// border: the directory is the thing you are looking at, and the rest of the fleet is pushed
+/// out the bottom rather than left half-visible underneath it.
 struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
+    /// The room the grid has, when open. Nil offscreen, where nothing has been laid out yet to
+    /// measure — the card then takes what its rows need.
+    var height: CGFloat?
+    /// What a session card inside is given, worked out by the grid from its own width.
+    var inner: CGFloat
+    var spacing: CGFloat
     let onToggle: () -> Void
+    let onActivate: (Session) -> Void
 
     /// The group colour. Teal because every other hue on the panel is spoken for by a state —
     /// green ready, red working, blue asking, amber failing, purple delegated, yellow held —
     /// and a card that borrowed one of those would read as a session in that state.
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
+    /// The border's inset, which is also what the grid subtracts to size the cards inside.
+    static let padding: CGFloat = 14
+
     @State private var hovering = false
 
     var body: some View {
+        Group {
+            if open { unfolded } else { folded }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
+                        radius: hovering ? 16 : 8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Self.tint, lineWidth: 2.5)
+        )
+        // Only the folded card lifts to the pointer: the open one is the size of the block,
+        // and a block that grows under the pointer pushes its own contents around.
+        .scaleEffect(!open && hovering ? 1.015 : 1.0)
+        .animation(.easeOut(duration: 0.18), value: hovering)
+    }
+
+    private var folded: some View {
         Button(action: onToggle) {
             ZStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -667,13 +733,7 @@ struct GroupTile: View {
                         .minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity, alignment: .center)
                     Spacer(minLength: 8)
-                    // One dot per session, so a folded directory still says what is waiting
-                    // inside it — the glance the grid was for, kept through the fold.
-                    HStack(spacing: 6) {
-                        ForEach(sessions) { session in
-                            Circle().fill(session.state.tint).frame(width: 9, height: 9)
-                        }
-                    }
+                    dots
                 }
                 .padding([.horizontal, .top], 12)
                 .padding(.bottom, (2.5 + 3) * 3)
@@ -681,35 +741,87 @@ struct GroupTile: View {
 
                 HStack(spacing: 7) {
                     Spacer(minLength: 6)
-                    Text("\(sessions.count)")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.8)
-                        .foregroundStyle(Self.tint)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Self.tint.opacity(0.14), in: Capsule())
-                    Image(systemName: open ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Self.tint.opacity(0.8))
+                    count
+                    chevron
                 }
                 .padding(11)
             }
             .frame(height: SessionTile.height, alignment: .top)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                    .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
-                            radius: hovering ? 16 : 8)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Self.tint, lineWidth: 2.5)
-            )
-            .scaleEffect(hovering ? 1.015 : 1.0)
-            .animation(.easeOut(duration: 0.18), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+
+    /// The header line, and the sessions under it. The line is the button rather than the whole
+    /// card: the cards inside are buttons of their own, and a click on one has to reach the
+    /// session, not fold the directory back up.
+    private var unfolded: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            Button(action: onToggle) {
+                HStack(spacing: 10) {
+                    chevron
+                    Text(name)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    dots
+                    Spacer(minLength: 8)
+                    count
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            ForEach(rows, id: \.first?.id) { row in
+                HStack(alignment: .top, spacing: spacing) {
+                    ForEach(row) { session in
+                        // Inside a directory the card wears its topic: the directory is what
+                        // these sessions have in common, and a row of cards all saying
+                        // "portfolio" is a row you cannot choose from.
+                        SessionTile(session: session, heading: session.topic) {
+                            onActivate(session)
+                        }
+                        .frame(width: inner)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Self.padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: height, alignment: .top)
+    }
+
+    private var rows: [[Session]] {
+        stride(from: 0, to: sessions.count, by: 2).map {
+            Array(sessions[$0 ..< min($0 + 2, sessions.count)])
+        }
+    }
+
+    /// One dot per session, so a folded directory still says what is waiting inside it — the
+    /// glance the grid was for, kept through the fold.
+    private var dots: some View {
+        HStack(spacing: 6) {
+            ForEach(sessions) { session in
+                Circle().fill(session.state.tint).frame(width: 9, height: 9)
+            }
+        }
+    }
+
+    private var count: some View {
+        Text("\(sessions.count)")
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(Self.tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Self.tint.opacity(0.14), in: Capsule())
+    }
+
+    private var chevron: some View {
+        Image(systemName: open ? "chevron.down" : "chevron.right")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(Self.tint.opacity(0.8))
     }
 }
 
