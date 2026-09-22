@@ -42,8 +42,12 @@ enum Launchd {
         /// single run. Counting those, this block's own row was red for ever.
         var failing: Bool
         /// Runs on its own — a clock, a calendar, a watched file. The other kind is an
-        /// application launchd has been told to keep up.
+        /// application launchd has been told to keep up. This is what `ok` is judged against,
+        /// whatever block the card ends up in.
         var triggered: Bool
+
+        /// Which block it goes in. Nearly always `!triggered`, but not always — see `guards`.
+        var resident: Bool
 
         /// What the border says, and it does not mean the same thing for the two kinds. A
         /// routine is well when launchd knows about it and its last run did not end badly; a
@@ -76,6 +80,7 @@ enum Launchd {
                        enabled: enabled,
                        failing: failing,
                        triggered: trigger != nil,
+                       resident: trigger == nil || guards.contains(label),
                        ok: trigger != nil ? (enabled && !failing) : (state?.pid != nil && !failing),
                        note: notes[label] ?? fallbackNote(plist))
         }.sorted { $0.name < $1.name }
@@ -127,6 +132,17 @@ enum Launchd {
         }
         return nil
     }
+
+    /// Routines that belong with the residents anyway. mac-guard and mac-revive do the same
+    /// job from either side — one stops what is about to freeze the Mac, the other starts back
+    /// what should be running — and putting them in different blocks on the strength of who
+    /// holds the loop (mac-guard sleeps inside its own process, mac-revive lets launchd count
+    /// the thirty seconds) hid the pair.
+    ///
+    /// Their health is still read as a routine's: mac-revive exits as soon as it has looked,
+    /// so it has no pid to have, and judging it the way a server is judged would leave it red
+    /// for ever.
+    private static let guards: Set<String> = ["fr.marius.revive"]
 
     private static let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -206,8 +222,8 @@ final class LaunchdStore: ObservableObject {
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
     init() {
         let scanned = Launchd.jobs()
-        crons = scanned.filter(\.triggered)
-        alive = scanned.filter { !$0.triggered }
+        crons = scanned.filter { !$0.resident }
+        alive = scanned.filter(\.resident)
     }
 
     /// Called from `AppController.tick`, on the timer that is already running.
@@ -218,8 +234,8 @@ final class LaunchdStore: ObservableObject {
         Task.detached(priority: .utility) {
             let scanned = Launchd.jobs()
             await MainActor.run {
-                self.crons = scanned.filter(\.triggered)
-                self.alive = scanned.filter { !$0.triggered }
+                self.crons = scanned.filter { !$0.resident }
+                self.alive = scanned.filter(\.resident)
                 self.scanning = false
             }
         }
