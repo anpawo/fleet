@@ -854,7 +854,10 @@ struct GroupTile: View {
                     .lineLimit(1)
                     .fixedSize()
                     .scaleEffect(open ? Self.openScale : 1, anchor: .topLeading)
-                    .offset(x: open ? spacing : max(12, (box.size.width - nameWidth) / 2),
+                    // Centred in both states — the scaled width is what lands on screen, so
+                    // the open card centres on that rather than on the 31pt one.
+                    .offset(x: max(12, (box.size.width
+                                        - nameWidth * (open ? Self.openScale : 1)) / 2),
                             y: open ? spacing
                                      : 12 + SessionTile.height * 0.30 - Self.nameLine / 2)
 
@@ -927,8 +930,9 @@ struct GroupTile: View {
                 rows
             }
         }
-        // Clear of the name, which is drawn over this rather than above it.
-        .padding(.top, spacing + Self.nameSize)
+        // Clear of the name, which is drawn over this rather than above it — and clear by a
+        // margin: a row of cards starting five points under the title read as its underline.
+        .padding(.top, spacing + Self.nameSize + 18)
         .padding([.horizontal, .bottom], spacing)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
