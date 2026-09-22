@@ -65,7 +65,15 @@ enum Launchd {
     /// The label without the part that only says whose it is — except for the S14 agents, whose
     /// two prefixes (`scient.` and `io.scient.`) both mean the same job and neither of which is
     /// the word he uses. They all come back as "s14.<name>".
+    /// Names he uses that the label does not carry — the repo is `alt-tab`, and mac-guard he
+    /// writes with a dot like the two-part agents above it.
+    private static let names = [
+        "com.mr.alttab": "alt-tab",
+        "fr.marius.mac-guard": "mac.guard",
+    ]
+
     private static func shorten(_ label: String) -> String {
+        if let name = names[label] { return name }
         for prefix in ["io.scient.", "scient."] where label.hasPrefix(prefix) {
             return "s14." + label.dropFirst(prefix.count)
         }
