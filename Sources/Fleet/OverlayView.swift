@@ -386,15 +386,15 @@ struct OverlayView: View {
             // control, and it sits on a line with a name and a count either side of it.
             HStack(spacing: 9) {
                 legend(.ready)
+                // Where the spectrum puts it — the key runs green, blue, violet, red, amber,
+                // yellow, and teal sits between the first two. A colour parked on the end
+                // reads as an afterthought rather than as one of the set.
+                legend(GroupTile.tint)
                 legend(.awaitingAnswer)
                 legend(.delegated)
                 legend(.running)
                 legend(.apiError)
                 legend(.paused)
-                // The group colour belongs on the key for the same reason the states do: it is
-                // a border you will see on the grid, and a colour you cannot place reads as
-                // something broken.
-                legend(GroupTile.tint)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -747,6 +747,10 @@ struct GroupTile: View {
                 .padding(11)
             }
             .frame(height: SessionTile.height, alignment: .top)
+            // The card's ground and border are drawn outside this button, so without a shape
+            // of its own the label is its text and its dots: a click anywhere else on the card
+            // fell through to the panel's own dismiss layer and put the panel away.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -1116,7 +1120,12 @@ struct MemoryStrip: View {
                 Text(headline)
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(amber.opacity(0.9))
-                    .padding(.horizontal, 2)
+                    // Indented onto the pills' own text column, not the block's edge: the
+                    // sentence and the names it explains start on the same line, and the two
+                    // points it used to sit at put it eight left of everything under it.
+                    .padding(.horizontal, HogPill.inset)
+                    .padding(.top, 1)
+                    .padding(.bottom, 2)
             }
 
             // Two of the four. Cached is never a problem and compressed is a leading
@@ -1127,7 +1136,7 @@ struct MemoryStrip: View {
                 if tight {
                     // Under pressure the pills are the processes holding the memory, which is
                     // the only thing to do about it.
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 5) {
                         if commandHeld {
                             // One after the other, each easing down out of the bar, so the eye
                             // follows the list as it forms rather than finding it there. Gone at
@@ -1416,11 +1425,25 @@ private struct HogPill: View {
     let tint: Color
     @State private var hovering = false
 
+    /// What the line ends on — the ✕ and the word "auto" are given the same width so both
+    /// stop on the same edge.
+    private static let button: CGFloat = 30
+
+    /// The text's own inset inside the capsule. Public because the sentence above the list
+    /// lines up on it.
+    static let inset: CGFloat = 10
+
     var body: some View {
-        HStack(spacing: 6) {
+        // Three columns, not a sentence: the name, then the size and the button pushed to the
+        // right edge. Laid out one after the other they landed at a different point on every
+        // line — four processes, four places to look for the ✕.
+        HStack(spacing: 8) {
             Text(hog.name)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
             Text(hog.sizeLabel)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.45))
@@ -1431,11 +1454,17 @@ private struct HogPill: View {
                 Text("auto")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(tint.opacity(0.9))
+                    .fixedSize()
+                    .frame(width: Self.button, alignment: .trailing)
             } else {
                 Button { Reaper.dismiss(pid: hog.pid) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.35))
+                        // The one width both endings share, so the ✕ of one line and the
+                        // "auto" of the next end on the same edge.
+                        .frame(width: Self.button, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
@@ -1443,8 +1472,8 @@ private struct HogPill: View {
         }
         // Its own capsule: side by side on one amber line, four processes read as one string
         // of words. The border is what says where one ends and the next begins.
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Self.inset)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Capsule().fill(.white.opacity(0.06))
