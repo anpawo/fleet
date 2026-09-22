@@ -52,6 +52,10 @@ struct OverlayView: View {
     /// What the grid takes off that height — its own padding, top and bottom.
     private static let gridPadding: CGFloat = 38
 
+    /// The directory the grid last had open. Survives the close so the card has somewhere to
+    /// shrink back to — cleared by nothing, since the next open overwrites it.
+    @State private var lastGroup: String?
+
     /// Opening a directory moves every other card at once. Cut rather than animated, the grid
     /// reads as a different grid each click.
     private static let unfold = Animation.easeOut(duration: 0.28)
@@ -443,9 +447,10 @@ struct OverlayView: View {
         }
     }
 
-    /// Which card is open, as a place in `cells` — what the layout needs to know.
+    /// Which card the layout is growing or shrinking, as a place in `cells`. Not the open one:
+    /// the *last* one, so a directory being folded back up still has a card to shrink into.
     private var openIndex: Int? {
-        guard let name = openGroup else { return nil }
+        guard let name = openGroup ?? lastGroup else { return nil }
         return cells.firstIndex { $0.id == "dir:" + name }
     }
 
@@ -471,7 +476,8 @@ struct OverlayView: View {
     private var grid: some View {
         FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
                     spacing: tileSpacing, columns: Self.tilesPerRow,
-                    open: openIndex, openHeight: openHeight) {
+                    open: openIndex, openHeight: openHeight,
+                    progress: openGroup == nil ? 0 : 1) {
             ForEach(cells) { cell in
                 switch cell {
                 case let .group(name, sessions):
@@ -480,6 +486,7 @@ struct OverlayView: View {
                               inner: innerTileWidth, spacing: tileSpacing,
                               scrolling: !eagerLayout,
                               onToggle: {
+                                  lastGroup = name
                                   withAnimation(Self.unfold) {
                                       controller.openGroup = openGroup == name ? nil : name
                                   }
@@ -493,6 +500,11 @@ struct OverlayView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Belt as well as braces. The fold is set inside `withAnimation`, but the value lives
+        // on the controller: the update reaches the panel through `objectWillChange`, and a
+        // transaction that does not survive that trip leaves the layout to jump to its final
+        // numbers in one frame — which is the instant swap this whole layout exists to avoid.
+        .animation(Self.unfold, value: openGroup)
         .background(dismissLayer)
     }
 
@@ -667,54 +679,79 @@ struct PromptBar: View {
 ///
 /// Two columns of a fixed card, and — when a directory is open — that one card taking the whole
 /// block at the top left while every other card is placed past the bottom edge, where the block
-/// clips them away. Written as a `Layout` rather than as stacks because the opening has to be
-/// one card moving: in nested stacks the open card and the folded one are two different places
-/// in the view tree, so SwiftUI removes one and inserts the other, and what you see is a card
-/// blinking out of the grid and a block arriving from above. Here every card is the same view
-/// at both ends, so SwiftUI animates it from where it sat to where it lands.
+/// clips them away.
+///
+/// Written as a `Layout` rather than as stacks because the opening has to be one card moving: in
+/// nested stacks the open card and the folded one are two different places in the view tree, so
+/// SwiftUI removes one and inserts the other, and what you see is a card blinking out of the
+/// grid and a block arriving from above.
+///
+/// And `animatableData` is what makes it an opening rather than a cut. A layout without it is
+/// re-run once with the new numbers: every card is already at its destination on the first
+/// frame, which looks exactly like the removal it replaced. With it, SwiftUI interpolates
+/// `progress` and asks for the placements at each step, so the card you clicked grows out of
+/// its own slot into the block.
 struct FleetLayout: Layout {
     /// A folded card's size, which is every card's size until one is opened.
     var tile: CGSize
     var spacing: CGFloat
     var columns: Int
-    /// The open card's place in the list, if one is open.
+    /// The card that is opening — or the one that was open and is folding back up. Kept
+    /// through the close, since a card that loses its place the moment you click has nothing
+    /// to shrink back from.
     var open: Int?
     /// What the open card is given: the room the grid has.
     var openHeight: CGFloat
+    /// 0 folded, 1 open. The one thing that is animated; everything else is arithmetic on it.
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
 
     private var width: CGFloat { tile.width * CGFloat(columns) + spacing * CGFloat(columns - 1) }
+
+    private func rows(_ count: Int) -> CGFloat {
+        let rows = (count + columns - 1) / columns
+        return max(0, CGFloat(rows) * tile.height + CGFloat(max(0, rows - 1)) * spacing)
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Open, the grid is exactly the open card: the others are off the bottom, and counting
         // them would give the scroll view somewhere to scroll them back into view.
-        if open != nil { return CGSize(width: width, height: openHeight) }
-        let rows = (subviews.count + columns - 1) / columns
-        return CGSize(width: width,
-                      height: max(0, CGFloat(rows) * tile.height
-                                   + CGFloat(max(0, rows - 1)) * spacing))
+        let folded = rows(subviews.count)
+        return CGSize(width: width, height: folded + (openHeight - folded) * progress)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
                        cache: inout ()) {
         for (i, subview) in subviews.enumerated() {
+            let from = slot(i, in: bounds, at: i, drop: 0)
+            let to: CGRect
             if i == open {
-                subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY),
-                              anchor: .topLeading,
-                              proposal: ProposedViewSize(width: width, height: openHeight))
-                continue
+                to = CGRect(origin: bounds.origin, size: CGSize(width: width, height: openHeight))
+            } else {
+                // Its place in the grid the open card left behind, pushed below that card —
+                // which is the whole block, so this is off the edge: on its way out rather
+                // than parked underneath.
+                let slotIndex = open.map { i > $0 ? i - 1 : i } ?? i
+                to = slot(i, in: bounds, at: slotIndex, drop: openHeight + spacing)
             }
-            // Where this card sits in the plain grid — and, while a directory is open, that
-            // same place pushed below the open card, which is the whole block: off the edge,
-            // on its way out rather than parked underneath.
-            let slot = open.map { i > $0 ? i - 1 : i } ?? i
-            let column = slot % columns, row = slot / columns
-            let drop = open == nil ? 0 : openHeight + spacing
-            subview.place(
-                at: CGPoint(x: bounds.minX + CGFloat(column) * (tile.width + spacing),
-                            y: bounds.minY + drop + CGFloat(row) * (tile.height + spacing)),
-                anchor: .topLeading,
-                proposal: ProposedViewSize(tile))
+            let frame = CGRect(x: from.minX + (to.minX - from.minX) * progress,
+                               y: from.minY + (to.minY - from.minY) * progress,
+                               width: from.width + (to.width - from.width) * progress,
+                               height: from.height + (to.height - from.height) * progress)
+            subview.place(at: frame.origin, anchor: .topLeading,
+                          proposal: ProposedViewSize(frame.size))
         }
+    }
+
+    private func slot(_ i: Int, in bounds: CGRect, at index: Int, drop: CGFloat) -> CGRect {
+        let column = index % columns, row = index / columns
+        return CGRect(x: bounds.minX + CGFloat(column) * (tile.width + spacing),
+                      y: bounds.minY + drop + CGFloat(row) * (tile.height + spacing),
+                      width: tile.width, height: tile.height)
     }
 }
 
