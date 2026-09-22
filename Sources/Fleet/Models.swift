@@ -346,7 +346,23 @@ struct Session: Identifiable {
     var topic: String {
         if let t = transcript?.title, !t.isEmpty { return t }
         if let p = transcript?.lastPrompt, !p.isEmpty { return p }
+        // No title and nothing you ever typed: a session another session drives by message
+        // rather than by prompt. What it last said is then the only thing that names it — and
+        // a card reading "New session" beside seven others says nothing at all.
+        if let said = transcript?.preview.last(where: { $0.kind == .assistant })?.text,
+           !said.isEmpty { return Session.headline(said) }
         return "New session"
+    }
+
+    /// A line of prose cut down to something a card can be called: its first sentence, and no
+    /// more than a card's worth of it. The whole paragraph set in 19pt is a paragraph you
+    /// cannot read at a glance, which is the one thing the heading is for.
+    static func headline(_ text: String, limit: Int = 90) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        let sentence = line.range(of: ". ").map { String(line[line.startIndex ..< $0.lowerBound]) }
+            ?? line
+        guard sentence.count > limit else { return sentence }
+        return sentence.prefix(limit).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     /// The step in flight right now, pinned under the history. Nil unless the session is
