@@ -180,8 +180,8 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    // What is left of the column once the memory has had its line, two fifths
-                    // to the mail and three to the school. The school lost its mail lines — it
+                    // What is left of the column once the memory has had its line, three
+                    // sevenths to the mail and four to the school. The school lost its mail lines — it
                     // is twelve module cards now, and they are shorter — while the mail is the
                     // list you actually work. Both scroll inside their share, so neither can
                     // push the other off the bottom of the panel.
@@ -189,12 +189,12 @@ struct OverlayView: View {
                         let free = space.size.height - Self.blockGap
                         VStack(alignment: .leading, spacing: Self.blockGap) {
                             MailColumn(hub: controller.hub, scrolling: !eagerLayout)
-                                .frame(height: max(0, free * 2 / 5))
+                                .frame(height: max(0, free * 3 / 7))
                             EpitechColumn(hub: controller.hub,
                                           commandHeld: controller.commandHeld,
                                           onDismiss: { controller.hidePanel() },
                                           scrolling: !eagerLayout)
-                                .frame(height: max(0, free * 3 / 5))
+                                .frame(height: max(0, free * 4 / 7))
                         }
                     }
                 }
