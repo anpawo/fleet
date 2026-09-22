@@ -87,6 +87,7 @@ enum Launchd {
     /// Names he uses that the label does not carry.
     private static let names = [
         "fr.marius.mac-guard": "mac.guard",
+        "fr.marius.revive": "mac.revive",
         "eu.epitech.scan": "epitech.scan",
         "fr.marius.my-setup-sync": "my-setup.sync",
     ]
