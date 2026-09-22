@@ -272,7 +272,7 @@ struct HubColumn<Content: View>: View {
     /// used to say so is gone and the nought is all that is left to say it.
     var showsZero = false
     /// A word about why the list may not be current — "offline", usually. Nil when it is.
-    let note: String?
+    var note: String?
     /// The + on the heading, for a column you can write into. Nil on one that only reports.
     var onAdd: (() -> Void)?
     /// The colour of the chip behind the name — see `BlockTint`.
@@ -899,11 +899,6 @@ struct EpitechColumn: View {
         HubColumn(title: "EPITECH",
                   count: hub.epitech?.projectsDue ?? 0,
                   showsZero: true,
-                  // The rendus move beside the name only once the credits have taken the
-                  // corner. Until the intra answers, the corner is the count of rendus and
-                  // saying it twice on one line says nothing twice. What is wrong with the
-                  // scan is not here at all any more — it is over the fleet, in `AlertsBlock`.
-                  note: credits != nil ? rendus : nil,
                   tint: BlockTint.epitech,
                   fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
@@ -965,18 +960,12 @@ struct EpitechColumn: View {
         if inside { hovered = id } else if hovered == id { hovered = nil }
     }
 
-    /// Banked, and what is left of the year's sixty — the two figures the heading is for. The
-    /// count of rendus moves to the note beside the name, since every card below states its
-    /// own share of it.
+    /// Banked, and what is left of the year's sixty — the only figure the heading carries.
     private var credits: String? {
         guard let credits = hub.epitech?.credits else { return nil }
         return "\(credits)+\(max(0, Epitech.creditsPerYear - credits))/\(Epitech.creditsPerYear)"
     }
 
-    private var rendus: String? {
-        guard let due = hub.epitech?.projectsDue, due > 0 else { return nil }
-        return due == 1 ? "1 rendu" : "\(due) rendus"
-    }
 }
 
 /// What a card in the EPITECH block is: the block holds two kinds of thing, and they used to

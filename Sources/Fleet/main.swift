@@ -344,6 +344,17 @@ if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     exit(0)
 }
 
+// `--empty-terminals` lists the windows nobody ever typed in and the terminal apps with no
+// shell left in them, without closing anything. `--close` does close them, which is what the
+// panel's own sweep does every five minutes.
+if CommandLine.arguments.contains("--empty-terminals") {
+    let dryRun = !CommandLine.arguments.contains("--close")
+    let found = EmptyTerminals.sweep(dryRun: dryRun)
+    if found.isEmpty { print("nothing empty") }
+    for line in found { print((dryRun ? "would close  " : "closed  ") + line) }
+    exit(0)
+}
+
 // The Reels block without the panel: every Reel the phone was handed, its state, its verdict.
 if CommandLine.arguments.contains("--reels") {
     Task { @MainActor in

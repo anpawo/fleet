@@ -81,7 +81,7 @@ enum ProcessScanner {
     /// A Claude Code session is always attached to a terminal. Electron helpers never are,
     /// so this is the discriminator that survives whatever the binary is called next. It also
     /// excludes headless background workers, which have no tab for a tile to raise.
-    private static func controllingTTY(_ pid: pid_t) -> String? {
+    static func controllingTTY(_ pid: pid_t) -> String? {
         var bsd = proc_bsdinfo()
         let sz = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd,
                              Int32(MemoryLayout<proc_bsdinfo>.size))

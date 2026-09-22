@@ -221,6 +221,9 @@ final class AppController: ObservableObject {
         if reaper.struggling { publishMachineState() }
         // Ahead of the dormant gate too: a Reel arrives from the phone, not from a session.
         hub.pollReelsIfDue()
+        // Same reason: a terminal left empty behind a session that ended is not a session, so
+        // nothing below this line would ever see it.
+        EmptyTerminals.sweepIfDue()
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
         statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
