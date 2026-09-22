@@ -237,8 +237,9 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                // A third each: the routines on a clock, the programs launchd keeps up, and
-                // the list. Two kinds of agent in one block made fourteen lines nobody read.
+                // The two agent blocks take what their cards need and no more, a third of the
+                // column at the most; the list has the rest. Five agents under a block sized
+                // for fifteen was a third of the column of blue paper.
                 //
                 // No podium here: both start on the fleet's own line. They are the other
                 // lists you are answerable to, and a step below the sessions read as a
@@ -249,16 +250,16 @@ struct OverlayView: View {
                         CronColumn(title: "CRONS", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 3))
+                            .frame(maxHeight: max(0, free / 3))
                         CronColumn(title: "KEEPALIVE", jobs: controller.launchd.alive,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 3))
+                            .frame(maxHeight: max(0, free / 3))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
-                            .frame(height: max(0, free / 3))
+                            .frame(maxHeight: .infinity)
                     }
                 }
                     // The same height as the column on the other side, so the two lists you

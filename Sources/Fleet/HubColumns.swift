@@ -92,6 +92,11 @@ struct CronColumn: View {
     /// card, like the two grids above it: a card is rebuilt every tick.
     @State private var hovered: String?
 
+    /// What the cards actually need, measured. The block is that tall, up to the height it has
+    /// been given: five agents must not leave a third of the column empty under them, and a
+    /// scroll view left to itself takes everything it is offered.
+    @State private var natural: CGFloat = 0
+
     /// The RAM block's blue, which is the one the panel already uses for "the machine is
     /// speaking". Not `BlockTint.memory` — that is the grey the heading chip wears.
     static let tint = SessionState.awaitingAnswer.tint
@@ -105,15 +110,23 @@ struct CronColumn: View {
                   showsZero: true,
                   tint: Self.tint,
                   fill: Self.tint.darkened(0.48),
-                  minRows: 3,
-                  fills: true) {
+                  minRows: 0,
+                  fills: false) {
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 6) { rows(all) }
+                        .background(
+                            GeometryReader { inside in
+                                Color.clear.onAppear { natural = inside.size.height }
+                                    .onChange(of: inside.size.height) { natural = $1 }
+                            }
+                        )
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: .infinity, alignment: .top)
+                // The cap is what the block was given; the floor is what the cards need. The
+                // scroll only ever appears when the second is the larger.
+                .frame(maxHeight: natural > 0 ? natural : nil, alignment: .top)
             } else {
                 VStack(spacing: 6) { rows(all) }
             }
