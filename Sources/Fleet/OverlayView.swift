@@ -856,7 +856,7 @@ struct GroupTile: View {
                     // A line each says it, and the ones past the fourth are scrolled to.
                     folded
                         .padding(.horizontal, 12)
-                        .padding(.top, 12 + SessionTile.height * 0.30 + Self.nameLine / 2 + 6)
+                        .padding(.top, 12 + SessionTile.height * 0.30 + Self.nameLine / 2 + 16)
                         .padding(.bottom, 12)
                 }
 
@@ -893,9 +893,14 @@ struct GroupTile: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                // ⌘ over the card arms the whole rectangle, because the whole rectangle is
+                // what acts: lighting one row said the click would land on that row.
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.white.opacity(!open && hovering && commandHeld ? 0.10 : 0)))
                 .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
         )
+        .animation(.easeOut(duration: 0.15), value: commandHeld)
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Self.tint, lineWidth: 2.5)
@@ -1000,13 +1005,9 @@ struct GroupTile: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(isHead && commandHeld ? Self.tint.opacity(hovering ? 0.30 : 0.14)
-                                                  : .clear,
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeOut(duration: 0.15), value: commandHeld)
 
         Group {
             if scrolling {
@@ -1017,9 +1018,10 @@ struct GroupTile: View {
                 rows
             }
         }
-        // The rows are the card too: a click on one of them means the same as a click beside it.
-        .contentShape(Rectangle())
-        .onTapGesture(perform: tapped)
+        // The rows are a readout, not a menu: a click on one means what a click beside it
+        // means. Simultaneous rather than a gesture of their own, so the scroll still works
+        // and the tap still reaches the card under it.
+        .simultaneousGesture(TapGesture().onEnded(tapped))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
