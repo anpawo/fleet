@@ -94,13 +94,19 @@ enum Launchd {
             let port = state?.pid.flatMap { ports[$0] }
             let enabled = state != nil
             let failing = (state?.exit ?? 0) > 0
+            // A card in KEEP ALIVE says "always on", whatever holds the loop. mac.revive is a
+            // routine on a 30-second timer standing among residents, and `every 30s` beside
+            // four `always on` read as the odd one out rather than as the pair it makes with
+            // mac.guard — which is the whole reason it was put there.
+            let resident = trigger == nil || guards.contains(label)
             return Job(id: label,
                        name: shorten(label),
-                       schedule: trigger ?? resting(plist),
+                       schedule: resident ? (trigger == nil ? resting(plist) : "always on")
+                                          : trigger!,
                        enabled: enabled,
                        failing: failing,
                        triggered: trigger != nil,
-                       resident: trigger == nil || guards.contains(label),
+                       resident: resident,
                        ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist),
                        address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" })
@@ -179,7 +185,8 @@ enum Launchd {
         return plist["RunAtLoad"] as? Bool == true ? "at login" : "on demand"
     }
 
-    /// One sentence per job, written here rather than in the plists: several of these files are
+    /// One sentence per job — what it is for, and nothing the card already says: the address
+    /// it answers on is written a line above this one. Kept here rather than in the plists: several of these files are
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
@@ -193,8 +200,9 @@ enum Launchd {
         "fr.marius.my-setup-sync": "Pushes this machine's settings and dotfiles to my-setup.",
         "io.scient.outline": "Syncs the S14 Outline wiki.",
         "io.scient.tailscaled-userspace": "Tailscale in userspace — the way onto the S14 boxes.",
-        "scient.hermes-map": "Serves the Hermes dependency map on :8766.",
-        "scient.recon-journal": "Serves the S14 recon journal on :8767.",
+        "scient.hermes-map": "Serves the Hermes dependency map.",
+        "scient.recon-journal": "Serves the S14 recon journal.",
+        "scient.recon-web": "Serves the S14 recon browser.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a

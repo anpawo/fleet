@@ -244,7 +244,8 @@ struct CronColumn: View {
     @ViewBuilder private func stack(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
         VStack(spacing: 6) {
             ForEach(jobs) { job in
-                CronCard(job: job, expanded: commandHeld && hovered == job.id, family: family)
+                CronCard(job: job, expanded: commandHeld && hovered == job.id,
+                         commandHeld: commandHeld, family: family)
                     .onHover { inside in
                         if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
                     }
@@ -260,6 +261,10 @@ struct CronColumn: View {
 struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
+    /// Whether ⌘ is down, which is what turns the address into a link. A plain click
+    /// anywhere in these columns dismisses the panel, so an address that opened on one would
+    /// fire every time you meant to close it.
+    let commandHeld: Bool
     /// The box this card sits in, when it sits in one — its name is already written above.
     var family: String?
 
@@ -288,7 +293,7 @@ struct CronCard: View {
                     .underline(link != nil)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
+                    .onTapGesture { if commandHeld, let link { NSWorkspace.shared.open(link) } }
             }
             if expanded {
                 Text(job.note)
