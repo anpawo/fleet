@@ -151,10 +151,6 @@ struct CronColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
-        // The card unfolds under the pointer, so the spring has to follow the pointer too —
-        // on ⌘ alone it only animated the first card of a hold and every one after it snapped.
-        // And the block's own height with it: it is capped at what the cards measure.
-        .animation(TodoColumn.unroll, value: hovered)
         .animation(TodoColumn.unroll, value: natural)
         // Its own height, not the slot's. A `maxHeight` alone reads as "flexible up to", so
         // the stack handed it the whole third and the block sat centred in the empty half.
@@ -246,8 +242,16 @@ struct CronColumn: View {
             ForEach(jobs) { job in
                 CronCard(job: job, expanded: commandHeld && hovered == job.id,
                          commandHeld: commandHeld, family: family)
+                    // `withAnimation` rather than the `.animation(value: hovered)` this used
+                    // to lean on: that modifier only reaches this column's own subtree, and
+                    // what the unfolding card pushes is the TODO block *below* the column.
+                    // Growing, the block's height came from a measurement that is already
+                    // wrapped in an animation, so TODO slid down; shrinking, it did not, and
+                    // TODO jumped back up. A transaction covers the whole update, both ways.
                     .onHover { inside in
-                        if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
+                        withAnimation(TodoColumn.unroll) {
+                            if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
+                        }
                     }
             }
         }
@@ -300,9 +304,14 @@ struct CronCard: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(job.schedule)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.32))
+                // A resident is on all the time — that is what the block it sits in means.
+                // `always on` under five cards in a row said nothing any of them did not
+                // already say by being there.
+                if job.schedule != "always on" {
+                    Text(job.schedule)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.32))
+                }
             }
         }
         .padding(.vertical, 7)
