@@ -210,7 +210,8 @@ struct OverlayView: View {
                 // vary reads as groups nobody meant to make.
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
-                                commandHeld: controller.commandHeld)
+                                commandHeld: controller.commandHeld,
+                                animating: controller.isPanelVisible)
                     // What is left of the column once the memory has had its line, three
                     // sevenths to the mail and four to the school. The school lost its mail lines — it
                     // is twelve module cards now, and they are shorter — while the mail is the
@@ -1279,20 +1280,47 @@ struct SessionTile: View {
 private struct WaveFill: View {
     let level: Double
     let tint: Color
-    @State private var phase: CGFloat = 0
+    let running: Bool
+    @State private var shift: CGFloat = 0
+
+    private static let slow: CGFloat = 52
+    private static let fast: CGFloat = 31
 
     var body: some View {
-        ZStack {
-            Wave(phase: phase, level: level, amplitude: 4, wavelength: 52)
-                .fill(tint.opacity(0.42))
-            Wave(phase: phase * 1.7 + 0.35, level: level, amplitude: 2.5, wavelength: 31)
-                .fill(tint.opacity(0.26))
+        GeometryReader { box in
+            let h = box.size.height
+            ZStack(alignment: .top) {
+                band(Self.slow, amplitude: 4, opacity: 0.42, height: h, at: shift)
+                band(Self.fast, amplitude: 2.5, opacity: 0.26, height: h, at: 1 - shift)
+            }
+            .frame(width: box.size.width, height: h, alignment: .top)
+            .clipped()
         }
-        .onAppear {
-            // One whole wavelength per cycle, so the loop closes on itself and nothing jumps
-            // at the seam. Offscreen renders never fire this and draw the wave at rest.
-            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) { phase = 1 }
+        .onAppear { drive() }
+        .onChange(of: running) { drive() }
+    }
+
+    /// One wave, drawn a wavelength taller than the block and slid by that wavelength over a
+    /// cycle. The path itself never changes: animating a `Shape`'s `animatableData` rebuilt it
+    /// and re-ran SwiftUI's layout on every frame, where an offset is a transform.
+    private func band(_ wavelength: CGFloat, amplitude: CGFloat, opacity: Double,
+                      height: CGFloat, at t: CGFloat) -> some View {
+        Wave(level: level, amplitude: amplitude, wavelength: wavelength)
+            .fill(tint.opacity(opacity))
+            .frame(height: height + wavelength)
+            .offset(y: -wavelength + t * wavelength)
+    }
+
+    private func drive() {
+        guard running else {
+            // Straight back to rest, with no animation to carry on driving the display link.
+            var stop = Transaction()
+            stop.disablesAnimations = true
+            withTransaction(stop) { shift = 0 }
+            return
         }
+        // A whole wavelength per cycle, so the loop closes on itself and nothing jumps.
+        withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) { shift = 1 }
     }
 }
 
@@ -1300,16 +1328,11 @@ private struct WaveFill: View {
 /// `phase` is in wavelengths; the whole front also drifts with it, so the fill reads as
 /// something flowing in from the left rather than a level rising.
 private struct Wave: Shape {
-    var phase: CGFloat
     var level: Double
     var amplitude: CGFloat
-    /// Along the block's *height*, since that is the axis the ripple runs down.
+    /// Along the block's *height*, since that is the axis the ripple runs down. The travel is
+    /// an offset on the view, not a phase in here — see `WaveFill.band`.
     var wavelength: CGFloat
-
-    var animatableData: CGFloat {
-        get { phase }
-        set { phase = newValue }
-    }
 
     func path(in rect: CGRect) -> Path {
         let front = rect.minX + rect.width * CGFloat(min(1, max(0, level)))
@@ -1318,8 +1341,7 @@ private struct Wave: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         var y = rect.maxY
         while y >= rect.minY {
-            let angle = (y / wavelength - phase) * 2 * .pi
-            path.addLine(to: CGPoint(x: front + sin(angle) * amplitude, y: y))
+            path.addLine(to: CGPoint(x: front + sin(y / wavelength * 2 * .pi) * amplitude, y: y))
             y -= 2
         }
         path.closeSubpath()
@@ -1357,6 +1379,10 @@ struct MemoryStrip: View {
     /// controls: each carries a ✕, and a list of kill buttons is not something to leave lying
     /// on a panel you glance at.
     let commandHeld: Bool
+    /// Whether the panel is actually on screen. A `repeatForever` animation does not stop when
+    /// the window is ordered out: measured at 34% of a core, all of it in SwiftUI's layout
+    /// engine, on a Mac nobody was looking at.
+    let animating: Bool
 
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
@@ -1394,7 +1420,9 @@ struct MemoryStrip: View {
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .titleGround(Self.chipGround)
             }
-            .padding(.horizontal, 2)
+            // Four, not two: the chip's own ground hangs 7pt past the words, so two left them
+            // 7pt off the pane where the top and bottom leave 9.
+            .padding(.horizontal, 4)
 
             // Under the rule rather than beside the name: the sentence is a sentence, and the
             // heading line is a name, a button and no room for a third thing.
@@ -1454,7 +1482,7 @@ struct MemoryStrip: View {
                     }
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 4)
             }
         }
 
@@ -1467,7 +1495,8 @@ struct MemoryStrip: View {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 corner
                     .fill(.black.opacity(0.32))
-                    .overlay { WaveFill(level: share(reaper.footprint.used), tint: ramTint) }
+                    .overlay { WaveFill(level: share(reaper.footprint.used), tint: ramTint,
+                                        running: animating) }
                     .clipShape(corner)
                     .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
                     // Not the other blocks' geometry: their frame's top edge runs through the
@@ -1478,10 +1507,10 @@ struct MemoryStrip: View {
                     // reaches as far down into the gap as every other one does.
                     .padding(-13)
             }
-            // Measured on an offscreen render: the pane's top edge sat 13pt above the fleet
-            // block's, because it reaches past its content where every other block's frame
-            // starts *inside* the heading line. The block drops by exactly that.
-            .padding(.top, 13)
+            // Measured on an offscreen render against the fleet block's own top edge: the
+            // pane reaches past its content where every other block's frame starts *inside*
+            // the heading line, so it sat 20pt high. The block drops by exactly that.
+            .padding(.top, 20)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
