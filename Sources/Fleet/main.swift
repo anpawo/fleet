@@ -747,6 +747,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             controller.modifiersChanged(.command)
         }
 
+        // `--open <directory>` draws a group unfolded. It is the one state a render cannot
+        // otherwise reach — nothing opens a group but a click — and it is the state whose
+        // spacing is hardest to get right, since the cards inside carry their own glow.
+        if let o = CommandLine.arguments.firstIndex(of: "--open"),
+           o + 1 < CommandLine.arguments.count {
+            controller.openGroup = CommandLine.arguments[o + 1]
+        }
+
         // `--size <w>x<h>` frames the render. The default is a laptop screen; a screenshot for
         // somewhere else usually wants a different shape, and cropping one out of the other
         // moves the panel off its own centre.
@@ -845,7 +853,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
-    "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks",
+    "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel-digest", "--reels",
     "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--shadows", "--show", "--size", "--spaces-bar", "--start",

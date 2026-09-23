@@ -481,7 +481,7 @@ struct OverlayView: View {
     /// The width a session card gets inside an open directory: the block, less the directory
     /// card's own padding, split in two.
     private var innerTileWidth: CGFloat {
-        (centerWidth - 3 * tileSpacing) / 2
+        (centerWidth - 3 * tileSpacing - 2 * GroupTile.aura) / 2
     }
 
     /// Every card, in rows of two, laid out by hand rather than by stacks — see `FleetLayout`.
@@ -843,6 +843,11 @@ struct GroupTile: View {
     /// Roughly the name's line height, to centre it on the folded card's 30% mark.
     private static let nameLine: CGFloat = 37
 
+    /// What the open card keeps clear inside its border, past the gap the cards already have
+    /// between them: a card in there throws the same glow as one on the grid, and the group's
+    /// own rounded clip was cutting it off square.
+    static let aura: CGFloat = 12
+
     @State private var hovering = false
 
     var body: some View {
@@ -997,7 +1002,7 @@ struct GroupTile: View {
         // Clear of the name, which is drawn over this rather than above it — and clear by a
         // margin: a row of cards starting five points under the title read as its underline.
         .padding(.top, spacing + Self.nameLine + 34)
-        .padding([.horizontal, .bottom], spacing)
+        .padding([.horizontal, .bottom], spacing + Self.aura)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 
