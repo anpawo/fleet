@@ -1350,10 +1350,12 @@ struct MemoryStrip: View {
                     // Indented onto the pills' own text column, not the block's edge: the
                     // sentence and the names it explains start on the same line, and the two
                     // points it used to sit at put it eight left of everything under it.
-                    .padding(.horizontal, HogPill.inset)
+                    .padding(.horizontal, HogPill.inset + 4)
                     // Clear of the heading by about what the frame leaves under the last pill:
-                    // at one point off the chip the sentence read as part of the title.
-                    .padding(.top, 5)
+                    // at five points off the chip the sentence still read as part of the title,
+                    // and the pills under it were as close again.
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
             }
 
             // Two of the four. Cached is never a problem and compressed is a leading
@@ -1413,9 +1415,15 @@ struct MemoryStrip: View {
                 corner
                     .fill(.black.opacity(0.32))
                     .overlay(alignment: .leading) {
+                        let used = share(reaper.footprint.used)
                         GeometryReader { box in
                             ramTint.opacity(0.42)
-                                .frame(width: box.size.width * share(reaper.footprint.used))
+                                .frame(width: box.size.width * used)
+                                // Named here rather than inherited, so the refusal below can
+                                // keep the bar from being drawn in on open and this still
+                                // carries it from one reading to the next: a gauge that jumps
+                                // is read as a glitch, one that slides is read as a level.
+                                .animation(.easeOut(duration: 0.5), value: used)
                         }
                     }
                     .clipShape(corner)
