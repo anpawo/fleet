@@ -62,6 +62,12 @@ enum Launchd {
         /// What it is for, in one sentence. Written by hand — see `notes`.
         var note: String
 
+        /// Where it answers, when it answers anywhere: `http://localhost:8766`, or a bare
+        /// `127.0.0.1:1055` for a port that is not a web server. Read off the running process
+        /// rather than the plist — outline takes no port on its command line, and a job that
+        /// moves to another port would otherwise keep advertising the old one.
+        var address: String?
+
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
         /// seeing, so only the ones launchd has never been told about drop out. A resident
@@ -70,9 +76,12 @@ enum Launchd {
     }
 
     /// Every agent of his, with what launchd currently says about it.
-    static func jobs() -> [Job] {
+    /// `probing` is off on the main thread: see `serves`. The panel's first draw takes the
+    /// answers already on disk, and the scan that follows is what learns any new one.
+    static func jobs(probing: Bool = false) -> [Job] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let live = status()
+        let ports = listening(live.values.compactMap(\.pid))
         return names.compactMap { file -> Job? in
             guard file.hasSuffix(".plist") else { return nil }
             let label = String(file.dropLast(6))
@@ -82,6 +91,7 @@ enum Launchd {
                       from: data, format: nil) as? [String: Any] else { return nil }
             let state = live[label]
             let trigger = schedule(plist)
+            let port = state?.pid.flatMap { ports[$0] }
             let enabled = state != nil
             let failing = (state?.exit ?? 0) > 0
             return Job(id: label,
@@ -92,7 +102,8 @@ enum Launchd {
                        triggered: trigger != nil,
                        resident: trigger == nil || guards.contains(label),
                        ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
-                       note: notes[label] ?? fallbackNote(plist))
+                       note: notes[label] ?? fallbackNote(plist),
+                       address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" })
         }.sorted { $0.name < $1.name }
     }
 
@@ -194,6 +205,88 @@ enum Launchd {
         return program.isEmpty ? "No note yet." : "Runs \((program as NSString).lastPathComponent)."
     }
 
+    /// The lowest TCP port each of these processes is listening on, in one `lsof`. Lowest
+    /// rather than first because the order `lsof` prints is the order of the file descriptors,
+    /// which is whatever the program happened to open first; a server's own port is the one it
+    /// was started for, and a second socket is nearly always something it dialled out on.
+    static func listening(_ pids: [Int]) -> [Int: Int] {
+        guard !pids.isEmpty else { return [:] }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", pids.map(String.init).joined(separator: ",")]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return [:] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return parseListening(String(decoding: data, as: UTF8.self))
+    }
+
+    /// Split out so it can be replayed against a captured `lsof` without one running — see
+    /// `--selftest`.
+    static func parseListening(_ output: String) -> [Int: Int] {
+        var out: [Int: Int] = [:]
+        for line in output.split(separator: "\n").dropFirst() {
+            let columns = line.split(separator: " ", omittingEmptySubsequences: true)
+            // Not the last column: `lsof` puts `(LISTEN)` after the address. The address is
+            // the last field that still parses as one, which also swallows the `[::1]:41641`
+            // an IPv6 socket is printed as.
+            guard columns.count >= 2, let pid = Int(columns[1]),
+                  let port = columns.reversed().lazy
+                      .filter({ $0.contains(":") })
+                      .compactMap({ Int($0.split(separator: ":").last ?? "") })
+                      .first else { continue }
+            out[pid] = min(out[pid] ?? .max, port)
+        }
+        return out
+    }
+
+    /// Whether a port speaks HTTP, asked once and remembered for good. Nothing in the plist
+    /// says so — tailscaled's 1055 is a SOCKS proxy and accepts a connection exactly like a web
+    /// server does — and an `http://` that opens a browser on something that is not a page is
+    /// worse than no link at all.
+    ///
+    /// Remembered in a file rather than in memory because the asking is slow: recon-web takes
+    /// six and a half seconds to answer `/`, and a port has to be given that long before it can
+    /// be called mute. Only the ten-second scan ever pays that, and it pays it once per port.
+    /// A file rather than `UserDefaults` because `--render` runs as a bare binary with no
+    /// bundle identifier, so it has a defaults domain of its own and would ask all over again.
+    private static let cache = (Hooks.home as NSString).appendingPathComponent("http-ports.json")
+
+    private static func known() -> [String: Bool] {
+        guard let data = FileManager.default.contents(atPath: cache),
+              let map = try? JSONSerialization.jsonObject(with: data) as? [String: Bool]
+        else { return [:] }
+        return map
+    }
+
+    private static func serves(_ port: Int, probing: Bool) -> Bool {
+        var known = Self.known()
+        if let answer = known["\(port)"] { return answer }
+        guard probing else { return false }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        // Twenty seconds, which is absurd for a page and is what a cold one costs: recon-web
+        // answered `/` in 9.3s on the first hit after a restart and in 0.17s on every one
+        // after. A timeout short enough to feel reasonable filed it as "not a web server" for
+        // good, and the link never came back.
+        task.arguments = ["-s", "-o", "/dev/null", "-m", "20", "-w", "%{http_code}",
+                          "http://127.0.0.1:\(port)/"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return false }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        let answer = (Int(String(decoding: data, as: UTF8.self)) ?? 0) > 0
+        known["\(port)"] = answer
+        try? FileManager.default.createDirectory(atPath: Hooks.home,
+                                                 withIntermediateDirectories: true)
+        try? JSONSerialization.data(withJSONObject: known).write(to: URL(fileURLWithPath: cache))
+        return answer
+    }
+
     /// `launchctl list`: pid, last exit status, label — one line each, tab separated, with a
     /// header. A dash in either of the first two columns means launchd has nothing to say.
     private static func status() -> [String: (pid: Int?, exit: Int)] {
@@ -246,7 +339,7 @@ final class LaunchdStore: ObservableObject {
         scanning = true
         lastScan = now
         Task.detached(priority: .utility) {
-            let scanned = Launchd.jobs().filter(\.running)
+            let scanned = Launchd.jobs(probing: true).filter(\.running)
             await MainActor.run {
                 self.crons = scanned.filter { !$0.resident }
                 self.alive = scanned.filter(\.resident)

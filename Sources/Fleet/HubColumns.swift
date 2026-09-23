@@ -278,6 +278,18 @@ struct CronCard: View {
                 .minimumScaleFactor(0.75)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let address = job.address {
+                // At rest, not under ⌘: where a server answers is the one thing about it you
+                // came to the card for, and a link you have to hold a key to see is a link you
+                // look up in the plist instead.
+                Text(address)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(link == nil ? .white.opacity(0.32) : Self.tint.opacity(0.9))
+                    .underline(link != nil)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
+            }
             if expanded {
                 Text(job.note)
                     .font(.system(size: 10))
@@ -301,6 +313,15 @@ struct CronCard: View {
     private var border: Color {
         job.ok ? SessionState.ready.tint : SessionState.running.tint
     }
+
+    /// Only a web address opens. A SOCKS port shows as itself, because a browser sent there
+    /// hangs on a page that will never arrive.
+    private var link: URL? {
+        guard let address = job.address, address.hasPrefix("http://") else { return nil }
+        return URL(string: address)
+    }
+
+    private static let tint = SessionState.awaitingAnswer.tint
 }
 
 /// The panel's right column: the todo list, oldest first — the one that has been sitting there

@@ -17,9 +17,33 @@ enum SelfCheck {
 
         subagents(expect)
         ghosts(expect)
+        ports(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
+    }
+
+    // MARK: - Listening ports
+
+    /// Where a KeepAlive job answers is read out of `lsof`, and the one rule that is not
+    /// obvious is which port wins when a process holds several: the lowest, not the first
+    /// printed. `lsof` prints in file-descriptor order, so tailscaled's SOCKS proxy came
+    /// after whatever it had dialled out on.
+    private static func ports(_ expect: (Int, Int, String) -> Void) {
+        let captured = """
+        COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+        Python    52741   mr    3u  IPv4 0x1a2b3c4d5e6f7080      0t0  TCP 127.0.0.1:8766 (LISTEN)
+        Python    52802   mr    3u  IPv4 0x1a2b3c4d5e6f7081      0t0  TCP 127.0.0.1:8767 (LISTEN)
+        Python    52860   mr    4u  IPv4 0x1a2b3c4d5e6f7082      0t0  TCP 127.0.0.1:8768 (LISTEN)
+        tailscal  51900   mr   11u  IPv6 0x1a2b3c4d5e6f7083      0t0  TCP [::1]:41641 (LISTEN)
+        tailscal  51900   mr   12u  IPv4 0x1a2b3c4d5e6f7084      0t0  TCP 127.0.0.1:1055 (LISTEN)
+        """
+        let found = Launchd.parseListening(captured)
+        expect(found[52741] ?? 0, 8766, "hermes-map's port comes off its pid")
+        expect(found[52802] ?? 0, 8767, "recon-journal's port comes off its pid")
+        expect(found[52860] ?? 0, 8768, "recon-web's port comes off its pid")
+        expect(found[51900] ?? 0, 1055, "a process on two ports shows the lower one")
+        expect(found[1] ?? 0, 0, "a pid that listens on nothing has no port")
     }
 
     // MARK: - Sub-agents

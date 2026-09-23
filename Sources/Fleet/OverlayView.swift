@@ -274,9 +274,13 @@ struct OverlayView: View {
                         CronColumn(title: "ROUTINE", jobs: controller.launchd.crons,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 3))
+                        // Half rather than a third, unlike ROUTINE above: a resident carries
+                        // the address it answers on under its name, so its cards are two lines
+                        // where a routine's are one. A block only ever takes what its cards
+                        // need, so a ceiling nobody reaches costs the list underneath nothing.
                         CronColumn(title: "KEEP ALIVE", jobs: controller.launchd.alive,
                                    commandHeld: controller.commandHeld,
-                                   scrolling: !eagerLayout, limit: max(0, free / 3))
+                                   scrolling: !eagerLayout, limit: max(0, free / 2))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
