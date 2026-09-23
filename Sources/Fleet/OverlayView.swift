@@ -869,26 +869,33 @@ struct GroupTile: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
+                    // The same light the card's own border throws, on the one word the card
+                    // is for. Two passes: the near one to lift the letters off the black, the
+                    // far one to say which fleet the card belongs to.
+                    .shadow(color: Self.tint.opacity(0.55), radius: 10)
+                    .shadow(color: Self.tint.opacity(0.35), radius: 22)
                     // Centred in both states, on the same width: the title does not change
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
-                            y: open ? spacing
-                                     : 12 + SessionTile.height * 0.30 - Self.nameLine / 2)
+                            y: open ? spacing : Self.titleTop)
 
                 // What ⌘ is aiming at, said rather than shaded: a lit rectangle only says
                 // "this card", which the pointer already said. Over the name, because the
                 // name is what it is about to be replaced by.
                 Text("MAIN")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11, weight: .bold))
                     .tracking(3.2)
                     .foregroundStyle(.white)
                     .fixedSize()
                     .opacity(armed ? 0.5 : 0)
                     // Centred on the name, not on the card: a long name is clamped to the
                     // left edge, and a label centred on the card would then sit off it.
+                    //
+                    // Halfway down what the title leaves above it, so the word has as much
+                    // room over it as under it.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2)
                                + (nameWidth - Self.mainWidth) / 2,
-                            y: 12 + SessionTile.height * 0.30 - Self.nameLine / 2 - 18)
+                            y: (Self.titleTop + Self.titleLead - Self.mainLine) / 2)
 
                 HStack(spacing: 7) {
                     count
@@ -927,10 +934,22 @@ struct GroupTile: View {
     /// than the group. Only then: on an open card the chord does nothing.
     private var armed: Bool { !open && hovering && commandHeld }
 
+    /// Where the name's own line starts, measured from the top of the folded card. Named
+    /// because the MAIN label above it has to divide what is left.
+    private static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
+
+    /// Roughly the MAIN label's line height, the way `nameLine` is the title's.
+    private static let mainLine: CGFloat = 13
+
+    /// What the title's line box leaves above its capitals. The label is centred on what the
+    /// eye sees and not on two frames: measured on an offscreen render, halving the frames
+    /// left 18.5pt over the word and 28.5 under it.
+    private static let titleLead: CGFloat = 10
+
     /// Measured the same way and for the same reason as `nameWidth`, and once for all cards
     /// since the word never changes.
     private static let mainWidth: CGFloat = {
-        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let font = NSFont.systemFont(ofSize: 11, weight: .bold)
         // The tracking is not in the font, so it is not in the measurement either: four gaps
         // of 3.2 between five letters.
         return ("MAIN" as NSString).size(withAttributes: [.font: font]).width + 3.2 * 4
