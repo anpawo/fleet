@@ -1295,6 +1295,10 @@ private struct WaveFill: View {
             }
             .frame(width: box.size.width, height: h, alignment: .top)
             .clipped()
+            // Named here rather than taken from the ambient transaction, so that the pane
+            // above can refuse every animation it inherits without taking this one with it.
+            .animation(running ? .linear(duration: 5).repeatForever(autoreverses: false) : nil,
+                       value: shift)
         }
         .onAppear { drive() }
         .onChange(of: running) { drive() }
@@ -1311,17 +1315,9 @@ private struct WaveFill: View {
             .offset(y: -wavelength + t * wavelength)
     }
 
-    private func drive() {
-        guard running else {
-            // Straight back to rest, with no animation to carry on driving the display link.
-            var stop = Transaction()
-            stop.disablesAnimations = true
-            withTransaction(stop) { shift = 0 }
-            return
-        }
-        // A whole wavelength per cycle, so the loop closes on itself and nothing jumps.
-        withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) { shift = 1 }
-    }
+    /// A whole wavelength per cycle, so the loop closes on itself: rest and end of cycle draw
+    /// the same water, and the snap back to rest when the panel goes away is invisible.
+    private func drive() { shift = running ? 1 : 0 }
 }
 
 /// A gauge that fills from the left, its leading edge a sine rippling down the block's height.
@@ -1499,6 +1495,10 @@ struct MemoryStrip: View {
                                         running: animating) }
                     .clipShape(corner)
                     .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
+                    // The pane inherits whatever animation is in flight when the panel opens,
+                    // and a gauge whose width is being animated in is a gauge you watch fill
+                    // up. It is a reading: it is right the instant it is on screen.
+                    .transaction { $0.animation = nil }
                     // Not the other blocks' geometry: their frame's top edge runs through the
                     // middle of the heading line, which would cut this one's wave in half. The
                     // pane goes over the heading instead, and the chips keep their dark ground
