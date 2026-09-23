@@ -105,6 +105,7 @@ enum Launchd {
         "fr.marius.revive": "mac.revive",
         "eu.epitech.scan": "epitech.scan",
         "fr.marius.my-setup-sync": "my-setup.sync",
+        "io.scient.tailscaled-userspace": "s14.tailscale",
     ]
 
     private static func shorten(_ label: String) -> String {

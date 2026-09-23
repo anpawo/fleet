@@ -163,7 +163,7 @@ struct CronColumn: View {
         }
         let good = all.filter(\.ok)
         let bad = all.filter { !$0.ok }
-        grid(good)
+        half(good)
         // The two halves are the whole point of the block, and a border colour alone made you
         // read every card to find where one ended. Drawn at nine tenths rather than edge to
         // edge: a rule that touches the block's sides reads as the end of the block.
@@ -174,24 +174,68 @@ struct CronColumn: View {
                 .scaleEffect(x: 0.9)
                 .padding(.vertical, 5)
         }
-        grid(bad)
+        half(bad)
     }
 
-    @ViewBuilder private func grid(_ jobs: [Launchd.Job]) -> some View {
+    /// Agents that share a prefix go in one framed box under it, and the cards inside drop the
+    /// prefix. Six cards reading `s14.` and `mac.` spent most of their width saying which
+    /// machine they belong to, and `s14.tailscaled-userspace` did not fit at all.
+    ///
+    /// Two or more, or nothing: a box around a single card is a frame that says what the card
+    /// already says. That is what keeps ROUTINE — where every prefix is worn by one agent —
+    /// exactly as it was.
+    @ViewBuilder private func half(_ jobs: [Launchd.Job]) -> some View {
+        let families = Dictionary(grouping: jobs, by: familyName)
+        let boxed = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
+        let loose = jobs.filter { families[familyName($0)]?.count == 1 }
+        VStack(spacing: 6) {
+            ForEach(boxed, id: \.key) { family, members in
+                VStack(spacing: 6) {
+                    // Centred, unlike everything else in the panel: this is the title of a box
+                    // whose width does not depend on what is in it, the same exception the
+                    // session tiles already have.
+                    Text(family.uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Self.tint.opacity(0.75))
+                        .frame(maxWidth: .infinity)
+                    grid(members, family: family)
+                }
+                .padding(7)
+                .background(Self.tint.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(Self.tint.opacity(0.28), lineWidth: 1)
+                )
+            }
+            if !loose.isEmpty {
+                grid(loose)
+            }
+        }
+    }
+
+    /// What comes before the first dot — `s14` for `s14.hermes-map`. An agent with no dot is
+    /// its own family of one, which is to say no box.
+    private func familyName(_ job: Launchd.Job) -> String {
+        String(job.name.prefix { $0 != "." })
+    }
+
+    @ViewBuilder private func grid(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
         // Two independent stacks rather than a grid. In a grid the two cards of a row share a
         // height, so unfolding one pushed the card beside it — and everything under it on the
         // other side — down the block. Here a card only ever moves what is under it in its own
         // stack. Odds and evens, so the reading order across the two is still 1 2 / 3 4.
         HStack(alignment: .top, spacing: 6) {
-            stack(jobs.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element))
-            stack(jobs.enumerated().filter { !$0.offset.isMultiple(of: 2) }.map(\.element))
+            stack(jobs.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element), family: family)
+            stack(jobs.enumerated().filter { !$0.offset.isMultiple(of: 2) }.map(\.element), family: family)
         }
     }
 
-    @ViewBuilder private func stack(_ jobs: [Launchd.Job]) -> some View {
+    @ViewBuilder private func stack(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
         VStack(spacing: 6) {
             ForEach(jobs) { job in
-                CronCard(job: job, expanded: commandHeld && hovered == job.id)
+                CronCard(job: job, expanded: commandHeld && hovered == job.id, family: family)
                     .onHover { inside in
                         if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
                     }
@@ -207,10 +251,18 @@ struct CronColumn: View {
 struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
+    /// The box this card sits in, when it sits in one — its name is already written above.
+    var family: String?
+
+    /// What the card writes: `hermes-map` inside the S14 box, `s14.hermes-map` on its own.
+    private var label: String {
+        guard let family, job.name.hasPrefix(family + ".") else { return job.name }
+        return String(job.name.dropFirst(family.count + 1))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(job.name)
+            Text(label)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
