@@ -61,6 +61,12 @@ enum Launchd {
 
         /// What it is for, in one sentence. Written by hand — see `notes`.
         var note: String
+
+        /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
+        /// a routine that failed its last run is still scheduled and still the thing worth
+        /// seeing, so only the ones launchd has never been told about drop out. A resident
+        /// with no pid is not running, and that is the whole of it.
+        var running: Bool { triggered ? enabled : ok }
     }
 
     /// Every agent of his, with what launchd currently says about it.
@@ -228,7 +234,7 @@ final class LaunchdStore: ObservableObject {
     /// The first read is synchronous, once, at launch — the panel can open before the first
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
     init() {
-        let scanned = Launchd.jobs()
+        let scanned = Launchd.jobs().filter(\.running)
         crons = scanned.filter { !$0.resident }
         alive = scanned.filter(\.resident)
     }
@@ -239,7 +245,7 @@ final class LaunchdStore: ObservableObject {
         scanning = true
         lastScan = now
         Task.detached(priority: .utility) {
-            let scanned = Launchd.jobs()
+            let scanned = Launchd.jobs().filter(\.running)
             await MainActor.run {
                 self.crons = scanned.filter { !$0.resident }
                 self.alive = scanned.filter(\.resident)
