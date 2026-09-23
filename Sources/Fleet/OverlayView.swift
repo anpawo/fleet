@@ -869,11 +869,13 @@ struct GroupTile: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
-                    // The same light the card's own border throws, on the one word the card
-                    // is for. Two passes: the near one to lift the letters off the black, the
-                    // far one to say which fleet the card belongs to.
-                    .shadow(color: Self.tint.opacity(0.55), radius: 10)
-                    .shadow(color: Self.tint.opacity(0.35), radius: 22)
+                    // The same light the card's own border throws, and only while ⌘ is over
+                    // the card: it is the name lighting up under the chord that is about to
+                    // act on it, which is the other half of what MAIN says. Two passes — the
+                    // near one lifts the letters off the black, the far one says which fleet
+                    // the card belongs to.
+                    .shadow(color: Self.tint.opacity(armed ? 0.55 : 0), radius: 10)
+                    .shadow(color: Self.tint.opacity(armed ? 0.35 : 0), radius: 22)
                     // Centred in both states, on the same width: the title does not change
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
