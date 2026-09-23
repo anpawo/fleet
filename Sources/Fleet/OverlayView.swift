@@ -1270,10 +1270,11 @@ struct SessionTile: View {
     }
 }
 
-/// The memory block's ground: the RAM in use as a tank filling, not a bar growing.
+/// The memory block's ground: the RAM in use filling the block from the left, its edge a
+/// rippling front rather than a straight cut.
 ///
 /// Two sines rather than one — a single curve reads as a drawn line, two at different
-/// wavelengths sliding over each other read as a surface. The hue is the same verdict the
+/// wavelengths sliding over each other read as a front. The hue is the same verdict the
 /// figure in the heading carries: green, blue, amber, red on the four thresholds.
 private struct WaveFill: View {
     let level: Double
@@ -1282,9 +1283,9 @@ private struct WaveFill: View {
 
     var body: some View {
         ZStack {
-            Wave(phase: phase, level: level, amplitude: 3.5, wavelength: 165)
+            Wave(phase: phase, level: level, amplitude: 4, wavelength: 52)
                 .fill(tint.opacity(0.42))
-            Wave(phase: phase * 1.6 + 0.35, level: level, amplitude: 2.5, wavelength: 98)
+            Wave(phase: phase * 1.7 + 0.35, level: level, amplitude: 2.5, wavelength: 31)
                 .fill(tint.opacity(0.26))
         }
         .onAppear {
@@ -1295,12 +1296,14 @@ private struct WaveFill: View {
     }
 }
 
-/// A sine surface with everything under it filled. `phase` is in wavelengths, and it is
-/// subtracted so the crests travel left to right rather than back towards the origin.
+/// A gauge that fills from the left, its leading edge a sine rippling down the block's height.
+/// `phase` is in wavelengths; the whole front also drifts with it, so the fill reads as
+/// something flowing in from the left rather than a level rising.
 private struct Wave: Shape {
     var phase: CGFloat
     var level: Double
     var amplitude: CGFloat
+    /// Along the block's *height*, since that is the axis the ripple runs down.
     var wavelength: CGFloat
 
     var animatableData: CGFloat {
@@ -1309,16 +1312,16 @@ private struct Wave: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let surface = rect.maxY - rect.height * CGFloat(min(1, max(0, level)))
+        let front = rect.minX + rect.width * CGFloat(min(1, max(0, level)))
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        var x = rect.minX
-        while x <= rect.maxX {
-            let angle = (x / wavelength - phase) * 2 * .pi
-            path.addLine(to: CGPoint(x: x, y: surface + sin(angle) * amplitude))
-            x += 2
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        var y = rect.maxY
+        while y >= rect.minY {
+            let angle = (y / wavelength - phase) * 2 * .pi
+            path.addLine(to: CGPoint(x: front + sin(angle) * amplitude, y: y))
+            y -= 2
         }
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.closeSubpath()
         return path
     }
