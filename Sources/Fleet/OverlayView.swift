@@ -47,7 +47,14 @@ struct OverlayView: View {
     /// it before they dismiss, and a piece of `@State` is not something they can reach. It is
     /// also rebuilt-proof — every row is rebuilt each tick, so a fold kept on a row would snap
     /// shut once a second.
-    private var openGroup: String? { controller.openGroup }
+    /// The open directory — but only while it still *is* a directory. A group that drops to
+    /// one session becomes a plain card, and an `openGroup` still naming it matched nothing:
+    /// every card in the block went to opacity 0 and the block sat blank until Esc.
+    private var openGroup: String? {
+        guard let name = controller.openGroup,
+              cells.contains(where: { $0.id == "dir:" + name }) else { return nil }
+        return name
+    }
 
     /// What the grid takes off that height — its own padding, top and bottom.
     private static let gridPadding: CGFloat = 38
@@ -431,8 +438,8 @@ struct OverlayView: View {
         var order: [String] = []
         var byDir: [String: [Session]] = [:]
         for session in sessions {
-            if byDir[session.dirName] == nil { order.append(session.dirName) }
-            byDir[session.dirName, default: []].append(session)
+            if byDir[session.groupName] == nil { order.append(session.groupName) }
+            byDir[session.groupName, default: []].append(session)
         }
         return order.map { ($0, byDir[$0] ?? []) }
     }
@@ -494,6 +501,7 @@ struct OverlayView: View {
                         case let .group(name, sessions):
                         GroupTile(name: name, sessions: sessions,
                                   open: openGroup == name,
+                                  commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   scrolling: !eagerLayout,
                                   onToggle: {
@@ -812,6 +820,10 @@ struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
+    /// ⌘ down turns the `main` badge into a button: a plain click anywhere on this card
+    /// unfolds it, which is free and reversible, and going to the terminal is neither — it
+    /// closes the panel and can change Space with nothing to click to come back.
+    let commandHeld: Bool
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
@@ -832,6 +844,7 @@ struct GroupTile: View {
     private static let nameLine: CGFloat = 37
 
     @State private var hovering = false
+    @State private var badgeHover = false
 
     var body: some View {
         GeometryReader { box in
@@ -840,10 +853,27 @@ struct GroupTile: View {
                     sessions(in: box.size)
                 } else {
                     // One dot per session, so a folded directory still says what is waiting
-                    // inside it — the glance the grid was for, kept through the fold.
+                    // inside it — the glance the grid was for, kept through the fold. At the
+                    // top since the foot of the card now carries the main session's line.
                     dots
+                        .padding(.horizontal, 12)
+                        .padding(.top, 13)
+                    if let main {
+                        // What the folded card is otherwise missing: a group of nine says how
+                        // many and in what state, and nothing about what any of them is doing.
+                        // The main is the one that knows, so it speaks for the group.
+                        VStack(alignment: .leading, spacing: 5) {
+                            mainBadge
+                            Text(main.topic)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         .padding([.horizontal, .bottom], 12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    }
                 }
 
                 // One text, two places. Not a folded name and an open one: those are two views,
@@ -941,6 +971,31 @@ struct GroupTile: View {
         stride(from: 0, to: sessions.count, by: 2).map {
             Array(sessions[$0 ..< min($0 + 2, sessions.count)])
         }
+    }
+
+    /// The session driving this group, if one of them is.
+    private var main: Session? { sessions.first(where: \.isMain) }
+
+    /// The one word that says which of these cards is the control post — and, with ⌘ down, the
+    /// only thing on a folded card that opens a terminal. It lights up under the pointer so
+    /// the gesture is announced before it is spent, which the card itself never does: nothing
+    /// in this app changes the cursor.
+    @ViewBuilder private var mainBadge: some View {
+        let armed = commandHeld && badgeHover
+        Text("MAIN")
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(armed ? Color.black : Self.tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(armed ? Self.tint : Self.tint.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(Self.tint.opacity(commandHeld ? 0.9 : 0),
+                                            lineWidth: 1))
+            .contentShape(Capsule())
+            .onHover { badgeHover = $0 }
+            .onTapGesture { if commandHeld, let main { onActivate(main) } }
+            .animation(.easeOut(duration: 0.15), value: armed)
+            .animation(.easeOut(duration: 0.15), value: commandHeld)
     }
 
     private var dots: some View {
@@ -1235,8 +1290,12 @@ struct MemoryStrip: View {
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
+        // "One line at rest" was written and never enforced: with nothing to put under the
+        // heading the frame still ran 13pt past it, so an idle machine got a bar of empty
+        // amber with a chip sitting on it. A block with nothing to say is the heading alone.
+        let hasBody = tight || share(reaper.footprint.swap) >= Self.swapWorthSaying
 
-        VStack(alignment: .leading, spacing: 6) {
+        let stack = VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("MEMORY")
                     .font(.system(size: 11, weight: .semibold))
@@ -1267,8 +1326,9 @@ struct MemoryStrip: View {
                     // sentence and the names it explains start on the same line, and the two
                     // points it used to sit at put it eight left of everything under it.
                     .padding(.horizontal, HogPill.inset)
-                    .padding(.top, 1)
-                    .padding(.bottom, 2)
+                    // Clear of the heading by about what the frame leaves under the last pill:
+                    // at one point off the chip the sentence read as part of the title.
+                    .padding(.top, 5)
             }
 
             // Two of the four. Cached is never a problem and compressed is a leading
@@ -1312,11 +1372,19 @@ struct MemoryStrip: View {
             }
             .padding(.horizontal, 2)
         }
+
         // The one block whose colour is a reading rather than a name. The RAM used to say it
         // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
         // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
-        // same four thresholds the figure was tinted by.
-        .blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.48), radius: 8)
+        // same four thresholds the figure was tinted by. The figure in the heading is tinted
+        // the same way, so an unframed block still carries the verdict.
+        return Group {
+            if hasBody {
+                stack.blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.48), radius: 8)
+            } else {
+                stack
+            }
+        }
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself

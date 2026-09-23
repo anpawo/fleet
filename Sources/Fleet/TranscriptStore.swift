@@ -274,6 +274,11 @@ private struct ParseState {
 
     var title: String?
     var lastPrompt: String?
+    /// The last brief a peer session sent this one. For a session driven by message rather
+    /// than by prompt, Claude Code writes no `ai-title` and no `last-prompt`, so this is the
+    /// only thing in the file that says what the session is *for* — and unlike the last thing
+    /// Claude said, it does not change every turn.
+    var briefing: String?
     var permissionMode: String?
     var pending: [String: PendingTool] = [:]    // tool_use id -> the call
     var issued = 0
@@ -399,6 +404,8 @@ private struct ParseState {
                    let call = Self.tagged("tool-use-id", in: raw) {
                     agentEndedAt[call] = lastMessageAt ?? Date()
                 }
+                if type == "user", let raw = block["text"] as? String,
+                   let brief = Self.briefed(in: raw) { briefing = brief }
                 // Not the entries Claude Code writes on your behalf — a pasted image's
                 // "[Image: source: <path>]", hook output, a skill's instructions. None of it is
                 // anything you said, and a cache path is all a tile row had room for.
@@ -496,6 +503,7 @@ private struct ParseState {
             title: title,
             lastPrompt: lastPrompt,
             lastPromptAt: lastPromptAt,
+            briefing: briefing,
             permissionMode: permissionMode,
             hasPendingTool: !pending.isEmpty,
             pendingToolNames: inFlight.map(\.name),
@@ -533,6 +541,19 @@ private struct ParseState {
         else { return nil }
         return String(text[open.upperBound ..< close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The body of a `<cross-session-message …>`, whose opening tag carries attributes and so
+    /// never matches `tagged`.
+    static func briefed(in text: String) -> String? {
+        guard let open = text.range(of: "<cross-session-message"),
+              let gt = text.range(of: ">", range: open.upperBound ..< text.endIndex),
+              let close = text.range(of: "</cross-session-message>",
+                                     range: gt.upperBound ..< text.endIndex)
+        else { return nil }
+        let body = String(text[gt.upperBound ..< close.lowerBound])
+            .plainProse.collapsedWhitespace
+        return body.isEmpty ? nil : body
     }
 
     /// The task id in "…background with ID: b1x2y3z" or "…background (ID: b1x2y3z)".

@@ -251,6 +251,8 @@ struct TranscriptInfo {
     var title: String?        // Claude Code's own "ai-title"
     var lastPrompt: String?
     var lastPromptAt: Date?
+    /// The last brief a peer session sent — see `ParseState.briefing`.
+    var briefing: String?
     var permissionMode: String?
     var hasPendingTool: Bool
     /// Tools in flight, most recently started first.
@@ -335,6 +337,16 @@ struct Session: Identifiable {
         return n.isEmpty ? cwd : n
     }
 
+    /// Where the card is filed in the grid. `~/self/main-s14` is the control post *for* s14,
+    /// not a project beside it, so it is filed with s14 — display only: `dirName` keeps the
+    /// real directory, which is what notifications, the Reels router and `--scan` name.
+    var groupName: String {
+        dirName.hasPrefix("main-") ? String(dirName.dropFirst("main-".count)) : dirName
+    }
+
+    /// Whether this session is the one driving the others in its group.
+    var isMain: Bool { dirName.hasPrefix("main-") }
+
     /// Working directory with $HOME collapsed to "~".
     var displayPath: String {
         let home = NSHomeDirectory()
@@ -347,8 +359,10 @@ struct Session: Identifiable {
         if let t = transcript?.title, !t.isEmpty { return t }
         if let p = transcript?.lastPrompt, !p.isEmpty { return p }
         // No title and nothing you ever typed: a session another session drives by message
-        // rather than by prompt. What it last said is then the only thing that names it — and
-        // a card reading "New session" beside seven others says nothing at all.
+        // rather than by prompt. The brief it was given names it; what it last *said* changes
+        // every turn, so a card named that way is renamed every few minutes while the job it
+        // is doing has not moved.
+        if let brief = transcript?.briefing, !brief.isEmpty { return Session.headline(brief) }
         if let said = transcript?.preview.last(where: { $0.kind == .assistant })?.text,
            !said.isEmpty { return Session.headline(said) }
         return "New session"
