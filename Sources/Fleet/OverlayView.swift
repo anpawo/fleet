@@ -875,6 +875,21 @@ struct GroupTile: View {
                             y: open ? spacing
                                      : 12 + SessionTile.height * 0.30 - Self.nameLine / 2)
 
+                // What ⌘ is aiming at, said rather than shaded: a lit rectangle only says
+                // "this card", which the pointer already said. Over the name, because the
+                // name is what it is about to be replaced by.
+                Text("MAIN")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(3.2)
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                    .opacity(armed ? 0.5 : 0)
+                    // Centred on the name, not on the card: a long name is clamped to the
+                    // left edge, and a label centred on the card would then sit off it.
+                    .offset(x: max(12, (box.size.width - nameWidth) / 2)
+                               + (nameWidth - Self.mainWidth) / 2,
+                            y: 12 + SessionTile.height * 0.30 - Self.nameLine / 2 - 18)
+
                 HStack(spacing: 7) {
                     count
                     chevron
@@ -893,10 +908,6 @@ struct GroupTile: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                // ⌘ over the card arms the whole rectangle, because the whole rectangle is
-                // what acts: lighting one row said the click would land on that row.
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.white.opacity(!open && hovering && commandHeld ? 0.10 : 0)))
                 .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
         )
@@ -911,6 +922,19 @@ struct GroupTile: View {
         .animation(.easeOut(duration: 0.18), value: hovering)
         .onHover { hovering = $0 }
     }
+
+    /// ⌘ over a folded card, which is the chord that opens the group's main session rather
+    /// than the group. Only then: on an open card the chord does nothing.
+    private var armed: Bool { !open && hovering && commandHeld }
+
+    /// Measured the same way and for the same reason as `nameWidth`, and once for all cards
+    /// since the word never changes.
+    private static let mainWidth: CGFloat = {
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        // The tracking is not in the font, so it is not in the measurement either: four gaps
+        // of 3.2 between five letters.
+        return ("MAIN" as NSString).size(withAttributes: [.font: font]).width + 3.2 * 4
+    }()
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
     /// centring it on the folded card needs a number before anything is drawn.
