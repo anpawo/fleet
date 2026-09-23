@@ -302,7 +302,7 @@ final class AppController: ObservableObject {
     private func showPanel() {
         isPanelVisible = true
         hub.advanceSpotlight()
-        // Two GETs, and only if the last pair is over a minute old. The columns draw whatever
+        // Three GETs, and only if the last batch is over ten minutes old. The columns draw whatever
         // they already have in the meantime rather than waiting on the network.
         hub.refreshIfStale()
         schedule(Config.visibleRefresh)
