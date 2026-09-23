@@ -131,6 +131,12 @@ enum Epitech {
         /// their codes still stand. Dropping all six on one timestamp is how a dead outlook
         /// token would go quiet for six hours.
         func broken(scanRefuted: Bool = false) -> [String] {
+            // A morning with no wifi fails every reader at once, and the bar then carries three
+            // red clauses that all say the same thing and none of which is something to do.
+            // Two readers down with no token code between them is the network, not the keys.
+            if offline(scanRefuted: scanRefuted) {
+                return ["no network at the last run — nothing was read"]
+            }
             var out: [String] = []
             if let scan, scan != 0, !scanRefuted {
                 out.append(scan == 3 ? "epitech session expired — log in again"
@@ -147,6 +153,16 @@ enum Epitech {
             if let discord, discord != 0 { out.append("discord token expired — announcements not read") }
             if let calendar, calendar != 0 { out.append("agenda not writable — deadlines were not filed") }
             return out
+        }
+
+        /// A 3 is the one code either reader uses for a refusal that survives the network being
+        /// back — `scan.mjs` for a dead my.epitech session, `outlook.mjs` for a refresh Microsoft
+        /// turned down. One of those on the run means the keys really are the problem, however
+        /// many other readers went down beside it.
+        private func offline(scanRefuted: Bool) -> Bool {
+            if scan == 3 || outlook == 3 { return false }
+            let codes = [scanRefuted ? 0 : scan, outlook, edsquare, discord, calendar]
+            return codes.filter { ($0 ?? 0) != 0 }.count >= 2
         }
     }
 

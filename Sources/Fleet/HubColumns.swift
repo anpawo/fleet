@@ -1477,6 +1477,13 @@ struct AlertsBlock: View {
         return out
     }
 
+    /// The lines the network being down writes on its own. Nothing on them is a thing to go
+    /// and do — the wifi comes back and they go away — so the bar says them without pulsing.
+    private static let networkLines = [
+        "firestore offline — mail and todos are from the last fetch",
+        "no network at the last run — nothing was read",
+    ]
+
     /// What the bar says when it has been switched on by hand: one of the failures that can
     /// really happen, rather than the word "test" — the point of looking at it is to see what
     /// the day it fires will look like, and a bar reading "test" shows the frame and none of
@@ -1491,6 +1498,7 @@ struct AlertsBlock: View {
         "edsquare unreachable — no timetable this run",
         "discord token expired — announcements not read",
         "agenda not writable — deadlines were not filed",
+        "no network at the last run — nothing was read",
         "scan 2d old — nothing here is current",
         "1 run failed",
     ].randomElement() ?? "1 run failed"
@@ -1538,8 +1546,9 @@ struct AlertsBlock: View {
         .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.58),
                     spread: 26, bottomSpread: 8, radius: 8)
         // The whole bar, frame and sentence included — not the name alone as on a block that
-        // is merely stale. This one has nothing else to say, so the pulse is all of it.
-        .blinking(true)
+        // is merely stale. This one has nothing else to say, so the pulse is all of it —
+        // except when the wifi is what is wrong, which is not something to be called over.
+        .blinking(!Self.alerts(hub).allSatisfy(Self.networkLines.contains))
     }
 }
 

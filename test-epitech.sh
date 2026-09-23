@@ -43,6 +43,12 @@ case_is "edsquare en panne se dit" \
   "edsquare unreachable"
 case_is "sans verdicts, l'état parle tout seul" \
   "$NOW" false '' "session expired"
+case_is "deux lecteurs à terre sans jeton mort, c'est le wifi" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":4,"edsquare":6,"outlook":1,"discord":null,"calendar":1}' \
+  "no network at the last run"
+case_is "un jeton mort parle même si tout est tombé avec lui" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":6,"outlook":3,"discord":null,"calendar":1}' \
+  "outlook token expired"
 case_is "un run sain ne dit rien" \
   "$NOW" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
   "none"
