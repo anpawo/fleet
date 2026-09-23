@@ -712,7 +712,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--launch"),
 // `--render <path.png>` draws the panel offscreen. Useful for checking layout without waiting
 // to go idle, and for generating the screenshot in the README.
 if let i = CommandLine.arguments.firstIndex(of: "--render"),
-   i + 1 < CommandLine.arguments.count {
+   i + 1 < CommandLine.arguments.count,
+   !CommandLine.arguments[i + 1].hasPrefix("--") {
     let outPath = CommandLine.arguments[i + 1]
     MainActor.assumeIsolated {
         _ = NSApplication.shared
@@ -837,6 +838,25 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
    i + 1 < CommandLine.arguments.count,
    let seconds = TimeInterval(CommandLine.arguments[i + 1]) {
     Settings.idleThreshold = max(5, seconds)
+}
+
+// Every flag above either acted and exited or set something. One that matched nothing falls
+// through to here, and the fall-through is the whole agent starting up: a typo in a flag used
+// to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
+let knownFlags: Set<String> = [
+    "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
+    "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks",
+    "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel-digest", "--reels",
+    "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
+    "--selftest", "--settings", "--shadows", "--show", "--size", "--spaces-bar", "--start",
+    "--todos", "--uninstall-hooks", "--windows",
+]
+if let unknown = CommandLine.arguments.dropFirst().first(where: {
+    $0.hasPrefix("--") && !knownFlags.contains($0)
+}) {
+    FileHandle.standardError.write(Data("fleet: unknown option \(unknown)\n".utf8))
+    FileHandle.standardError.write(Data(("usage: fleet [" + knownFlags.sorted().joined(separator: "] [") + "]\n").utf8))
+    exit(2)
 }
 
 // If a resident copy is already running — normally the LaunchAgent one — this process exists

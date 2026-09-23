@@ -713,6 +713,9 @@ final class HubStore: ObservableObject {
         // of its own and must not be held up by — or lost with — the one the columns make.
         epitech = Epitech.read()
         NSLog("Fleet: epitech — \(epitech?.modules.count ?? -1) modules")
+        // Stamped on the attempt, not on the success: a fetch that fails must still close the
+        // freshness window, or an outage turns every panel opening into three more reads.
+        fetchedAt = Date()
         do {
             // All three at once: they are independent collections and the panel is already
             // on screen waiting for them.
@@ -752,7 +755,6 @@ final class HubStore: ObservableObject {
             file(all.filter { $0.state == Todo.Pile.done })
             failure = nil
             loaded = true
-            fetchedAt = Date()
             // Its own fetch, after the two the panel is waiting on: a verdict is not what the
             // panel opened for, and a check it may start must not hold the columns up.
             Task { await syncReels() }

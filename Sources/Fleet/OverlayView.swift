@@ -1384,6 +1384,15 @@ extension Color {
                      blue: Double(rgb.blueComponent) * keep)
     }
 
+    /// The same hue pulled towards white. A label in the tint over a block already filled with
+    /// that tint sits at 2.5:1; mixing it with white keeps the hue and clears 4.5:1.
+    func lightened(_ amount: Double) -> Color {
+        let rgb = NSColor(self).usingColorSpace(.sRGB) ?? .white
+        let mix = min(1, max(0, amount))
+        return Color(red: Double(rgb.redComponent) * (1 - mix) + mix,
+                     green: Double(rgb.greenComponent) * (1 - mix) + mix,
+                     blue: Double(rgb.blueComponent) * (1 - mix) + mix)
+    }
 }
 
 extension View {

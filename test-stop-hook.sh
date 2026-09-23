@@ -22,8 +22,16 @@ machine() {
 }
 
 run() {
-    printf '{"session_id":"%s","hook_event_name":"%s","transcript_path":"/tmp/t.jsonl"}' \
-        "$SID" "$1" | HOME="$FAKE" sh "$HOOK" "$2"
+    printf '{"session_id":"%s","hook_event_name":"%s","transcript_path":"/tmp/t.jsonl","message":"%s"}' \
+        "$SID" "$1" "${3:-}" | HOME="$FAKE" sh "$HOOK" "$2"
+}
+
+# $1 name, $2 the state the hook should have left on disk. Reads the file the panel reads, not
+# the hook's stdout: the colour of a session comes from there and nowhere else.
+wrote() {
+    got=$(sed -n 's/.*"state":"\([^"]*\)".*/\1/p' "$FAKE/.claude/fleet/state/$SID.json")
+    if [ "$got" = "$2" ]; then printf '  ok    %s\n' "$1"
+    else printf '  FAIL  %s — wanted state %s, got %s\n' "$1" "$2" "$got"; fail=1; fi
 }
 
 check() {
@@ -45,6 +53,14 @@ check "the same press, already honoured"                  quiet "$(run PreToolUs
 
 rm -f "$FAKE/.claude/fleet/state/$SID.stopped"
 check "Notification is not a stopping point"              quiet "$(run Notification awaiting)"
+
+# The other decision worth replaying: Claude Code fires the same event for "I need your
+# permission" and for "you have been idle a while", and they mean opposite things. Only the
+# text tells them apart, so the panel's blue and its green both hang off this match.
+run Notification awaiting "Claude needs your permission to use Bash" >/dev/null
+wrote "a permission prompt leaves the session waiting"    awaiting
+run Notification awaiting "Claude is waiting for your input" >/dev/null
+wrote "an idle nudge leaves the session ready"            ready
 
 machine true 400
 check "a press older than its window"                     quiet "$(run PreToolUse running)"

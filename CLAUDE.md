@@ -10,6 +10,14 @@ Donc : après **chaque** changement, lancer `./install.sh`. Il reconstruit, réi
 `launchctl kickstart -k`, ce qui termine l'app et la redémarre. Un `swift build` qui compile
 n'est pas une livraison.
 
+## Vérifier à l'écran sans ouvrir de fenêtre
+
+`.build/release/Fleet --render <png> [--cmd] [--size WxH]` dessine le panneau hors écran.
+**Jamais `.build/debug/`** : `install.sh` construit en release, le binaire debug date de la
+dernière fois que quelqu'un a tapé `swift build` et rend l'ancienne interface — vu le 23-09-2026,
+une capture qui montrait un panneau d'avant le changement. Le PNG sort en 2× : `--size 2000x1300`
+donne 4000×2600, à recadrer avec `sips -c <hauteur> <largeur> --cropOffset <y> <x>`.
+
 ## The interface is in English
 
 Every word Fleet puts on screen — labels, headings, badges, category names, empty-state lines,

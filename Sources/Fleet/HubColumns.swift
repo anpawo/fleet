@@ -49,7 +49,14 @@ struct MailColumn: View {
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: .infinity, alignment: .top)
             } else {
-                VStack(spacing: 8) { rows }
+                // Same bound as the scroll, without the scroll. `maxHeight: .infinity` does not
+                // shrink a stack already taller than its slot, so the height has to be read and
+                // imposed: a list longer than its block drew straight over the one below.
+                GeometryReader { slot in
+                    VStack(spacing: 8) { rows }
+                        .frame(width: slot.size.width, height: slot.size.height, alignment: .top)
+                        .clipped()
+                }
             }
         }
     }
@@ -139,6 +146,8 @@ struct CronColumn: View {
                                       max(40, limit - Self.chrome)), alignment: .top)
             } else {
                 VStack(spacing: 6) { rows(all) }
+                    .frame(maxHeight: max(40, limit - Self.chrome), alignment: .top)
+                    .clipped()
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
@@ -197,7 +206,7 @@ struct CronColumn: View {
                     Text(family.uppercased())
                         .font(.system(size: 9, weight: .semibold))
                         .tracking(1.1)
-                        .foregroundStyle(Self.tint.opacity(0.75))
+                        .foregroundStyle(Self.tint.lightened(0.65))
                         .frame(maxWidth: .infinity)
                     grid(members, family: family)
                 }
@@ -363,7 +372,13 @@ struct TodoColumn: View {
                 // past that scroll.
                 .frame(maxHeight: .infinity, alignment: .top)
             } else {
-                VStack(spacing: 8) { rows }
+                // The slot's height, imposed — see MailColumn. The clip is pushed out by the
+                // glow room so a lifted card's shadow still lands outside it.
+                GeometryReader { slot in
+                    VStack(spacing: 8) { rows }
+                        .frame(width: slot.size.width, height: slot.size.height, alignment: .top)
+                        .clipShape(Rectangle().inset(by: -Self.glowRoom))
+                }
             }
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
@@ -1225,7 +1240,11 @@ struct EpitechColumn: View {
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: .infinity, alignment: .top)
             } else {
-                VStack(spacing: 8) { rows }
+                GeometryReader { slot in
+                    VStack(spacing: 8) { rows }
+                        .frame(width: slot.size.width, height: slot.size.height, alignment: .top)
+                        .clipped()
+                }
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
