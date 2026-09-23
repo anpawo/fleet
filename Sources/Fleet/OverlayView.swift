@@ -1411,6 +1411,10 @@ struct MemoryStrip: View {
             // indicator; neither is something you act on. What is worth a glance is how full
             // the RAM is and whether the machine has started paying disk latency for it —
             // and the amber state below, which is the kernel's own verdict, covers the rest.
+            //
+            // Left out rather than left empty: a row of no height still takes the stack's 6pt
+            // of spacing, which is six points of water under the words and none over them.
+            if hasBody {
             WeightedRow(weights: [2, 1], spacing: 4) {
                 if tight {
                     // Under pressure the pills are the processes holding the memory, which is
@@ -1447,6 +1451,7 @@ struct MemoryStrip: View {
                 }
             }
             .padding(.horizontal, 2)
+            }
         }
 
         // The one block that is a reading rather than a list, so the only one drawn as a
