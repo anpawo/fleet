@@ -1463,9 +1463,11 @@ struct MemoryStrip: View {
                     .overlay { WaveFill(level: share(reaper.footprint.used), tint: ramTint) }
                     .clipShape(corner)
                     .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
-                    // The same geometry every other block's frame has: its top edge through
-                    // the middle of the heading line, and its sides past the content.
-                    .padding(.top, 7)
+                    // Not the other blocks' geometry: their frame's top edge runs through the
+                    // middle of the heading line, which would cut this one's wave in half. The
+                    // pane goes over the heading instead, and the chips keep their dark ground
+                    // so the words stay readable on top of the water.
+                    .padding(.top, -8)
                     .padding(.horizontal, -13)
                     .padding(.bottom, -13)
             }
