@@ -1363,6 +1363,10 @@ struct MemoryStrip: View {
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
     private static let swapWorthSaying = 0.10
 
+    /// How solid the two chips' near-black is. Not 1: they float in the wave, and the water
+    /// running behind the words is what says they are in it.
+    private static let chipGround = 0.55
+
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
@@ -1377,7 +1381,7 @@ struct MemoryStrip: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3.2)
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
-                    .titleGround()
+                    .titleGround(Self.chipGround)
                 Spacer(minLength: 3)
                 // The whole readout, where every other block puts its count. A heading over a
                 // single line of figures is a heading over nothing: the block is one line at
@@ -1388,7 +1392,7 @@ struct MemoryStrip: View {
                     + Text(percentLabel).foregroundColor(ramTint)
                     + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .titleGround()
+                    .titleGround(Self.chipGround)
             }
             .padding(.horizontal, 2)
 
@@ -1474,6 +1478,10 @@ struct MemoryStrip: View {
                     // reaches as far down into the gap as every other one does.
                     .padding(-13)
             }
+            // Measured on an offscreen render: the pane's top edge sat 13pt above the fleet
+            // block's, because it reaches past its content where every other block's frame
+            // starts *inside* the heading line. The block drops by exactly that.
+            .padding(.top, 13)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -1602,16 +1610,19 @@ extension View {
     /// Grey and half there, whatever the block: the colour is the block's own background now,
     /// and a chip in that same colour laid on top of it was a second statement of it. What a
     /// chip has to do is break the outline and stay readable, which a wash and an edge do.
-    func titleGround() -> some View {
+    /// `ground` thins the near-black behind the words. Opaque everywhere but the memory block,
+    /// whose chips sit *in* the water rather than on the line above it: there a solid chip is a
+    /// hole punched in the wave, and letting some of it through is the point.
+    func titleGround(_ ground: Double = 1) -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                 // Opaque first, wash second. The block's own colour starts at this line, and a
                 // translucent chip let it through — the name sat on a coloured smear instead of
                 // on the panel. The near-black is the one every card on the panel is drawn on.
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(ground))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.white.opacity(0.12)))
+                    .fill(.white.opacity(0.12 * ground)))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
             .padding(.horizontal, -7)
