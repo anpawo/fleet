@@ -1397,13 +1397,11 @@ struct MemoryStrip: View {
         // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
         // same four thresholds the figure was tinted by. The figure in the heading is tinted
         // the same way, so an unframed block still carries the verdict.
-        return Group {
-            if hasBody {
-                stack.blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.48), radius: 8)
-            } else {
-                stack
-            }
-        }
+        // With nothing under the heading the frame still ran 13pt past it, so an idle machine
+        // got a bar of empty colour with a chip sitting on it. The frame stays — it is the
+        // block — and stops at the heading's own bottom instead.
+        return stack.blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.48),
+                                bottomSpread: hasBody ? nil : 0, radius: 8)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
