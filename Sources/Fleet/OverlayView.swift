@@ -1283,15 +1283,20 @@ private struct WaveFill: View {
     let running: Bool
     @State private var shift: CGFloat = 0
 
-    private static let slow: CGFloat = 52
-    private static let fast: CGFloat = 31
+    // Both shorter than the block is tall, and that is the whole point: at 52pt on a 44pt
+    // block no crest and no trough are ever on screen together, so what slides past is a
+    // whole edge — two slabs, one going up and one going down, instead of water.
+    private static let slow: CGFloat = 20
+    private static let fast: CGFloat = 13
 
     var body: some View {
         GeometryReader { box in
             let h = box.size.height
             ZStack(alignment: .top) {
+                // The same way, at the two speeds their wavelengths give them: one body of
+                // water with a faster ripple over it. Opposite ways read as two things.
                 band(Self.slow, amplitude: 4, opacity: 0.42, height: h, at: shift)
-                band(Self.fast, amplitude: 2.5, opacity: 0.26, height: h, at: 1 - shift)
+                band(Self.fast, amplitude: 2.5, opacity: 0.26, height: h, at: shift)
             }
             .frame(width: box.size.width, height: h, alignment: .top)
             .clipped()
