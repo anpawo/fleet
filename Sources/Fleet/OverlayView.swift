@@ -928,7 +928,7 @@ struct GroupTile: View {
         }
         // Clear of the name, which is drawn over this rather than above it — and clear by a
         // margin: a row of cards starting five points under the title read as its underline.
-        .padding(.top, spacing + Self.nameLine + 18)
+        .padding(.top, spacing + Self.nameLine + 34)
         .padding([.horizontal, .bottom], spacing)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
@@ -957,10 +957,14 @@ struct GroupTile: View {
             .background(Self.tint.opacity(0.14), in: Capsule())
     }
 
+    /// One arrow, turned — not a right-pointing one swapped for a down-pointing one. Two
+    /// symbols are two views: SwiftUI fades the first out and the second in, so the arrow
+    /// blinked where the card it belongs to glides.
     private var chevron: some View {
-        Image(systemName: open ? "chevron.down" : "chevron.right")
+        Image(systemName: "chevron.right")
             .font(.system(size: 10, weight: .bold))
             .foregroundStyle(Self.tint.opacity(0.8))
+            .rotationEffect(.degrees(open ? 90 : 0))
     }
 }
 
