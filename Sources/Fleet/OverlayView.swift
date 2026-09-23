@@ -1270,6 +1270,60 @@ struct SessionTile: View {
     }
 }
 
+/// The memory block's ground: the RAM in use as a tank filling, not a bar growing.
+///
+/// Two sines rather than one — a single curve reads as a drawn line, two at different
+/// wavelengths sliding over each other read as a surface. The hue is the same verdict the
+/// figure in the heading carries: green, blue, amber, red on the four thresholds.
+private struct WaveFill: View {
+    let level: Double
+    let tint: Color
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Wave(phase: phase, level: level, amplitude: 3.5, wavelength: 165)
+                .fill(tint.opacity(0.42))
+            Wave(phase: phase * 1.6 + 0.35, level: level, amplitude: 2.5, wavelength: 98)
+                .fill(tint.opacity(0.26))
+        }
+        .onAppear {
+            // One whole wavelength per cycle, so the loop closes on itself and nothing jumps
+            // at the seam. Offscreen renders never fire this and draw the wave at rest.
+            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) { phase = 1 }
+        }
+    }
+}
+
+/// A sine surface with everything under it filled. `phase` is in wavelengths, and it is
+/// subtracted so the crests travel left to right rather than back towards the origin.
+private struct Wave: Shape {
+    var phase: CGFloat
+    var level: Double
+    var amplitude: CGFloat
+    var wavelength: CGFloat
+
+    var animatableData: CGFloat {
+        get { phase }
+        set { phase = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let surface = rect.maxY - rect.height * CGFloat(min(1, max(0, level)))
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        var x = rect.minX
+        while x <= rect.maxX {
+            let angle = (x / wavelength - phase) * 2 * .pi
+            path.addLine(to: CGPoint(x: x, y: surface + sin(angle) * amplitude))
+            x += 2
+        }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// `InsettableShape` has an associated type, so a shape cannot simply be returned from an
 /// `if`. This is the usual type-erasing wrapper, kept minimal: `strokeBorder` is the only
 /// reason the insettable half is needed at all.
@@ -1392,17 +1446,26 @@ struct MemoryStrip: View {
             .padding(.horizontal, 2)
         }
 
-        // The one block whose colour is a reading rather than a name. The RAM used to say it
-        // on a capsule of its own, inside a block painted a fixed orange — two grounds, one
-        // fact. The capsule is gone and the block carries it: green, blue, amber, red, on the
-        // same four thresholds the figure was tinted by. The figure in the heading is tinted
-        // the same way, so an unframed block still carries the verdict.
-        // Nothing to say is still a block, and a frame clamped to the heading was a sliver —
-        // it also left a gap to the mail that no other pair in the column had, since every
-        // other block's frame reaches past its content. A body of its own instead.
+        // The one block that is a reading rather than a list, so the only one drawn as a
+        // gauge: a dark pane you can see the desktop through, filled to the share of the RAM
+        // in use by a wave running left to right. Every other block is a flat tint because
+        // every other block is a count of things; this one is a level.
         return stack
             .padding(.bottom, hasBody ? 0 : 10)
-            .blockFrame(ramTint.opacity(0.85), fill: ramTint.darkened(0.48), radius: 8)
+            .frame(minHeight: 44, alignment: .top)
+            .background(alignment: .top) {
+                let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                corner
+                    .fill(.black.opacity(0.32))
+                    .overlay { WaveFill(level: share(reaper.footprint.used), tint: ramTint) }
+                    .clipShape(corner)
+                    .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
+                    // The same geometry every other block's frame has: its top edge through
+                    // the middle of the heading line, and its sides past the content.
+                    .padding(.top, 7)
+                    .padding(.horizontal, -13)
+                    .padding(.bottom, -13)
+            }
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
