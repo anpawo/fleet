@@ -214,8 +214,11 @@ struct CronColumn: View {
                     grid(members, family: family)
                 }
                 .padding(7)
-                .background(Self.tint.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                // `background(_:in:)` plutôt que `background` + `clipShape` : le clip coupait
+                // la bordure droite des cartes de la colonne de droite, qui dépassent la boîte
+                // d'un cheveu. Le fond est arrondi, les cartes ne sont plus rognées.
+                .background(Self.tint.opacity(0.07),
+                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .strokeBorder(Self.tint.opacity(0.28), lineWidth: 1)
@@ -303,7 +306,9 @@ struct CronCard: View {
                     .foregroundStyle(link == nil ? .white.opacity(0.32) : Self.tint.opacity(0.9))
                     .underline(link != nil)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    // Assez bas pour que deux cartes tiennent côte à côte dans une boîte de
+                    // famille, qui est plus étroite que le bloc de 14 points.
+                    .minimumScaleFactor(0.55)
                     .onTapGesture { if commandHeld, let link { NSWorkspace.shared.open(link) } }
             }
             if expanded {
