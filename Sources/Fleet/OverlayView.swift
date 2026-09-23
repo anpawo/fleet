@@ -1454,8 +1454,6 @@ struct MemoryStrip: View {
         // in use by a wave running left to right. Every other block is a flat tint because
         // every other block is a count of things; this one is a level.
         return stack
-            .padding(.bottom, hasBody ? 0 : 10)
-            .frame(minHeight: 44, alignment: .top)
             .background(alignment: .top) {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 corner
@@ -1466,10 +1464,10 @@ struct MemoryStrip: View {
                     // Not the other blocks' geometry: their frame's top edge runs through the
                     // middle of the heading line, which would cut this one's wave in half. The
                     // pane goes over the heading instead, and the chips keep their dark ground
-                    // so the words stay readable on top of the water.
-                    .padding(.top, -8)
-                    .padding(.horizontal, -13)
-                    .padding(.bottom, -13)
+                    // so the words stay readable on top of the water. The same spread on all
+                    // four sides — so the words sit centred in the water, and the block still
+                    // reaches as far down into the gap as every other one does.
+                    .padding(-13)
             }
     }
 
