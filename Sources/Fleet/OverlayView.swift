@@ -210,8 +210,7 @@ struct OverlayView: View {
                 // vary reads as groups nobody meant to make.
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
-                                commandHeld: controller.commandHeld,
-                                animating: controller.isPanelVisible)
+                                commandHeld: controller.commandHeld)
                     // What is left of the column once the memory has had its line, three
                     // sevenths to the mail and four to the school. The school lost its mail lines — it
                     // is twelve module cards now, and they are shorter — while the mail is the
@@ -1271,84 +1270,6 @@ struct SessionTile: View {
     }
 }
 
-/// The memory block's ground: the RAM in use filling the block from the left, its edge a
-/// rippling front rather than a straight cut.
-///
-/// Two sines rather than one — a single curve reads as a drawn line, two at different
-/// wavelengths sliding over each other read as a front. The hue is the same verdict the
-/// figure in the heading carries: green, blue, amber, red on the four thresholds.
-private struct WaveFill: View {
-    let level: Double
-    let tint: Color
-    let running: Bool
-    @State private var shift: CGFloat = 0
-
-    // Both shorter than the block is tall, and that is the whole point: at 52pt on a 44pt
-    // block no crest and no trough are ever on screen together, so what slides past is a
-    // whole edge — two slabs, one going up and one going down, instead of water.
-    private static let slow: CGFloat = 20
-    private static let fast: CGFloat = 13
-
-    var body: some View {
-        GeometryReader { box in
-            let h = box.size.height
-            ZStack(alignment: .top) {
-                // The same way, at the two speeds their wavelengths give them: one body of
-                // water with a faster ripple over it. Opposite ways read as two things.
-                band(Self.slow, amplitude: 4, opacity: 0.42, height: h, at: shift)
-                band(Self.fast, amplitude: 2.5, opacity: 0.26, height: h, at: shift)
-            }
-            .frame(width: box.size.width, height: h, alignment: .top)
-            .clipped()
-            // Named here rather than taken from the ambient transaction, so that the pane
-            // above can refuse every animation it inherits without taking this one with it.
-            .animation(running ? .linear(duration: 5).repeatForever(autoreverses: false) : nil,
-                       value: shift)
-        }
-        .onAppear { drive() }
-        .onChange(of: running) { drive() }
-    }
-
-    /// One wave, drawn a wavelength taller than the block and slid by that wavelength over a
-    /// cycle. The path itself never changes: animating a `Shape`'s `animatableData` rebuilt it
-    /// and re-ran SwiftUI's layout on every frame, where an offset is a transform.
-    private func band(_ wavelength: CGFloat, amplitude: CGFloat, opacity: Double,
-                      height: CGFloat, at t: CGFloat) -> some View {
-        Wave(level: level, amplitude: amplitude, wavelength: wavelength)
-            .fill(tint.opacity(opacity))
-            .frame(height: height + wavelength)
-            .offset(y: -wavelength + t * wavelength)
-    }
-
-    /// A whole wavelength per cycle, so the loop closes on itself: rest and end of cycle draw
-    /// the same water, and the snap back to rest when the panel goes away is invisible.
-    private func drive() { shift = running ? 1 : 0 }
-}
-
-/// A gauge that fills from the left, its leading edge a sine rippling down the block's height.
-/// `phase` is in wavelengths; the whole front also drifts with it, so the fill reads as
-/// something flowing in from the left rather than a level rising.
-private struct Wave: Shape {
-    var level: Double
-    var amplitude: CGFloat
-    /// Along the block's *height*, since that is the axis the ripple runs down. The travel is
-    /// an offset on the view, not a phase in here — see `WaveFill.band`.
-    var wavelength: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let front = rect.minX + rect.width * CGFloat(min(1, max(0, level)))
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        var y = rect.maxY
-        while y >= rect.minY {
-            path.addLine(to: CGPoint(x: front + sin(y / wavelength * 2 * .pi) * amplitude, y: y))
-            y -= 2
-        }
-        path.closeSubpath()
-        return path
-    }
-}
 
 /// `InsettableShape` has an associated type, so a shape cannot simply be returned from an
 /// `if`. This is the usual type-erasing wrapper, kept minimal: `strokeBorder` is the only
@@ -1380,11 +1301,6 @@ struct MemoryStrip: View {
     /// controls: each carries a ✕, and a list of kill buttons is not something to leave lying
     /// on a panel you glance at.
     let commandHeld: Bool
-    /// Whether the panel is actually on screen. A `repeatForever` animation does not stop when
-    /// the window is ordered out: measured at 34% of a core, all of it in SwiftUI's layout
-    /// engine, on a Mac nobody was looking at.
-    let animating: Bool
-
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
@@ -1488,16 +1404,20 @@ struct MemoryStrip: View {
         }
 
         // The one block that is a reading rather than a list, so the only one drawn as a
-        // gauge: a dark pane you can see the desktop through, filled to the share of the RAM
-        // in use by a wave running left to right. Every other block is a flat tint because
-        // every other block is a count of things; this one is a level.
+        // gauge: a dark pane you can see the desktop through, filled from the left to the
+        // share of the RAM in use. Every other block is a flat tint because every other block
+        // is a count of things; this one is a level.
         return stack
             .background(alignment: .top) {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 corner
                     .fill(.black.opacity(0.32))
-                    .overlay { WaveFill(level: share(reaper.footprint.used), tint: ramTint,
-                                        running: animating) }
+                    .overlay(alignment: .leading) {
+                        GeometryReader { box in
+                            ramTint.opacity(0.42)
+                                .frame(width: box.size.width * share(reaper.footprint.used))
+                        }
+                    }
                     .clipShape(corner)
                     .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
                     // The pane inherits whatever animation is in flight when the panel opens,
