@@ -438,8 +438,8 @@ struct OverlayView: View {
         var order: [String] = []
         var byDir: [String: [Session]] = [:]
         for session in sessions {
-            if byDir[session.groupName] == nil { order.append(session.groupName) }
-            byDir[session.groupName, default: []].append(session)
+            if byDir[session.dirName] == nil { order.append(session.dirName) }
+            byDir[session.dirName, default: []].append(session)
         }
         return order.map { ($0, byDir[$0] ?? []) }
     }
@@ -844,7 +844,6 @@ struct GroupTile: View {
     private static let nameLine: CGFloat = 37
 
     @State private var hovering = false
-    @State private var badgeHover = false
 
     var body: some View {
         GeometryReader { box in
@@ -852,28 +851,13 @@ struct GroupTile: View {
                 if open {
                     sessions(in: box.size)
                 } else {
-                    // One dot per session, so a folded directory still says what is waiting
-                    // inside it — the glance the grid was for, kept through the fold. At the
-                    // top since the foot of the card now carries the main session's line.
-                    dots
+                    // A dot per session said how many and in what state and nothing about what
+                    // any of them was doing — on a group of ten, the one thing worth the space.
+                    // A line each says it, and the ones past the fourth are scrolled to.
+                    folded
                         .padding(.horizontal, 12)
-                        .padding(.top, 13)
-                    if let main {
-                        // What the folded card is otherwise missing: a group of nine says how
-                        // many and in what state, and nothing about what any of them is doing.
-                        // The main is the one that knows, so it speaks for the group.
-                        VStack(alignment: .leading, spacing: 5) {
-                            mainBadge
-                            Text(main.topic)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.white.opacity(0.7))
-                                .lineLimit(3)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding([.horizontal, .bottom], 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    }
+                        .padding(.top, 12 + SessionTile.height * 0.30 + Self.nameLine / 2 + 6)
+                        .padding(.bottom, 12)
                 }
 
                 // One text, two places. Not a folded name and an open one: those are two views,
@@ -902,7 +886,7 @@ struct GroupTile: View {
             // and clicking it again folds it back up rather than falling through to the
             // panel's dismiss layer. The cards inside are buttons and take their own clicks.
             .contentShape(Rectangle())
-            .onTapGesture(perform: onToggle)
+            .onTapGesture(perform: tapped)
         }
         // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -973,37 +957,70 @@ struct GroupTile: View {
         }
     }
 
-    /// The session driving this group, if one of them is.
-    private var main: Session? { sessions.first(where: \.isMain) }
-
-    /// The one word that says which of these cards is the control post — and, with ⌘ down, the
-    /// only thing on a folded card that opens a terminal. It lights up under the pointer so
-    /// the gesture is announced before it is spent, which the card itself never does: nothing
-    /// in this app changes the cursor.
-    @ViewBuilder private var mainBadge: some View {
-        let armed = commandHeld && badgeHover
-        Text("MAIN")
-            .font(.system(size: 9, weight: .bold))
-            .tracking(0.8)
-            .foregroundStyle(armed ? Color.black : Self.tint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(armed ? Self.tint : Self.tint.opacity(0.14), in: Capsule())
-            .overlay(Capsule().strokeBorder(Self.tint.opacity(commandHeld ? 0.9 : 0),
-                                            lineWidth: 1))
-            .contentShape(Capsule())
-            .onHover { badgeHover = $0 }
-            .onTapGesture { if commandHeld, let main { onActivate(main) } }
-            .animation(.easeOut(duration: 0.15), value: armed)
-            .animation(.easeOut(duration: 0.15), value: commandHeld)
+    /// A plain click unfolds, which costs nothing and undoes itself. ⌘ goes straight to the
+    /// head's terminal, which closes the panel and can change Space with nothing to click to
+    /// come back — so it is asked for, never stumbled into.
+    private func tapped() {
+        if commandHeld, let head { onActivate(head) } else { onToggle() }
     }
 
-    private var dots: some View {
-        HStack(spacing: 6) {
+    /// The group's head: the session the others name as the sender of their brief. A peer
+    /// message carries `from="uds:/tmp/cc-socks/<pid>.sock"`, and that pid is one of these
+    /// cards — so the panel works out who is driving from its own data rather than from a
+    /// directory named `main-*`.
+    ///
+    /// Nothing to go on — nobody in this group has briefed anybody — and it is the one that
+    /// started first. Not the most recent: a head that moves every time a card wakes up is a
+    /// head you cannot aim at.
+    var head: Session? {
+        var votes: [pid_t: Int] = [:]
+        for session in sessions {
+            if let by = session.transcript?.briefedBy { votes[by, default: 0] += 1 }
+        }
+        if let winner = votes.max(by: { $0.value < $1.value })?.key,
+           let session = sessions.first(where: { $0.id == winner }) { return session }
+        return sessions.min { $0.proc.startedAt < $1.proc.startedAt }
+    }
+
+    /// One line per session, under the name: its state as a dot, then what it is doing. The
+    /// head is the brighter line, and the one ⌘ is aimed at — which is why it lights up while
+    /// ⌘ is down rather than only once the click has been spent.
+    @ViewBuilder private var folded: some View {
+        let rows = VStack(alignment: .leading, spacing: 3) {
             ForEach(sessions) { session in
-                Circle().fill(session.state.tint).frame(width: 9, height: 9)
+                let isHead = session.id == head?.id
+                HStack(spacing: 7) {
+                    Circle().fill(session.state.tint).frame(width: 7, height: 7)
+                    Text(session.topic)
+                        .font(.system(size: 10.5, weight: isHead ? .semibold : .regular))
+                        .foregroundStyle(.white.opacity(isHead ? 0.92 : 0.6))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(isHead && commandHeld ? Self.tint.opacity(hovering ? 0.30 : 0.14)
+                                                  : .clear,
+                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeOut(duration: 0.15), value: commandHeld)
+
+        Group {
+            if scrolling {
+                ScrollView(.vertical) { rows }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+            } else {
+                rows
+            }
+        }
+        // The rows are the card too: a click on one of them means the same as a click beside it.
+        .contentShape(Rectangle())
+        .onTapGesture(perform: tapped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var count: some View {

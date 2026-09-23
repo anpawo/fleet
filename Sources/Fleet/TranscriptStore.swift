@@ -279,6 +279,8 @@ private struct ParseState {
     /// only thing in the file that says what the session is *for* — and unlike the last thing
     /// Claude said, it does not change every turn.
     var briefing: String?
+    /// The pid in that brief's `from="uds:/tmp/cc-socks/<pid>.sock"` — which session sent it.
+    var briefedBy: pid_t?
     var permissionMode: String?
     var pending: [String: PendingTool] = [:]    // tool_use id -> the call
     var issued = 0
@@ -405,7 +407,10 @@ private struct ParseState {
                     agentEndedAt[call] = lastMessageAt ?? Date()
                 }
                 if type == "user", let raw = block["text"] as? String,
-                   let brief = Self.briefed(in: raw) { briefing = brief }
+                   let brief = Self.briefed(in: raw) {
+                    briefing = brief.text
+                    briefedBy = brief.from
+                }
                 // Not the entries Claude Code writes on your behalf — a pasted image's
                 // "[Image: source: <path>]", hook output, a skill's instructions. None of it is
                 // anything you said, and a cache path is all a tile row had room for.
@@ -504,6 +509,7 @@ private struct ParseState {
             lastPrompt: lastPrompt,
             lastPromptAt: lastPromptAt,
             briefing: briefing,
+            briefedBy: briefedBy,
             permissionMode: permissionMode,
             hasPendingTool: !pending.isEmpty,
             pendingToolNames: inFlight.map(\.name),
@@ -545,15 +551,28 @@ private struct ParseState {
 
     /// The body of a `<cross-session-message …>`, whose opening tag carries attributes and so
     /// never matches `tagged`.
-    static func briefed(in text: String) -> String? {
+    static func briefed(in text: String) -> (text: String, from: pid_t?)? {
         guard let open = text.range(of: "<cross-session-message"),
               let gt = text.range(of: ">", range: open.upperBound ..< text.endIndex),
               let close = text.range(of: "</cross-session-message>",
                                      range: gt.upperBound ..< text.endIndex)
         else { return nil }
-        let body = String(text[gt.upperBound ..< close.lowerBound])
-            .plainProse.collapsedWhitespace
-        return body.isEmpty ? nil : body
+        // A brief often opens on a bare path or an id on its own line. Collapsing first made
+        // that the card's name, which says where and never what — so the first line with a
+        // space in it wins, and the naked ones above it are skipped.
+        let prose = String(text[gt.upperBound ..< close.lowerBound]).plainProse
+        let body = (prose.split(whereSeparator: \.isNewline).first { $0.contains(" ") }
+            .map(String.init) ?? prose).collapsedWhitespace
+        guard !body.isEmpty else { return nil }
+        // from="uds:/tmp/cc-socks/46206.sock" — the socket is named after the sender's pid, and
+        // that is the only thing in the message that ties it to a card on the panel.
+        let header = String(text[open.upperBound ..< gt.lowerBound])
+        var from: pid_t?
+        if let sock = header.range(of: "cc-socks/") {
+            let digits = header[sock.upperBound...].prefix { $0.isNumber }
+            from = pid_t(digits)
+        }
+        return (body, from)
     }
 
     /// The task id in "…background with ID: b1x2y3z" or "…background (ID: b1x2y3z)".

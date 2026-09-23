@@ -253,6 +253,8 @@ struct TranscriptInfo {
     var lastPromptAt: Date?
     /// The last brief a peer session sent — see `ParseState.briefing`.
     var briefing: String?
+    /// The pid of the session that sent it. A group's head is the member the others name here.
+    var briefedBy: pid_t?
     var permissionMode: String?
     var hasPendingTool: Bool
     /// Tools in flight, most recently started first.
@@ -336,16 +338,6 @@ struct Session: Identifiable {
         let n = (cwd as NSString).lastPathComponent
         return n.isEmpty ? cwd : n
     }
-
-    /// Where the card is filed in the grid. `~/self/main-s14` is the control post *for* s14,
-    /// not a project beside it, so it is filed with s14 — display only: `dirName` keeps the
-    /// real directory, which is what notifications, the Reels router and `--scan` name.
-    var groupName: String {
-        dirName.hasPrefix("main-") ? String(dirName.dropFirst("main-".count)) : dirName
-    }
-
-    /// Whether this session is the one driving the others in its group.
-    var isMain: Bool { dirName.hasPrefix("main-") }
 
     /// Working directory with $HOME collapsed to "~".
     var displayPath: String {
