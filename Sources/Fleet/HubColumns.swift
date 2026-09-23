@@ -59,6 +59,9 @@ struct MailColumn: View {
                 }
             }
         }
+        // ⌘ enfoncée alors que le pointeur est déjà sur une carte : le changement vient du
+        // contrôleur, pas du survol, donc il lui faut son animation à lui.
+        .animation(TodoColumn.unroll, value: commandHeld)
     }
 
     @ViewBuilder private var rows: some View {
@@ -68,8 +71,12 @@ struct MailColumn: View {
         ForEach(hub.mail.prefix(Self.maxItems)) { mail in
             MailCard(hub: hub, mail: mail,
                      expanded: commandHeld && hovered == mail.id,
+                     // Une transaction, comme dans CronColumn : sans elle la carte se déplie
+                     // d'un coup et les mails du dessous sautent à leur nouvelle place.
                      onHover: { inside in
-                         if inside { hovered = mail.id } else if hovered == mail.id { hovered = nil }
+                         withAnimation(TodoColumn.unroll) {
+                             if inside { hovered = mail.id } else if hovered == mail.id { hovered = nil }
+                         }
                      })
         }
     }
