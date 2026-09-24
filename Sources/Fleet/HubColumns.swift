@@ -1462,10 +1462,14 @@ struct ModuleCard: View {
 /// line of furniture you stop seeing, and the day it turns red you would not notice it had.
 struct AlertsBlock: View {
     @ObservedObject var hub: HubStore
+    /// The routines, only to name the ones whose last run ended badly.
+    var crons: [Launchd.Job] = []
 
-    /// One line of 11pt with room either side of it. Stated rather than worked out, because
-    /// what hangs the bar over the fleet has to know it from outside — see `board`.
-    static let height: CGFloat = 30
+    /// One chip with the block's own 13pt of room over and under it — the memory bar's
+    /// geometry, which is the other one-line block on the panel. Stated rather than worked
+    /// out, because what hangs the bar over the fleet has to know it from outside — see
+    /// `board`.
+    static let height: CGFloat = 45
 
     /// How solid the two chips' near-black is, as on MEMORY — they float in the bar's own
     /// colour, and letting a little of it through is what says they are in it.
@@ -1475,7 +1479,7 @@ struct AlertsBlock: View {
     /// panel at all.
     ///
     /// Forced on to be looked at: `defaults write com.mr.fleet runsAlarm -bool true`.
-    static func alerts(_ hub: HubStore) -> [String] {
+    static func alerts(_ hub: HubStore, crons: [Launchd.Job] = []) -> [String] {
         var out: [String] = []
         // Firestore first: when it is down, every figure on the panel is from the last fetch
         // that worked, and nothing else here can be trusted to be current either.
@@ -1492,10 +1496,15 @@ struct AlertsBlock: View {
         // about, which is how a bar stops being read at all.
         if let failure = hub.epitech?.failure,
            failure != Epitech.Sources.outage || !(hub.loaded && hub.failure == nil) {
-            out.append(failure)
+            // One entry per reader — `Epitech` hands them over joined, and the bar draws a
+            // chip per name.
+            out.append(contentsOf: failure.components(separatedBy: ", "))
         }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
+        // A routine whose last run ended badly, by name. The ROUTINE block says so too, in a
+        // red card among fifteen; this is the line you read without looking for it.
+        for job in crons where job.failing { out.append(job.name) }
         if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }
@@ -1529,38 +1538,54 @@ struct AlertsBlock: View {
     /// fleet's heading right under it. A sentence pinned to the left would sit under the name
     /// and read as part of it.
     var body: some View {
-        HStack(spacing: 8) {
-            Text("ALERT")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(3.2)
-                .foregroundStyle(SessionState.running.tint)
-                .titleGround(Self.chipGround)
-            Spacer(minLength: 3)
-            // Built like MEMORY: the name on its chip at the left of the bar, what it has to
-            // say on a chip of its own at the right. Centred, the sentence read as a caption
-            // under the name rather than as the block's own figure.
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                Text(Self.alerts(hub).joined(separator: "  \u{00B7}  "))
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
+        ZStack {
+            HStack(spacing: 8) {
+                Text("ALERT")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(3.2)
+                    .foregroundStyle(SessionState.running.tint)
+                    .titleGround(Self.chipGround)
+                Spacer(minLength: 3)
             }
-            .foregroundStyle(SessionState.running.tint)
-            .titleGround(Self.chipGround)
+
+            // Centred on the bar rather than pushed to one end, like the fleet's own state
+            // legend right under it: the names are what the bar is for, and the word ALERT
+            // is only what it is called.
+            // 22 rather than 8: a chip's ground hangs 7pt past its words either side, so the
+            // gap you see is the spacing less fourteen.
+            HStack(spacing: 22) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(SessionState.running.tint)
+                    .padding(.trailing, -6)
+                // One chip per thing that is broken, not one sentence listing them: the names
+                // are a list, and a list on this panel is drawn as pills everywhere else.
+                ForEach(Self.alerts(hub, crons: crons), id: \.self) { name in
+                    Text(name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(SessionState.running.tint)
+                        .lineLimit(1)
+                        .titleGround(Self.chipGround)
+                }
+            }
         }
-        // The chips' ground hangs 7pt past their words — four leaves them where MEMORY's sit.
+        // Four, not two: the chips' ground hangs 7pt past their words, so two would leave them
+        // 7pt off the pane where the top and bottom leave 9 — the memory bar's own numbers.
         .padding(.horizontal, 4)
-        .frame(height: Self.height)
-        // The fleet's own spread, so the two frames end on the same line either side. Tinted
-        // rather than coloured, like every other block: at the tint's own strength the bar was
-        // a red slab across the panel, and the words on it were the quietest thing on it.
-        .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.58),
-                    spread: 26, bottomSpread: 8, radius: 8)
+        // Built like MEMORY rather than like a block with a heading: the pane goes *over* the
+        // line the chips sit on, the same 13pt on all four sides, so the names are centred in
+        // it and the bar is exactly as tall as the memory bar beside it.
+        .background {
+            let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            corner
+                .fill(SessionState.running.tint.darkened(0.58).opacity(0.78))
+                .overlay(corner.strokeBorder(SessionState.running.tint, lineWidth: 1))
+                .padding(-13)
+        }
         // The whole bar, frame and names included — not the name alone as on a block that is
         // merely stale. This one has nothing else to say, so the pulse is all of it — except
         // when the wifi is what is wrong, which is not something to be called over.
-        .blinking(!Self.alerts(hub).allSatisfy(Self.networkLines.contains))
+        .blinking(!Self.alerts(hub, crons: crons).allSatisfy(Self.networkLines.contains))
     }
 }
 

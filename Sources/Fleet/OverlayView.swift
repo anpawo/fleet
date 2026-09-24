@@ -258,12 +258,16 @@ struct OverlayView: View {
                 // grid that moves is a grid you have to find again. The panel leaves 126pt of
                 // room above this line, so the bar has somewhere to hang.
                 .overlay(alignment: .top) {
-                    if !AlertsBlock.alerts(controller.hub).isEmpty {
-                        AlertsBlock(hub: controller.hub)
+                    if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.crons).isEmpty {
+                        AlertsBlock(hub: controller.hub, crons: controller.launchd.crons)
                             // As wide as the block it hangs over, and clear of its heading
                             // line: its own height, and the gap a block leaves under one.
                             .frame(width: centerWidth)
-                            .offset(y: -(AlertsBlock.height + 34))
+                            // Measured on an offscreen render: what the panel leaves over the
+                            // fleet, less the bar, half over and half under it. The bar is a
+                            // thing hung in that gap, and hung off centre it read as having
+                            // slid up under the menu bar.
+                            .offset(y: -(AlertsBlock.height + 26))
                     }
                 }
             if controller.hub.isConfigured {
@@ -993,6 +997,16 @@ struct GroupTile: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Every gap the cards keep is inside the scroll view, not around it: a scroll view
+        // clips its own content, so room left outside it is room the hover glow never reaches
+        // — the top-left card lost its glow on the two sides facing the border. The distances
+        // are the ones that were here before; what moved is where the clip falls, which is now
+        // the group's own border.
+        //
+        // Clear of the name, which is drawn over this rather than above it — and clear by a
+        // margin: a row of cards starting five points under the title read as its underline.
+        .padding(.top, spacing + Self.nameLine + 34)
+        .padding([.horizontal, .bottom], spacing + Self.aura)
 
         Group {
             if scrolling {
@@ -1003,10 +1017,6 @@ struct GroupTile: View {
                 rows
             }
         }
-        // Clear of the name, which is drawn over this rather than above it — and clear by a
-        // margin: a row of cards starting five points under the title read as its underline.
-        .padding(.top, spacing + Self.nameLine + 34)
-        .padding([.horizontal, .bottom], spacing + Self.aura)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 
