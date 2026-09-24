@@ -132,32 +132,30 @@ enum Epitech {
         /// token would go quiet for six hours.
         /// Said once, read in two places: the bar drops this line — and only this one — as
         /// soon as the network is back, since the readers catch up by themselves.
-        static let outage = "no network at the last run — nothing was read"
+        static let outage = "no network"
 
+        /// The name of each reader that came back broken, and nothing else. The bar is read
+        /// sideways on the way past: what it is for is knowing which run to go and look at,
+        /// and a clause of explanation per reader is three of them across the panel.
+        ///
+        /// A reader whose credential is what died says `login`, because that one is a thing
+        /// to go and do rather than a run to look at.
         func broken(scanRefuted: Bool = false) -> [String] {
             // A morning with no wifi fails every reader at once, and the bar then carries three
-            // red clauses that all say the same thing and none of which is something to do.
-            // Two readers down with no token code between them is the network, not the keys.
+            // red names that all say the same thing and none of which is something to do.
             if offline(scanRefuted: scanRefuted) { return [Self.outage] }
             var out: [String] = []
             if let scan, scan != 0, !scanRefuted {
-                out.append(scan == 3 ? "epitech session expired — log in again"
-                                     : "epitech scan failed — my.epitech did not answer")
+                out.append(scan == 3 ? "epitech login" : "epitech scan")
             }
             // Only a 3 is a dead token — `outlook.mjs` exits 3 when Microsoft refuses the
-            // refresh, 4 on an IMAP error and 1 when the network is not there. Saying "token
-            // expired" to a morning with no wifi sends you off to log in for nothing.
-            if let outlook, outlook != 0 {
-                out.append(outlook == 3 ? "outlook token expired — no mail since the last run"
-                                        : "outlook unreachable — no mail since the last run")
-            }
-            if let edsquare, edsquare != 0 { out.append("edsquare unreachable — no timetable this run") }
+            // refresh, 4 on an IMAP error and 1 when the network is not there. Sending you off
+            // to log in for a morning with no wifi is the one mistake the name can make.
+            if let outlook, outlook != 0 { out.append(outlook == 3 ? "outlook login" : "outlook") }
+            if let edsquare, edsquare != 0 { out.append("edsquare") }
             // Same rule as outlook: 3 is the only code `discord.mjs` uses for a refused token.
-            if let discord, discord != 0 {
-                out.append(discord == 3 ? "discord token expired — announcements not read"
-                                        : "discord unreachable — announcements not read")
-            }
-            if let calendar, calendar != 0 { out.append("agenda not writable — deadlines were not filed") }
+            if let discord, discord != 0 { out.append(discord == 3 ? "discord login" : "discord") }
+            if let calendar, calendar != 0 { out.append("agenda") }
             return out
         }
 
@@ -248,14 +246,14 @@ enum Epitech {
         if let broken = sources?.broken(scanRefuted: scanRefuted), !broken.isEmpty {
             return broken.joined(separator: ", ")
         }
-        if state.sessionOk == false { return "epitech session expired — log in again" }
-        if let intra = state.intra, !intra.ok { return "intra cookie expired — no credits" }
-        if state.edsquare?.ok == false { return "edsquare unreachable — no timetable this run" }
+        if state.sessionOk == false { return "epitech login" }
+        if let intra = state.intra, !intra.ok { return "intra cookie" }
+        if state.edsquare?.ok == false { return "edsquare" }
         if let errors = state.errors, !errors.isEmpty { return errors[0] }
         // Fourteen hours, not six: the scan goes out at eight, two and eight, so the longest
         // honest silence is the twelve hours of a night. Six would have cried every morning.
         if Date().timeIntervalSince(readAt) > 14 * 3600 {
-            return "scan \(shortAge(since: readAt)) old — nothing here is current"
+            return "scan \(shortAge(since: readAt)) old"
         }
         return nil
     }

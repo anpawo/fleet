@@ -31,27 +31,27 @@ case_is "un rescan réparateur fait taire le scan" \
   "none"
 case_is "mais pas outlook, que personne n'a rejoué" \
   "$NOW" true '{"at":"'"$OLD"'","scan":5,"edsquare":0,"outlook":1,"discord":null,"calendar":0}' \
-  "outlook unreachable"
+  "outlook"
 case_is "un run cassé qui n'a pas été rejoué parle" \
   "$OLD" true '{"at":"'"$NOW"'","scan":5,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
-  "epitech scan failed"
+  "epitech scan"
 case_is "seul un 3 est un jeton mort" \
   "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":3,"discord":null,"calendar":0}' \
-  "outlook token expired"
+  "outlook login"
 case_is "edsquare en panne se dit" \
   "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":6,"outlook":0,"discord":null,"calendar":0}' \
-  "edsquare unreachable"
+  "edsquare"
 case_is "sans verdicts, l'état parle tout seul" \
-  "$NOW" false '' "session expired"
+  "$NOW" false '' "epitech login"
 case_is "deux lecteurs à terre sans jeton mort, c'est le wifi" \
   "$OLD" true '{"at":"'"$NOW"'","scan":4,"edsquare":6,"outlook":1,"discord":null,"calendar":1}' \
-  "no network at the last run"
+  "no network"
 case_is "un lecteur qui répond prouve que le réseau était là" \
   "$OLD" true '{"at":"'"$NOW"'","scan":5,"edsquare":6,"outlook":0,"discord":1,"calendar":0}' \
-  "epitech scan failed"
+  "epitech scan"
 case_is "un jeton mort parle même si tout est tombé avec lui" \
   "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":6,"outlook":3,"discord":null,"calendar":1}' \
-  "outlook token expired"
+  "outlook login"
 case_is "un run sain ne dit rien" \
   "$NOW" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
   "none"

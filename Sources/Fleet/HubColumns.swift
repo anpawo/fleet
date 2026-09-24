@@ -1467,6 +1467,10 @@ struct AlertsBlock: View {
     /// what hangs the bar over the fleet has to know it from outside — see `board`.
     static let height: CGFloat = 30
 
+    /// How solid the two chips' near-black is, as on MEMORY — they float in the bar's own
+    /// colour, and letting a little of it through is what says they are in it.
+    private static let chipGround = 0.55
+
     /// What is broken, each source in its own words — which is also whether the bar is on the
     /// panel at all.
     ///
@@ -1477,8 +1481,8 @@ struct AlertsBlock: View {
         // that worked, and nothing else here can be trusted to be current either.
         if let failure = hub.failure {
             switch failure {
-            case "offline": out.append("firestore offline — mail and todos are from the last fetch")
-            case "not saved": out.append("todo not saved — firestore refused the write")
+            case "offline": out.append("firestore")
+            case "not saved": out.append("todo not saved")
             default: out.append("firestore: \(failure)")
             }
         }
@@ -1498,10 +1502,7 @@ struct AlertsBlock: View {
 
     /// The lines the network being down writes on its own. Nothing on them is a thing to go
     /// and do — the wifi comes back and they go away — so the bar says them without pulsing.
-    private static let networkLines = [
-        "firestore offline — mail and todos are from the last fetch",
-        Epitech.Sources.outage,
-    ]
+    private static let networkLines = ["firestore", Epitech.Sources.outage]
 
     /// What the bar says when it has been switched on by hand: one of the failures that can
     /// really happen, rather than the word "test" — the point of looking at it is to see what
@@ -1511,14 +1512,14 @@ struct AlertsBlock: View {
     /// Drawn once, at launch: `alerts` is read on every tick, and a line that picks again each
     /// time would be a bar nobody can read.
     private static let demo = [
-        "epitech session expired — log in again",
-        "epitech scan failed — my.epitech did not answer",
-        "outlook token expired — no mail since the last run",
-        "edsquare unreachable — no timetable this run",
-        "discord token expired — announcements not read",
-        "agenda not writable — deadlines were not filed",
-        "no network at the last run — nothing was read",
-        "scan 2d old — nothing here is current",
+        "epitech login",
+        "epitech scan",
+        "outlook login",
+        "edsquare",
+        "discord",
+        "agenda",
+        Epitech.Sources.outage,
+        "scan 2d old",
         "1 run failed",
     ].randomElement() ?? "1 run failed"
 
@@ -1528,45 +1529,37 @@ struct AlertsBlock: View {
     /// fleet's heading right under it. A sentence pinned to the left would sit under the name
     /// and read as part of it.
     var body: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                Text("ALERT")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3.2)
-                    .foregroundStyle(SessionState.running.tint)
-                    .titleGround()
-                Spacer(minLength: 3)
-            }
-
-            HStack(spacing: 8) {
-                // The one mark on the panel that asks a question rather than reporting: what
-                // is behind it is a thing to go and look at, not a number to read.
-                Text("?")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(SessionState.running.tint)
-                    .frame(width: 16, height: 16)
-                    .background(SessionState.running.tint.opacity(0.18), in: Circle())
+        HStack(spacing: 8) {
+            Text("ALERT")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(3.2)
+                .foregroundStyle(SessionState.running.tint)
+                .titleGround(Self.chipGround)
+            Spacer(minLength: 3)
+            // Built like MEMORY: the name on its chip at the left of the bar, what it has to
+            // say on a chip of its own at the right. Centred, the sentence read as a caption
+            // under the name rather than as the block's own figure.
+            HStack(spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .bold))
                 Text(Self.alerts(hub).joined(separator: "  \u{00B7}  "))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(SessionState.running.tint)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(SessionState.running.tint.opacity(0.7), lineWidth: 1))
+            .foregroundStyle(SessionState.running.tint)
+            .titleGround(Self.chipGround)
         }
+        // The chips' ground hangs 7pt past their words — four leaves them where MEMORY's sit.
+        .padding(.horizontal, 4)
         .frame(height: Self.height)
         // The fleet's own spread, so the two frames end on the same line either side. Tinted
         // rather than coloured, like every other block: at the tint's own strength the bar was
         // a red slab across the panel, and the words on it were the quietest thing on it.
         .blockFrame(SessionState.running.tint, fill: SessionState.running.tint.darkened(0.58),
                     spread: 26, bottomSpread: 8, radius: 8)
-        // The whole bar, frame and sentence included — not the name alone as on a block that
-        // is merely stale. This one has nothing else to say, so the pulse is all of it —
-        // except when the wifi is what is wrong, which is not something to be called over.
+        // The whole bar, frame and names included — not the name alone as on a block that is
+        // merely stale. This one has nothing else to say, so the pulse is all of it — except
+        // when the wifi is what is wrong, which is not something to be called over.
         .blinking(!Self.alerts(hub).allSatisfy(Self.networkLines.contains))
     }
 }
