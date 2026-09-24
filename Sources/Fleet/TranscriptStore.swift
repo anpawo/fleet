@@ -443,14 +443,15 @@ private struct ParseState {
                    let done = pending.removeValue(forKey: id) {
                     lastCompleted = done.name
                 }
-                // `run_in_background`, or a command that outlived its timeout and was moved
-                // there: the result says so in its first words, either way. Prefix only — a
+                // `run_in_background`, a command that outlived its timeout and was moved
+                // there, or a workflow: the result says so in its first words, either way. Prefix only — a
                 // session reading this very file would otherwise match its own source.
                 if let id = block["tool_use_id"] as? String {
                     let texts = Self.resultText(block["content"])
                     if texts.contains(where: {
                         $0.hasPrefix("Command running in background with ID")
                             || $0.hasPrefix("Command did not complete within")
+                            || $0.hasPrefix("Workflow launched in background")
                     }) {
                         shellSpawnedAt[id] = lastMessageAt ?? Date()
                         if let task = texts.lazy.compactMap(Self.taskID(in:)).first {

@@ -62,6 +62,12 @@ wrote "a permission prompt leaves the session waiting"    awaiting
 run Notification awaiting "Claude is waiting for your input" >/dev/null
 wrote "an idle nudge leaves the session ready"            ready
 
+# A sub-agent's tool call carries its parent's session id. An async agent or a workflow still
+# working must not turn its idle parent back to running.
+printf '{"session_id":"%s","agent_id":"a62a2fb6","hook_event_name":"PreToolUse","transcript_path":"/tmp/t.jsonl"}' \
+    "$SID" | HOME="$FAKE" sh "$HOOK" running >/dev/null
+wrote "a sub-agent's tool call leaves its parent ready"   ready
+
 machine true 400
 check "a press older than its window"                     quiet "$(run PreToolUse running)"
 

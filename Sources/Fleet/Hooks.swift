@@ -200,7 +200,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 9
+    static let version = 10
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -374,7 +374,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 9
+    # fleet-hook-version: 10
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -519,6 +519,11 @@ enum Hooks {
             fi ;;
         esac
     fi
+
+    # A sub-agent's tool calls fire these hooks too, under the parent's session id — an async
+    # agent or a workflow would paint its idle parent red for as long as it runs. Only the
+    # parent's own events say what the parent is doing.
+    case "$input" in *'"agent_id"'*) exit 0 ;; esac
 
     # Which transcript this session is writing, and which process is writing it.
     #
