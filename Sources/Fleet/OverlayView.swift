@@ -1350,8 +1350,10 @@ struct SessionTile: View {
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a
-            // header short of room did to it.
-            .fixedSize()
+            // header short of room did to it. Nor wider than the card: a workflow's progress
+            // past the hour ran it past both edges, so it shrinks instead.
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
             .foregroundStyle(session.state.tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
