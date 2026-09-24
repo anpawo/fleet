@@ -122,6 +122,7 @@ enum Launchd {
         "fr.marius.revive": "mac.revive",
         "eu.epitech.scan": "epitech.scan",
         "fr.marius.my-setup-sync": "my-setup.sync",
+        "fr.marius.m-mount": "s14.M:-F:-mount",
         "io.scient.tailscaled-userspace": "s14.tailscale",
     ]
 
@@ -193,16 +194,15 @@ enum Launchd {
         "com.mr.fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
         "fr.marius.revive": "Starts back what should be running and is not.",
         "eu.epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
-        "fr.marius.agents-report": "Counts what the agents did, for the portfolio's live page.",
-        "fr.marius.finance-vol-binance_1h": "Keeps the volatility model fed with Binance hourly candles.",
-        "fr.marius.finance-vol-donnees_60m": "The same model on the 60-minute series.",
         "fr.marius.mac-guard": "Stops whatever is about to freeze the Mac.",
         "fr.marius.my-setup-sync": "Pushes this machine's settings and dotfiles to my-setup.",
+        "fr.marius.m-mount": "Keeps M: and F: from mo-recon mounted over sshfs, and remounts them when the tunnel drops.",
         "io.scient.outline": "Syncs the S14 Outline wiki.",
         "io.scient.tailscaled-userspace": "Tailscale in userspace — the way onto the S14 boxes.",
         "scient.hermes-map": "Serves the Hermes dependency map.",
         "scient.recon-journal": "Serves the S14 recon journal.",
         "scient.recon-web": "Serves the S14 recon browser.",
+        "scient.recon-mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a
