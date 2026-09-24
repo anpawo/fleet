@@ -450,10 +450,7 @@ struct OverlayView: View {
         var order: [String] = []
         var byDir: [String: [Session]] = [:]
         for session in sessions {
-            // Outside ~/self the directory is not a project and two sessions sharing one have
-            // nothing in common: "mr" held a bank API and a question about models. Each keeps
-            // its own card, under the name Claude was asked to give it.
-            let key = session.isSelf ? session.dirName : session.id.description
+            let key = session.groupKey
             if byDir[key] == nil { order.append(key) }
             byDir[key, default: []].append(session)
         }
@@ -1061,15 +1058,16 @@ struct GroupTile: View {
     /// Nothing to go on — nobody in this group has briefed anybody — and it is the one that
     /// started first. Not the most recent: a head that moves every time a card wakes up is a
     /// head you cannot aim at.
+    /// The group's head — the session the others name as the sender of their brief, elected
+    /// once by `AppController` and kept until somebody new joins the group. Worked out there
+    /// rather than here because the sessions themselves are told about it: a head's own status
+    /// line says so.
     var head: Session? {
-        var votes: [pid_t: Int] = [:]
-        for session in sessions {
-            if let by = session.transcript?.briefedBy { votes[by, default: 0] += 1 }
-        }
-        if let winner = votes.max(by: { $0.value < $1.value })?.key,
-           let session = sessions.first(where: { $0.id == winner }) { return session }
-        return sessions.min { $0.proc.startedAt < $1.proc.startedAt }
+        guard let pid = Session.heads[name] else { return nil }
+        return sessions.first { $0.id == pid }
     }
+
+
 
     /// One line per session, under the name: its state as a dot, then what it is doing. The
     /// head is the brighter line, and the one ⌘ is aimed at — which is why it lights up while

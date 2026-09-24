@@ -20,6 +20,7 @@ final class AppController: ObservableObject {
         didSet {
             statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
+            electHeads()
             nameOutsiders()
         }
     }
@@ -57,6 +58,67 @@ final class AppController: ObservableObject {
     /// when the session's subject changes. The session's own AI title is the input — Claude
     /// Code writes one on every session, so nothing here reads a transcript — and a session
     /// too new to have one waits for it.
+    /// Who heads each group, settled once and kept. The evidence moves under you — a brief
+    /// lands, a session ends, two pids tie and a dictionary hands back whichever it feels like
+    /// — so a head worked out afresh on every tick changes with nothing on screen to explain
+    /// it, and what ⌘ opens changes with it. A session joining the group is the one thing that
+    /// reopens the question: the newcomer may well be the one driving it.
+    private func electHeads() {
+        let groups = Dictionary(grouping: sessions, by: \.groupKey).filter { $0.value.count > 1 }
+        var heads: [String: pid_t] = [:]
+        for (key, members) in groups {
+            let pids = Set(members.map(\.id))
+            if let held = Self.elected[key], pids.contains(held.pid),
+               held.members.isSuperset(of: pids) {
+                heads[key] = held.pid
+                Self.elected[key] = (held.pid, held.members)
+                continue
+            }
+            guard let winner = Self.elect(members) else { continue }
+            heads[key] = winner.id
+            Self.elected[key] = (winner.id, pids)
+        }
+        Self.elected = Self.elected.filter { heads[$0.key] != nil }
+        guard heads != Session.heads else { return }
+        Session.heads = heads
+        publishHeads(heads)
+    }
+
+    private static var elected: [String: (pid: pid_t, members: Set<pid_t>)] = [:]
+
+    /// The head on the evidence alone: whoever briefed the most of the others, and the session
+    /// that started first when nobody briefed anybody. Ties go to the earliest too, so the same
+    /// group elects the same session however the dictionary is ordered that time.
+    private static func elect(_ members: [Session]) -> Session? {
+        var votes: [pid_t: Int] = [:]
+        for session in members {
+            if let by = session.transcript?.briefedBy, members.contains(where: { $0.id == by }) {
+                votes[by, default: 0] += 1
+            }
+        }
+        let candidates = members.filter { votes[$0.id] != nil }
+        if let winner = candidates.max(by: { a, b in
+            let (x, y) = (votes[a.id] ?? 0, votes[b.id] ?? 0)
+            return x == y ? a.proc.startedAt > b.proc.startedAt : x < y
+        }) { return winner }
+        return members.min { $0.proc.startedAt < $1.proc.startedAt }
+    }
+
+    /// The heads' session ids, one per line, where their own status line can find them —
+    /// beside the stop marks the hook already writes there. A session that heads a group says
+    /// so on its own screen, which is the only place you are looking when you are in it.
+    private func publishHeads(_ heads: [String: pid_t]) {
+        let ids = sessions.filter { heads[$0.groupKey] == $0.id }
+            .compactMap { $0.transcript?.path }
+            .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
+        let file = URL(fileURLWithPath: NSHomeDirectory())
+            .appending(path: ".claude/fleet/state/heads")
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? ids.joined(separator: "\n").appending("\n").write(to: file, atomically: true,
+                                                                encoding: .utf8)
+    }
+
     private func nameOutsiders() {
         // A project with one session in it needs no name for it: the tile says the project,
         // and the project is what that session is doing.

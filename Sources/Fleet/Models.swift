@@ -350,6 +350,18 @@ struct Session: Identifiable {
     /// parameter on all of them for a string only the tile reads.
     @MainActor static var labels: [String: String] = [:]
 
+    /// What puts two sessions on the same card. Outside `~/self` the directory is not a
+    /// project and two sessions sharing one have nothing in common — "mr" held a bank API and
+    /// a question about models — so each keeps a group of its own.
+    var groupKey: String { isSelf ? dirName : id.description }
+
+    /// Which session heads each group, by group key — elected by `AppController` and read by
+    /// the grid, for the same reason `labels` lives here.
+    @MainActor static var heads: [String: pid_t] = [:]
+
+    /// Whether this session is the one Fleet settled on as its group's main.
+    @MainActor var isHead: Bool { Session.heads[groupKey] == id }
+
     /// The name Claude was asked to give this session, if it has one.
     @MainActor var label: String? {
         guard let file = transcript?.path else { return nil }
