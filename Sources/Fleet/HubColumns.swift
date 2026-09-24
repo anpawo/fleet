@@ -332,12 +332,10 @@ struct CronCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(border.opacity(expanded ? 0.95 : 0.5), lineWidth: 1)
+                .strokeBorder(job.ok ? .white.opacity(expanded ? 0.2 : 0.07)
+                                     : SessionState.running.tint.opacity(expanded ? 0.95 : 0.5),
+                              lineWidth: 1)
         )
-    }
-
-    private var border: Color {
-        job.ok ? SessionState.ready.tint : SessionState.running.tint
     }
 
     /// Only a web address opens. A SOCKS port shows as itself, because a browser sent there
