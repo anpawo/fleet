@@ -152,7 +152,11 @@ enum Epitech {
                                         : "outlook unreachable — no mail since the last run")
             }
             if let edsquare, edsquare != 0 { out.append("edsquare unreachable — no timetable this run") }
-            if let discord, discord != 0 { out.append("discord token expired — announcements not read") }
+            // Same rule as outlook: 3 is the only code `discord.mjs` uses for a refused token.
+            if let discord, discord != 0 {
+                out.append(discord == 3 ? "discord token expired — announcements not read"
+                                        : "discord unreachable — announcements not read")
+            }
             if let calendar, calendar != 0 { out.append("agenda not writable — deadlines were not filed") }
             return out
         }
@@ -163,8 +167,13 @@ enum Epitech {
         /// many other readers went down beside it.
         private func offline(scanRefuted: Bool) -> Bool {
             if scan == 3 || outlook == 3 { return false }
-            let codes = [scanRefuted ? 0 : scan, outlook, edsquare, discord, calendar]
-            return codes.filter { ($0 ?? 0) != 0 }.count >= 2
+            let codes = [scanRefuted ? nil : scan, outlook, edsquare, discord, calendar]
+                .compactMap { $0 }
+            // One reader that came back with a 0 read the network, so the others fell over
+            // something of their own — on 24/09 at 8h my.epitech timed out and edsquare and
+            // discord went down with it while outlook was pulling forty mails.
+            if codes.contains(0) { return false }
+            return codes.filter { $0 != 0 }.count >= 2
         }
     }
 

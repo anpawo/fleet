@@ -65,8 +65,12 @@ final class AppController: ObservableObject {
         for session in sessions {
             let project = session.isSelf ? session.dirName : nil
             guard !session.isSelf || shared.contains(session.dirName) else { continue }
-            guard let file = session.transcript?.path,
-                  let title = session.transcript?.title, !title.isEmpty else { continue }
+            // A session a peer drives by message gets no `ai-title` from Claude Code, and its
+            // card would keep the whole brief for a name. The brief is what names it, and it
+            // changes only when the peer hands it a new job.
+            guard let file = session.transcript?.path else { continue }
+            let title = session.topic
+            guard title != "New session" else { continue }
             // The title the stored name was made from. Same title, same name; a new one is a
             // session that has moved on, and it earns a new ask.
             let made = labels[file]?.split(separator: Self.fromTitle, maxSplits: 1).last
