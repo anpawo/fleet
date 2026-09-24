@@ -1333,16 +1333,7 @@ struct SessionTile: View {
     /// working; this says who is actually doing the work.
     @ViewBuilder private var subagentPill: some View {
         let running = session.subagents.count
-        if let workflow = session.workflow {
-            Text(workflow.pill())
-                .font(.system(size: 9, weight: .bold))
-                .tracking(0.8)
-                .fixedSize()
-                .foregroundStyle(Self.subagentTint)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Self.subagentTint.opacity(0.14), in: Capsule())
-        } else if running > 0 {
+        if running > 0, session.workflow == nil {
             Text("SUB-AGENTS: \(running)")
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)
@@ -1354,7 +1345,8 @@ struct SessionTile: View {
     }
 
     private var statePill: some View {
-        Text(session.state.label)
+        // A workflow's progress rides in the pill that says the session is waiting on it.
+        Text(session.workflow.map { "\(session.state.label): \($0.pill())" } ?? session.state.label)
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a

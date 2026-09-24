@@ -266,7 +266,7 @@ struct WorkflowProgress {
     var since: Date
 
     /// "3/4 · 30/32 · 40m": the phase among the script's, that phase's agents done over
-    /// started, the time since launch. Short enough to sit beside the state pill; the card's
+    /// started, the time since launch. Short enough to ride in the state pill; the card's
     /// own name already says what the work is. The phase is the only count that means "how
     /// far along": the agents of the next phase do not exist until it starts.
     func pill(now: Date = Date()) -> String {
