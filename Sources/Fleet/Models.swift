@@ -265,15 +265,26 @@ struct WorkflowProgress {
     var started: Int
     var since: Date
 
-    /// "3/4 · 30/32 · 40m": the phase among the script's, that phase's agents done over
-    /// started, the time since launch. Short enough to ride in the state pill; the card's
-    /// own name already says what the work is. The phase is the only count that means "how
-    /// far along": the agents of the next phase do not exist until it starts.
+    /// "42% · 11m · 15m left": how far along, time since launch, time still to go.
+    ///
+    /// ponytail: every phase weighs the same and the rest is extrapolated from the pace so
+    /// far — a short last phase reads late, a long one early. Weigh phases by the agent time
+    /// they took in past runs of the same script if the estimate proves too rough.
     func pill(now: Date = Date()) -> String {
-        let minutes = max(0, Int(now.timeIntervalSince(since) / 60))
-        let time = minutes < 60 ? "\(minutes)m" : String(format: "%dh%02d", minutes / 60, minutes % 60)
-        let phasePart = phaseIndex.map { "\($0)/\(phaseCount)" }
-        return [phasePart, "\(done)/\(started)", time].compactMap { $0 }.joined(separator: " · ")
+        let elapsed = max(0, now.timeIntervalSince(since))
+        let inPhase = started > 0 ? Double(done) / Double(started) : 0
+        let fraction = phaseIndex.map { (Double($0 - 1) + inPhase) / Double(max(phaseCount, 1)) }
+            ?? inPhase
+        var parts = ["\(Int(fraction * 100))%", Self.duration(elapsed)]
+        if fraction > 0 {
+            parts.append(Self.duration(elapsed * (1 - fraction) / fraction) + " left")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        return minutes < 60 ? "\(minutes)m" : String(format: "%dh%02d", minutes / 60, minutes % 60)
     }
 }
 

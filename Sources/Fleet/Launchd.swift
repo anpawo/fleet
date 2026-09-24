@@ -122,7 +122,7 @@ enum Launchd {
         "fr.marius.revive": "mac.revive",
         "eu.epitech.scan": "epitech.scan",
         "fr.marius.my-setup-sync": "my-setup.sync",
-        "fr.marius.m-mount": "s14.M:-F:-mount",
+        "fr.marius.m-mount": "s14.M: and F: mount",
         "io.scient.tailscaled-userspace": "s14.tailscale",
     ]
 
