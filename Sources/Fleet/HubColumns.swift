@@ -369,6 +369,15 @@ struct TodoColumn: View {
     /// second while the panel is up — and state on a view that gets replaced does not survive.
     @State private var hovered: String?
 
+    /// Whether the pointer is anywhere on the block. ⌘ alone armed every row on the panel at
+    /// once, wherever the pointer was: a column of ✕s is a column of things you can lose, and
+    /// it has no business appearing over somebody reading the mail.
+    @State private var overBlock = false
+
+    /// The whole block's controls, on or off together: the pointer says which block, and ⌘
+    /// says which mode. Neither on its own is an intention.
+    private var armed: Bool { commandHeld && overBlock }
+
     /// The row being dragged, ⌘ held: which one it is, where it started, and which slot it
     /// would drop into if you let go now.
     @State private var dragging: Dragging?
@@ -430,10 +439,13 @@ struct TodoColumn: View {
         }
         // ⌘ going down or coming up is a state change from outside any of the handlers below,
         // so it needs its own animation or the whole column snaps.
-        .animation(Self.unroll, value: commandHeld)
+        .animation(Self.unroll, value: armed)
         // Letting ⌘ go mid-drag drops the row where it stands rather than leaving the column
         // holding a drag nothing can finish.
-        .onChange(of: commandHeld) { if !commandHeld { drop() } }
+        .onChange(of: armed) { if !armed { drop() } }
+        // The pointer leaving the block is the same thing as letting ⌘ go: whichever happens
+        // first, the controls go away and a drag in flight lands where it stands.
+        .onHover { overBlock = $0 }
     }
 
     /// How far a lifted card's shadow reaches past the column, and the room the scroll view
@@ -465,13 +477,13 @@ struct TodoColumn: View {
                     }
                     TodoCard(hub: hub,
                              todo: todo,
-                             commandHeld: commandHeld,
+                             commandHeld: armed,
                              // Hovering opens a row only while ⌘ is down. Without that guard the
                              // column would rearrange itself under a pointer merely crossing it
                              // on the way somewhere else. A row being dragged stays shut too:
                              // the grid the drag counts in only holds while every row is one
                              // line tall.
-                             expanded: commandHeld && hovered == todo.id && dragging == nil,
+                             expanded: armed && hovered == todo.id && dragging == nil,
                              lifted: dragging?.id == todo.id,
                              spotlit: hub.spotlightID == todo.id,
                              onFinish: { hub.markDone(todo) },
@@ -498,7 +510,7 @@ struct TodoColumn: View {
                         // `.gesture` rather than `.highPriorityGesture`: the ✕ is a subview and
                         // subview gestures win, so a click on it still finishes the todo while
                         // a drag from anywhere — the ✕ included — reorders.
-                        .gesture(reorder(todo), including: commandHeld ? .all : .subviews)
+                        .gesture(reorder(todo), including: armed ? .all : .subviews)
                 }
             }
     }
