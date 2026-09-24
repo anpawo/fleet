@@ -438,8 +438,12 @@ struct OverlayView: View {
         var order: [String] = []
         var byDir: [String: [Session]] = [:]
         for session in sessions {
-            if byDir[session.dirName] == nil { order.append(session.dirName) }
-            byDir[session.dirName, default: []].append(session)
+            // Outside ~/self the directory is not a project and two sessions sharing one have
+            // nothing in common: "mr" held a bank API and a question about models. Each keeps
+            // its own card, under the name Claude was asked to give it.
+            let key = session.isSelf ? session.dirName : session.id.description
+            if byDir[key] == nil { order.append(key) }
+            byDir[key, default: []].append(session)
         }
         return order.map { ($0, byDir[$0] ?? []) }
     }
@@ -1186,7 +1190,7 @@ struct SessionTile: View {
     private var name: some View {
         // A topic is a sentence where a directory is a word, so it is set smaller and given a
         // second line rather than shrunk to a third of the size to fit on one.
-        Text(heading ?? session.dirName)
+        Text(heading ?? session.displayName)
             .font(.system(size: heading == nil ? 31 : 19, weight: .semibold))
             .foregroundStyle(.white)
             .lineLimit(heading == nil ? 1 : 2)

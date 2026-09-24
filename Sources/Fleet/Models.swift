@@ -339,6 +339,23 @@ struct Session: Identifiable {
         return n.isEmpty ? cwd : n
     }
 
+    /// Whether the session is working on one of the projects under `~/self`, where the
+    /// directory is the name of the work. Everywhere else it is not: a session in `~` is
+    /// called "mr", and so is every other one.
+    var isSelf: Bool { cwd.hasPrefix(NSHomeDirectory() + "/self/") }
+
+    /// One or two words for what a session outside `~/self` is doing, asked of Claude once per
+    /// transcript and kept here rather than on the struct: a `Session` is rebuilt from scratch
+    /// on every refresh, and threading the label through every place one is made would be a
+    /// parameter on all of them for a string only the tile reads.
+    @MainActor static var labels: [String: String] = [:]
+
+    /// What the tile calls this session.
+    @MainActor var displayName: String {
+        if !isSelf, let file = transcript?.path, let label = Session.labels[file] { return label }
+        return dirName
+    }
+
     /// Working directory with $HOME collapsed to "~".
     var displayPath: String {
         let home = NSHomeDirectory()

@@ -142,6 +142,33 @@ enum Claude {
         return try await run(prompt: prompt, model: answerModel)
     }
 
+    /// One or two words for a session whose directory says nothing — anything outside
+    /// `~/self`, where the last path component is "mr" or "Downloads" and every tile with one
+    /// of those names is a different piece of work.
+    ///
+    /// The session's own AI title is the input rather than its transcript: Claude Code already
+    /// writes one on every session, so this is a shortener and not a reader, and a shortener
+    /// gets a sentence it can trust instead of a tail it has to guess from.
+    static func label(directory: String, title: String, latest: String) async throws -> String {
+        let prompt = """
+        Name this Claude Code session for a dashboard tile. One or two short words, 18 \
+        characters maximum, lowercase, no punctuation, no quotes. Name what the session is \
+        working on, the way a project directory is named. Answer with the name and nothing else.
+
+        Directory: \(directory)
+        Session title: \(title)
+        Last thing asked: \(latest.prefix(300))
+        """
+        let raw = try await run(prompt: prompt, model: classifierModel)
+        // Whatever came back, made to fit: the tile has one line and it is not negotiable.
+        let word = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? raw
+        let clean = word.lowercased()
+            .trimmingCharacters(in: CharacterSet.alphanumerics.union(.whitespaces).inverted)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        guard !clean.isEmpty, clean.count <= 24 else { throw Failure.malformed(raw) }
+        return String(clean.prefix(18))
+    }
+
     // MARK: - Fact-checking a Reel
 
     /// The phone's own instructions, word for word — see `Groq.kt` in my-hub's factcheck app.

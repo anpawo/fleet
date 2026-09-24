@@ -20,6 +20,41 @@ final class AppController: ObservableObject {
         didSet {
             statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
+            nameOutsiders()
+        }
+    }
+
+    /// What to call the sessions whose directory names nothing — anything outside `~/self`,
+    /// where the tile would otherwise read "mr" or "Downloads". Keyed by transcript file, so
+    /// `/clear` earns a new name and a restart keeps the old ones.
+    @Published private(set) var labels: [String: String] =
+        UserDefaults.standard.dictionary(forKey: "sessionLabels") as? [String: String] ?? [:] {
+        didSet {
+            Session.labels = labels
+            UserDefaults.standard.set(labels, forKey: "sessionLabels")
+        }
+    }
+
+    /// The ones already asked about this run, failures included: a session whose title Claude
+    /// cannot shorten must not be asked again every second the panel is up.
+    private var labelling: Set<String> = []
+
+    /// Asks Claude for a name, once per transcript, for every session the directory does not
+    /// name. The session's own AI title is the input — Claude Code writes one on every session,
+    /// so nothing here reads a transcript — and a session too new to have one waits for it.
+    private func nameOutsiders() {
+        for session in sessions where !session.isSelf {
+            guard let file = session.transcript?.path,
+                  labels[file] == nil, !labelling.contains(file),
+                  let title = session.transcript?.title, !title.isEmpty else { continue }
+            labelling.insert(file)
+            let directory = session.displayPath
+            let latest = session.transcript?.lastPrompt ?? ""
+            Task { [weak self] in
+                guard let name = try? await Claude.label(directory: directory, title: title,
+                                                         latest: latest) else { return }
+                self?.labels[file] = name
+            }
         }
     }
     @Published private(set) var isPanelVisible = false
@@ -67,6 +102,10 @@ final class AppController: ObservableObject {
     /// and `fleet` all still work — muting is about Fleet interrupting you, not about locking
     /// it away.
     @Published private(set) var mutedUntil: Date?
+
+    /// A `didSet` does not run for the value a property is declared with, and `--render` never
+    /// calls `start()`: the names kept from the last run reach the tiles here or not at all.
+    init() { Session.labels = labels }
 
     func start() {
         // No `mayCheck` here on purpose: the resident app reads the collection for what the
