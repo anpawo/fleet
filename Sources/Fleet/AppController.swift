@@ -104,13 +104,18 @@ final class AppController: ObservableObject {
         return members.min { $0.proc.startedAt < $1.proc.startedAt }
     }
 
-    /// The heads' session ids, one per line, where their own status line can find them —
-    /// beside the stop marks the hook already writes there. A session that heads a group says
-    /// so on its own screen, which is the only place you are looking when you are in it.
+    /// The heads, one `<session id> <group>` per line, where their own status line can find
+    /// them — beside the stop marks the hook already writes there. A session that heads a
+    /// group says so on its own screen, which is the only place you are looking when you are
+    /// in it. The group travels with the id: a session that has `cd`'d elsewhere still heads
+    /// the group it was named in, and its status line should not have to guess which.
     private func publishHeads(_ heads: [String: pid_t]) {
         let ids = sessions.filter { heads[$0.groupKey] == $0.id }
-            .compactMap { $0.transcript?.path }
-            .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
+            .compactMap { session -> String? in
+                guard let path = session.transcript?.path else { return nil }
+                let id = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+                return id + " " + session.groupKey
+            }
         let file = URL(fileURLWithPath: NSHomeDirectory())
             .appending(path: ".claude/fleet/state/heads")
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
