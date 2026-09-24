@@ -865,6 +865,9 @@ struct GroupTile: View {
     static let aura: CGFloat = 12
 
     @State private var hovering = false
+    /// How far the open group has been scrolled, so the name can travel with the cards it
+    /// heads. Left where it is, it sat over the rows sliding under it.
+    @State private var scrolled: CGFloat = 0
 
     var body: some View {
         GeometryReader { box in
@@ -900,7 +903,7 @@ struct GroupTile: View {
                     // Centred in both states, on the same width: the title does not change
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
-                            y: open ? spacing : Self.titleTop)
+                            y: open ? spacing - scrolled : Self.titleTop)
 
                 // What ⌘ is aiming at, said rather than shaded: a lit rectangle only says
                 // "this card", which the pointer already said. Over the name, because the
@@ -927,6 +930,9 @@ struct GroupTile: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
             }
+            // A group that is folded up and opened again starts at the top, and a name still
+            // carrying the last scroll would be drawn off the card.
+            .onChange(of: open) { scrolled = 0 }
             // The empty room inside the card belongs to the directory: clicking it opens it,
             // and clicking it again folds it back up rather than falling through to the
             // panel's dismiss layer. The cards inside are buttons and take their own clicks.
@@ -1021,6 +1027,12 @@ struct GroupTile: View {
                 ScrollView(.vertical) { rows }
                     .scrollIndicators(.hidden)
                     .scrollBounceBehavior(.basedOnSize)
+                    // The name is drawn over this rather than in it — see `body` — so it has
+                    // to be told how far the cards have moved. Clipped by the group's own
+                    // border on the way out, which is where a heading should go.
+                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
+                        _, y in scrolled = y
+                    }
             } else {
                 rows
             }
@@ -1086,6 +1098,12 @@ struct GroupTile: View {
                 ScrollView(.vertical) { rows }
                     .scrollIndicators(.hidden)
                     .scrollBounceBehavior(.basedOnSize)
+                    // The name is drawn over this rather than in it — see `body` — so it has
+                    // to be told how far the cards have moved. Clipped by the group's own
+                    // border on the way out, which is where a heading should go.
+                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
+                        _, y in scrolled = y
+                    }
             } else {
                 rows
             }
