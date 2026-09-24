@@ -118,6 +118,13 @@ struct OverlayView: View {
     /// the screen did read as the panel having been cut off rather than laid out.
     static let inset: CGFloat = 126
 
+    /// What the menu bar takes off the top of the window, which is the whole screen. Zero on
+    /// a screen that has none.
+    static var menuBar: CGFloat {
+        let screen = OverlayWindowController.activeScreen()
+        return screen.frame.maxY - screen.visibleFrame.maxY
+    }
+
     /// As tall as the screen has room for between those two gaps — the ceiling a column
     /// scrolls or is cut off under, rather than a height it takes.
     /// What a block is told to be, against the `columnHeight` its column is clipped to: a
@@ -264,10 +271,11 @@ struct OverlayView: View {
                             // line: its own height, and the gap a block leaves under one.
                             .frame(width: centerWidth)
                             // Measured on an offscreen render: what the panel leaves over the
-                            // fleet, less the bar, half over and half under it. The bar is a
-                            // thing hung in that gap, and hung off centre it read as having
-                            // slid up under the menu bar.
-                            .offset(y: -(AlertsBlock.height + 26))
+                            // fleet, less the bar, half over and half under it. Half the menu
+                            // bar back down, because the window is the whole screen and the
+                            // room above the fleet starts under the menu bar, not at the top
+                            // of the glass — centred on the glass the bar ran under it.
+                            .offset(y: -(AlertsBlock.height + 26 - Self.menuBar / 2))
                     }
                 }
             if controller.hub.isConfigured {
@@ -1201,7 +1209,7 @@ struct SessionTile: View {
         // A topic is a sentence where a directory is a word, so it is set smaller and given a
         // second line rather than shrunk to a third of the size to fit on one.
         Text(heading ?? session.displayName)
-            .font(.system(size: heading == nil ? 31 : 19, weight: .semibold))
+            .font(.system(size: heading == nil ? 31 : 22, weight: .semibold))
             .foregroundStyle(.white)
             .lineLimit(heading == nil ? 1 : 2)
             .multilineTextAlignment(.center)

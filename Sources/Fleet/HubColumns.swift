@@ -1540,11 +1540,17 @@ struct AlertsBlock: View {
     var body: some View {
         ZStack {
             HStack(spacing: 8) {
-                Text("ALERT")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3.2)
-                    .foregroundStyle(SessionState.running.tint)
-                    .titleGround(Self.chipGround)
+                // On the block's own name rather than on the names it carries: what the mark
+                // says is that this block is a warning, which is true whatever is broken.
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("ALERT")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(3.2)
+                }
+                .foregroundStyle(SessionState.running.tint)
+                .titleGround(Self.chipGround)
                 Spacer(minLength: 3)
             }
 
@@ -1554,10 +1560,6 @@ struct AlertsBlock: View {
             // 22 rather than 8: a chip's ground hangs 7pt past its words either side, so the
             // gap you see is the spacing less fourteen.
             HStack(spacing: 22) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(SessionState.running.tint)
-                    .padding(.trailing, -6)
                 // One chip per thing that is broken, not one sentence listing them: the names
                 // are a list, and a list on this panel is drawn as pills everywhere else.
                 ForEach(Self.alerts(hub, crons: crons), id: \.self) { name in
