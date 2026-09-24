@@ -130,13 +130,15 @@ enum Epitech {
         /// while outlook, discord, edsquare and the calendar probe were not re-run at all and
         /// their codes still stand. Dropping all six on one timestamp is how a dead outlook
         /// token would go quiet for six hours.
+        /// Said once, read in two places: the bar drops this line — and only this one — as
+        /// soon as the network is back, since the readers catch up by themselves.
+        static let outage = "no network at the last run — nothing was read"
+
         func broken(scanRefuted: Bool = false) -> [String] {
             // A morning with no wifi fails every reader at once, and the bar then carries three
             // red clauses that all say the same thing and none of which is something to do.
             // Two readers down with no token code between them is the network, not the keys.
-            if offline(scanRefuted: scanRefuted) {
-                return ["no network at the last run — nothing was read"]
-            }
+            if offline(scanRefuted: scanRefuted) { return [Self.outage] }
             var out: [String] = []
             if let scan, scan != 0, !scanRefuted {
                 out.append(scan == 3 ? "epitech session expired — log in again"

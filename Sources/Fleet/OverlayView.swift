@@ -984,7 +984,7 @@ struct GroupTile: View {
                         // Inside a directory the card wears its topic: the directory is what
                         // these sessions have in common, and a row of cards all saying
                         // "portfolio" is a row you cannot choose from.
-                        SessionTile(session: session, heading: session.topic) {
+                        SessionTile(session: session, heading: session.label ?? session.topic) {
                             onActivate(session)
                         }
                         .frame(width: inner)

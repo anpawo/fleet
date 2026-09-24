@@ -149,11 +149,22 @@ enum Claude {
     /// The session's own AI title is the input rather than its transcript: Claude Code already
     /// writes one on every session, so this is a shortener and not a reader, and a shortener
     /// gets a sentence it can trust instead of a tail it has to guess from.
-    static func label(directory: String, title: String, latest: String) async throws -> String {
+    static func label(directory: String, project: String?, title: String,
+                      latest: String) async throws -> String {
+        // Two jobs, one call. Alone, a session is named for what it is about. In a group every
+        // card already carries the project's name, so naming it that again says nothing: what
+        // the tile needs is what this one is doing that its neighbours are not.
+        let job = project.map {
+            """
+            This session is one of several working on the \($0) project. Name what this one is \
+            doing that the others are not — the task, not the project. Do not use the word \
+            "\($0)".
+            """
+        } ?? "Name what the session is working on, the way a project directory is named."
         let prompt = """
         Name this Claude Code session for a dashboard tile. One or two short words, 18 \
-        characters maximum, lowercase, no punctuation, no quotes. Name what the session is \
-        working on, the way a project directory is named. Answer with the name and nothing else.
+        characters maximum, lowercase, no punctuation, no quotes. \(job) Answer with the name \
+        and nothing else.
 
         Directory: \(directory)
         Session title: \(title)

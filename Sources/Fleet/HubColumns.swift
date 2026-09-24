@@ -1482,7 +1482,14 @@ struct AlertsBlock: View {
             default: out.append("firestore: \(failure)")
             }
         }
-        if let failure = hub.epitech?.failure { out.append(failure) }
+        // A line about the network says the wifi was down at eight this morning. Firestore
+        // answering now says it is back, and the readers will catch up on their own at the
+        // next run — a bar red until then is a bar about something nobody can do anything
+        // about, which is how a bar stops being read at all.
+        if let failure = hub.epitech?.failure,
+           failure != Epitech.Sources.outage || !(hub.loaded && hub.failure == nil) {
+            out.append(failure)
+        }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
         if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
@@ -1493,7 +1500,7 @@ struct AlertsBlock: View {
     /// and do — the wifi comes back and they go away — so the bar says them without pulsing.
     private static let networkLines = [
         "firestore offline — mail and todos are from the last fetch",
-        "no network at the last run — nothing was read",
+        Epitech.Sources.outage,
     ]
 
     /// What the bar says when it has been switched on by hand: one of the failures that can

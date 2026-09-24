@@ -24,14 +24,28 @@ final class AppController: ObservableObject {
         }
     }
 
-    /// What to call the sessions whose directory names nothing — anything outside `~/self`,
-    /// where the tile would otherwise read "mr" or "Downloads". Keyed by transcript file, so
-    /// `/clear` earns a new name and a restart keeps the old ones.
+    /// What to call a session the directory does not name: one outside `~/self`, where the
+    /// tile would read "mr" or "Downloads", and one of several sharing a project, where every
+    /// card would read the project's name.
+    ///
+    /// Keyed by transcript file — `/clear` earns a new name, a restart keeps the old ones —
+    /// and the value carries the AI title it was made from, so a session that moves on to
+    /// something else is named again rather than wearing this morning's name all day.
     @Published private(set) var labels: [String: String] =
         UserDefaults.standard.dictionary(forKey: "sessionLabels") as? [String: String] ?? [:] {
         didSet {
-            Session.labels = labels
+            Session.labels = Self.names(in: labels)
             UserDefaults.standard.set(labels, forKey: "sessionLabels")
+        }
+    }
+
+    /// Splits a stored label from the title it was made from.
+    private static let fromTitle: Character = "\u{1}"
+
+    /// The names alone, which is all a tile reads.
+    private static func names(in stored: [String: String]) -> [String: String] {
+        stored.compactMapValues {
+            $0.split(separator: fromTitle, maxSplits: 1).first.map(String.init)
         }
     }
 
@@ -39,21 +53,34 @@ final class AppController: ObservableObject {
     /// cannot shorten must not be asked again every second the panel is up.
     private var labelling: Set<String> = []
 
-    /// Asks Claude for a name, once per transcript, for every session the directory does not
-    /// name. The session's own AI title is the input — Claude Code writes one on every session,
-    /// so nothing here reads a transcript — and a session too new to have one waits for it.
+    /// Asks Claude for a name for every session the directory does not name, and asks again
+    /// when the session's subject changes. The session's own AI title is the input — Claude
+    /// Code writes one on every session, so nothing here reads a transcript — and a session
+    /// too new to have one waits for it.
     private func nameOutsiders() {
-        for session in sessions where !session.isSelf {
+        // A project with one session in it needs no name for it: the tile says the project,
+        // and the project is what that session is doing.
+        let shared = Set(Dictionary(grouping: sessions.filter(\.isSelf), by: \.dirName)
+            .filter { $0.value.count > 1 }.keys)
+        for session in sessions {
+            let project = session.isSelf ? session.dirName : nil
+            guard !session.isSelf || shared.contains(session.dirName) else { continue }
             guard let file = session.transcript?.path,
-                  labels[file] == nil, !labelling.contains(file),
                   let title = session.transcript?.title, !title.isEmpty else { continue }
-            labelling.insert(file)
+            // The title the stored name was made from. Same title, same name; a new one is a
+            // session that has moved on, and it earns a new ask.
+            let made = labels[file]?.split(separator: Self.fromTitle, maxSplits: 1).last
+            guard made.map(String.init) != title else { continue }
+            let asked = file + String(Self.fromTitle) + title
+            guard !labelling.contains(asked) else { continue }
+            labelling.insert(asked)
             let directory = session.displayPath
             let latest = session.transcript?.lastPrompt ?? ""
             Task { [weak self] in
-                guard let name = try? await Claude.label(directory: directory, title: title,
-                                                         latest: latest) else { return }
-                self?.labels[file] = name
+                guard let name = try? await Claude.label(directory: directory, project: project,
+                                                         title: title, latest: latest)
+                else { return }
+                self?.labels[file] = name + String(Self.fromTitle) + title
             }
         }
     }
@@ -105,7 +132,7 @@ final class AppController: ObservableObject {
 
     /// A `didSet` does not run for the value a property is declared with, and `--render` never
     /// calls `start()`: the names kept from the last run reach the tiles here or not at all.
-    init() { Session.labels = labels }
+    init() { Session.labels = Self.names(in: labels) }
 
     func start() {
         // No `mayCheck` here on purpose: the resident app reads the collection for what the

@@ -350,9 +350,16 @@ struct Session: Identifiable {
     /// parameter on all of them for a string only the tile reads.
     @MainActor static var labels: [String: String] = [:]
 
-    /// What the tile calls this session.
+    /// The name Claude was asked to give this session, if it has one.
+    @MainActor var label: String? {
+        guard let file = transcript?.path else { return nil }
+        return Session.labels[file]
+    }
+
+    /// What the tile calls this session: the project under `~/self`, and outside it the name
+    /// asked of Claude — "mr" and "Downloads" name no work at all.
     @MainActor var displayName: String {
-        if !isSelf, let file = transcript?.path, let label = Session.labels[file] { return label }
+        if !isSelf, let label { return label }
         return dirName
     }
 
