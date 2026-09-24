@@ -1078,7 +1078,7 @@ struct GroupTile: View {
                 let isHead = session.id == head?.id
                 HStack(spacing: 7) {
                     Circle().fill(session.state.tint).frame(width: 7, height: 7)
-                    Text(session.topic)
+                    Text(session.label ?? session.topic)
                         .font(.system(size: 10.5, weight: isHead ? .semibold : .regular))
                         .foregroundStyle(.white.opacity(isHead ? 0.92 : 0.6))
                         .lineLimit(1)

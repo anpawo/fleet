@@ -125,11 +125,32 @@ enum SelfCheck {
         append(#"{"type":"attachment","timestamp":"\#(stamp(2))","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>b2x2y2z</task-id>\n<tool-use-id>toolu_sh2</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
                "and a queued task-notification ends it")
-        // A workflow reports back the same way a background shell does.
+        // A workflow reports back the same way a background shell does, and its journal says
+        // how far it has got: the phase of the last agent started, that phase's agents done.
+        // The last line is half-written, as it is while an agent is being started.
+        let wf = root + "/session/subagents/workflows/wf_1"
+        try? FileManager.default.createDirectory(atPath: wf, withIntermediateDirectories: true)
+        try? #"export const meta = { name: 'break-history-audit', phases: [{ title: 'Map' }, { title: 'Verify', detail: 'x' }, { title: 'Synthesize' }] }"#
+            .write(toFile: root + "/wf.js", atomically: true, encoding: .utf8)
+        try? [#"{"type":"launched"}"#,
+              #"{"type":"started","key":"k1","agentId":"a1","label":"map","phase":"Map"}"#,
+              #"{"type":"result","key":"k1","value":"long"}"#,
+              #"{"type":"started","key":"k2","agentId":"a2","label":"v:1","phase":"Verify"}"#,
+              #"{"type":"started","key":"k3","agentId":"a3","label":"v:2","phase":"Verify"}"#,
+              #"{"type":"result","key":"k2","value":"long"}"#,
+              #"{"type":"started","key":"k4""#].joined(separator: "\n")
+            .write(toFile: wf + "/journal.jsonl", atomically: true, encoding: .utf8)
         append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m7","content":[{"type":"tool_use","id":"toolu_wf","name":"Workflow","input":{"script":"x"}}]}}"#)
-        append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_wf","content":"Workflow launched in background. Task ID: w087be80a\nSummary: audit"}]}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_wf","content":"Workflow launched in background. Task ID: w087be80a\nSummary: audit\nTranscript dir: \#(wf)\nScript file: \#(root)/wf.js\n"}]}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 1,
                "a workflow launched is a task out")
+        let progress = store.info(for: session)?.workflow
+        let wide = progress?.line(width: 80) ?? "none"
+        expect(wide == "verify 2/3 - break history audit 1/2 - 0min" ? 1 : 0, 1,
+               "its journal reads as phase, name, count, time (got \(wide))")
+        let narrow = progress?.line() ?? "none"
+        expect(narrow == "verify 2/3 - break histo… 1/2 - 0min" ? 1 : 0, 1,
+               "and on a tile the name gives way, not the count (got \(narrow))")
         append(#"{"type":"user","timestamp":"\#(stamp(2))","message":{"content":"<task-notification>\n<task-id>w087be80a</task-id>\n<tool-use-id>toolu_wf</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
                "and its task-notification ends it")

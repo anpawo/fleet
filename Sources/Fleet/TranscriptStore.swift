@@ -107,7 +107,86 @@ final class TranscriptStore {
         guard var info = parse(path: path, acceptSidechain: false) else { return nil }
         info.subagents = liveSubagents(of: path,
                                        spawns: info.pendingTaskIDs + info.unfinishedAgentIDs)
+        info.workflow = info.workflows.last.flatMap(progress(of:))
         return info
+    }
+
+    /// What a workflow's journal says so far, read from where the last read stopped: the
+    /// journal carries every agent's full result and runs to megabytes.
+    private struct Tally {
+        var offset: UInt64 = 0
+        var phase: String?
+        var phaseOf: [String: String] = [:]
+        var started: [String: Int] = [:]
+        var done: [String: Int] = [:]
+    }
+    private var tallies: [String: Tally] = [:]
+    private var scriptMeta: [String: (name: String, phases: [String])] = [:]
+
+    private func progress(of run: WorkflowLaunch) -> WorkflowProgress? {
+        let path = (run.dir as NSString).appendingPathComponent("journal.jsonl")
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        var tally = tallies[path] ?? Tally()
+        let size = (try? handle.seekToEnd()) ?? 0
+        if size < tally.offset { tally = Tally() }
+        try? handle.seek(toOffset: tally.offset)
+        let data = handle.readDataToEndOfFile()
+        // Only whole lines: the one being written is read again next time, complete.
+        if let end = data.lastIndex(of: UInt8(ascii: "\n")) {
+            tally.offset += UInt64(end - data.startIndex + 1)
+            for line in data[..<end].split(separator: UInt8(ascii: "\n")) {
+                // Results are the big lines and only their key matters, so nothing is decoded
+                // past the head of a line.
+                let head = String(decoding: line.prefix(400), as: UTF8.self)
+                guard let key = Self.jsonString("key", in: head) else { continue }
+                if head.hasPrefix(#"{"type":"started""#) {
+                    let phase = Self.jsonString("phase", in: head) ?? ""
+                    tally.phaseOf[key] = phase
+                    tally.phase = phase
+                    tally.started[phase, default: 0] += 1
+                } else if head.hasPrefix(#"{"type":"result""#), let phase = tally.phaseOf[key] {
+                    tally.done[phase, default: 0] += 1
+                }
+            }
+        }
+        tallies[path] = tally
+
+        let meta = scriptMeta[run.script] ?? {
+            let text = (try? String(contentsOfFile: run.script, encoding: .utf8)) ?? ""
+            let name = Self.firstMatch(#"name:\s*['"]([^'"]+)"#, in: text) ?? "workflow"
+            let list = text.range(of: "phases:").map { String(text[$0.upperBound...].prefix { $0 != "]" }) } ?? ""
+            let phases = Self.allMatches(#"title:\s*['"]([^'"]+)"#, in: list)
+            scriptMeta[run.script] = (name, phases)
+            return (name, phases)
+        }()
+        let phase = tally.phase.flatMap { $0.isEmpty ? nil : $0 }
+        let key = tally.phase ?? ""
+        return WorkflowProgress(
+            name: meta.name,
+            phase: phase,
+            phaseIndex: phase.flatMap { meta.phases.firstIndex(of: $0) }.map { $0 + 1 },
+            phaseCount: meta.phases.count,
+            done: tally.done[key] ?? 0,
+            started: tally.started[key] ?? 0,
+            since: run.since
+        )
+    }
+
+    /// `"field":"value"` in a line of JSON, without decoding the line.
+    private static func jsonString(_ field: String, in text: String) -> String? {
+        firstMatch("\"\(field)\":\"([^\"]*)\"", in: text)
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        allMatches(pattern, in: text).first
+    }
+
+    private static func allMatches(_ pattern: String, in text: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return re.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range(at: 1), in: text).map { String(text[$0]) }
+        }
     }
 
     /// Every sub-agent this session spawned that has not reported back.
@@ -308,6 +387,9 @@ private struct ParseState {
     /// Task id → the `tool_use` that started that shell. `TaskStop` names the task, not the
     /// call, and a stopped shell sends no notification — this is the only way to close it.
     var shellCallByTask: [String: String] = [:]
+    /// A workflow's own files, by the `tool_use` that launched it — the rest of its life is
+    /// a shell's, in `shellSpawnedAt`.
+    var workflowFiles: [String: (dir: String, script: String)] = [:]
 
     mutating func ingest(_ obj: [String: Any]) {
         guard let type = obj["type"] as? String else { return }
@@ -454,6 +536,10 @@ private struct ParseState {
                             || $0.hasPrefix("Workflow launched in background")
                     }) {
                         shellSpawnedAt[id] = lastMessageAt ?? Date()
+                        if let dir = Self.field("Transcript dir: ", in: texts),
+                           let script = Self.field("Script file: ", in: texts) {
+                            workflowFiles[id] = (dir, script)
+                        }
                         if let task = texts.lazy.compactMap(Self.taskID(in:)).first {
                             shellCallByTask[task] = id
                         }
@@ -527,8 +613,24 @@ private struct ParseState {
             turnOpen: turnOpen,
             lastActivity: mtime,
             lastMessageAt: lastMessageAt,
-            preview: preview
+            preview: preview,
+            workflows: workflowFiles.compactMap { id, files in
+                guard let since = shellSpawnedAt[id],
+                      (agentEndedAt[id] ?? .distantPast) < since else { return nil }
+                return WorkflowLaunch(dir: files.dir, script: files.script, since: since)
+            }.sorted { $0.since < $1.since }
         )
+    }
+
+    /// The rest of the line after `label`, in whichever text has it.
+    static func field(_ label: String, in texts: [String]) -> String? {
+        for t in texts {
+            guard let r = t.range(of: label) else { continue }
+            let value = t[r.upperBound...].prefix { $0 != "\n" }
+                .trimmingCharacters(in: .whitespaces)
+            if !value.isEmpty { return value }
+        }
+        return nil
     }
 
     /// A tool result's text, whether Claude Code wrote it as a string or as text blocks.

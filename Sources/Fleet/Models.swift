@@ -245,6 +245,45 @@ struct SubagentRun: Identifiable {
     var label: String { task.isEmpty ? kind : task }
 }
 
+/// A workflow launched in the background, as its launch result names it.
+struct WorkflowLaunch {
+    /// Where its agents write, and its `journal.jsonl`.
+    var dir: String
+    var script: String
+    var since: Date
+}
+
+/// How far a running workflow has got, read off its journal and its script's `meta`.
+struct WorkflowProgress {
+    var name: String
+    /// The phase the most recent agent was started in, and its place among the script's.
+    var phase: String?
+    var phaseIndex: Int?
+    var phaseCount: Int
+    /// Agents of that phase finished, and started so far.
+    var done: Int
+    var started: Int
+    var since: Date
+
+    /// "verify 3/4 - break history audit 30/32 - 40min". The phase is the only count that
+    /// means "how far along": the agents of the next phase do not exist until it starts.
+    ///
+    /// The name gives way when the line is longer than a tile's `width` characters: cut at
+    /// the tile's edge, the count and the time are what would go, and they are the news.
+    func line(now: Date = Date(), width: Int = 36) -> String {
+        let phasePart = phase.map { $0.lowercased() + (phaseIndex.map { " \($0)/\(phaseCount)" } ?? "") }
+        let minutes = max(0, Int(now.timeIntervalSince(since) / 60))
+        let time = minutes < 60 ? "\(minutes)min"
+                                : String(format: "%dh%02d", minutes / 60, minutes % 60)
+        let count = " \(done)/\(started)"
+        var what = name.replacingOccurrences(of: "-", with: " ")
+        let rest = (phasePart.map { $0 + " - " } ?? "") + count + " - " + time
+        let room = max(6, width - rest.count)
+        if what.count > room { what = what.prefix(room - 1).trimmingCharacters(in: .whitespaces) + "…" }
+        return [phasePart, what + count, time].compactMap { $0 }.joined(separator: " - ")
+    }
+}
+
 /// Everything parsed out of a session's transcript file.
 struct TranscriptInfo {
     var path: String
@@ -298,6 +337,10 @@ struct TranscriptInfo {
     /// Sub-agents spawned and not yet finished. Filled in after the parse — it needs the
     /// sub-agents' own files, which the main transcript only points at.
     var subagents: [SubagentRun] = []
+    /// Workflows launched and not yet reported back, oldest first.
+    var workflows: [WorkflowLaunch] = []
+    /// The newest of them, read off its journal. Filled in after the parse, like `subagents`.
+    var workflow: WorkflowProgress?
 }
 
 /// One rendered line of the mini-transcript shown on a tile.
@@ -432,6 +475,11 @@ struct Session: Identifiable {
     /// What the sub-agents are up to, as the one line a tile has room for: who is working, and
     /// what they are doing this second. Nil when nothing is delegated.
     var subagentLine: String? {
+        // Launched by this process: a workflow dies with its session, and one a restart cut
+        // short never reports back.
+        if let workflow = transcript?.workflow, workflow.since > proc.startedAt {
+            return workflow.line()
+        }
         guard let first = subagents.first else { return nil }
         let who = subagents.count == 1
             ? first.label
