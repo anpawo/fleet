@@ -265,22 +265,15 @@ struct WorkflowProgress {
     var started: Int
     var since: Date
 
-    /// "verify 3/4 - break history audit 30/32 - 40min". The phase is the only count that
-    /// means "how far along": the agents of the next phase do not exist until it starts.
-    ///
-    /// The name gives way when the line is longer than a tile's `width` characters: cut at
-    /// the tile's edge, the count and the time are what would go, and they are the news.
-    func line(now: Date = Date(), width: Int = 36) -> String {
-        let phasePart = phase.map { $0.lowercased() + (phaseIndex.map { " \($0)/\(phaseCount)" } ?? "") }
+    /// "3/4 · 30/32 · 40m": the phase among the script's, that phase's agents done over
+    /// started, the time since launch. Short enough to sit beside the state pill; the card's
+    /// own name already says what the work is. The phase is the only count that means "how
+    /// far along": the agents of the next phase do not exist until it starts.
+    func pill(now: Date = Date()) -> String {
         let minutes = max(0, Int(now.timeIntervalSince(since) / 60))
-        let time = minutes < 60 ? "\(minutes)min"
-                                : String(format: "%dh%02d", minutes / 60, minutes % 60)
-        let count = " \(done)/\(started)"
-        var what = name.replacingOccurrences(of: "-", with: " ")
-        let rest = (phasePart.map { $0 + " - " } ?? "") + count + " - " + time
-        let room = max(6, width - rest.count)
-        if what.count > room { what = what.prefix(room - 1).trimmingCharacters(in: .whitespaces) + "…" }
-        return [phasePart, what + count, time].compactMap { $0 }.joined(separator: " - ")
+        let time = minutes < 60 ? "\(minutes)m" : String(format: "%dh%02d", minutes / 60, minutes % 60)
+        let phasePart = phaseIndex.map { "\($0)/\(phaseCount)" }
+        return [phasePart, "\(done)/\(started)", time].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -474,12 +467,13 @@ struct Session: Identifiable {
 
     /// What the sub-agents are up to, as the one line a tile has room for: who is working, and
     /// what they are doing this second. Nil when nothing is delegated.
+    /// The workflow this session is waiting on, launched by this process: a workflow dies
+    /// with its session, and one a restart cut short never reports back.
+    var workflow: WorkflowProgress? {
+        transcript?.workflow.flatMap { $0.since > proc.startedAt ? $0 : nil }
+    }
+
     var subagentLine: String? {
-        // Launched by this process: a workflow dies with its session, and one a restart cut
-        // short never reports back.
-        if let workflow = transcript?.workflow, workflow.since > proc.startedAt {
-            return workflow.line()
-        }
         guard let first = subagents.first else { return nil }
         let who = subagents.count == 1
             ? first.label

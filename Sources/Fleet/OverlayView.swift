@@ -1333,7 +1333,16 @@ struct SessionTile: View {
     /// working; this says who is actually doing the work.
     @ViewBuilder private var subagentPill: some View {
         let running = session.subagents.count
-        if running > 0 {
+        if let workflow = session.workflow {
+            Text(workflow.pill())
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.8)
+                .fixedSize()
+                .foregroundStyle(Self.subagentTint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Self.subagentTint.opacity(0.14), in: Capsule())
+        } else if running > 0 {
             Text("SUB-AGENTS: \(running)")
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)

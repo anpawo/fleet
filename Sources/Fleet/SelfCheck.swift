@@ -144,13 +144,9 @@ enum SelfCheck {
         append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_wf","content":"Workflow launched in background. Task ID: w087be80a\nSummary: audit\nTranscript dir: \#(wf)\nScript file: \#(root)/wf.js\n"}]}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 1,
                "a workflow launched is a task out")
-        let progress = store.info(for: session)?.workflow
-        let wide = progress?.line(width: 80) ?? "none"
-        expect(wide == "verify 2/3 - break history audit 1/2 - 0min" ? 1 : 0, 1,
-               "its journal reads as phase, name, count, time (got \(wide))")
-        let narrow = progress?.line() ?? "none"
-        expect(narrow == "verify 2/3 - break histo… 1/2 - 0min" ? 1 : 0, 1,
-               "and on a tile the name gives way, not the count (got \(narrow))")
+        let pill = store.info(for: session)?.workflow?.pill() ?? "none"
+        expect(pill == "2/3 · 1/2 · 0m" ? 1 : 0, 1,
+               "its journal reads as phase, agents done, time (got \(pill))")
         append(#"{"type":"user","timestamp":"\#(stamp(2))","message":{"content":"<task-notification>\n<task-id>w087be80a</task-id>\n<tool-use-id>toolu_wf</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
                "and its task-notification ends it")
