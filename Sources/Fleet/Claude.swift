@@ -166,6 +166,9 @@ enum Claude {
         characters maximum, lowercase, no punctuation, no quotes. \(job) Answer with the name \
         and nothing else.
 
+        The session title was written when the session began; the last thing asked is what \
+        it is doing now. When the two disagree, name the work in the last thing asked.
+
         Directory: \(directory)
         Session title: \(title)
         Last thing asked: \(latest.prefix(300))

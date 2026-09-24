@@ -30,8 +30,8 @@ final class AppController: ObservableObject {
     /// card would read the project's name.
     ///
     /// Keyed by transcript file — `/clear` earns a new name, a restart keeps the old ones —
-    /// and the value carries the AI title it was made from, so a session that moves on to
-    /// something else is named again rather than wearing this morning's name all day.
+    /// and the value carries the AI title and the prompt it was made from, so a session that
+    /// moves on to something else is named again rather than wearing this morning's name all day.
     @Published private(set) var labels: [String: String] =
         UserDefaults.standard.dictionary(forKey: "sessionLabels") as? [String: String] ?? [:] {
         didSet {
@@ -53,6 +53,9 @@ final class AppController: ObservableObject {
     /// The ones already asked about this run, failures included: a session whose title Claude
     /// cannot shorten must not be asked again every second the panel is up.
     private var labelling: Set<String> = []
+    /// When each session was last asked for a name, this run. A restart asks again once.
+    private var labelledAt: [String: Date] = [:]
+    private static let relabelAfter: TimeInterval = 30 * 60
 
     /// Asks Claude for a name for every session the directory does not name, and asks again
     /// when the session's subject changes. The session's own AI title is the input — Claude
@@ -138,20 +141,31 @@ final class AppController: ObservableObject {
             guard let file = session.transcript?.path else { continue }
             let title = session.topic
             guard title != "New session" else { continue }
-            // The title the stored name was made from. Same title, same name; a new one is a
-            // session that has moved on, and it earns a new ask.
+            // What the stored name was made from: the title, then the prompt. Claude Code
+            // writes its title once, early, so a session that drifts to other work keeps it —
+            // "Port 8768 rework" on a session auditing breaks all afternoon. A new prompt is
+            // what says it has moved on, but not every prompt: a name that changes under your
+            // eyes is worse than one that lags, so the same title waits for its name to have
+            // stood a while.
+            let latest = session.transcript?.lastPrompt ?? ""
+            let basis = title + String(Self.fromTitle) + latest
             let made = labels[file]?.split(separator: Self.fromTitle, maxSplits: 1).last
-            guard made.map(String.init) != title else { continue }
-            let asked = file + String(Self.fromTitle) + title
+                .map(String.init)
+            guard made != basis else { continue }
+            if let made, made.hasPrefix(title + String(Self.fromTitle)) || made == title,
+               let at = labelledAt[file], Date().timeIntervalSince(at) < Self.relabelAfter {
+                continue
+            }
+            let asked = file + String(Self.fromTitle) + basis
             guard !labelling.contains(asked) else { continue }
             labelling.insert(asked)
+            labelledAt[file] = Date()
             let directory = session.displayPath
-            let latest = session.transcript?.lastPrompt ?? ""
             Task { [weak self] in
                 guard let name = try? await Claude.label(directory: directory, project: project,
                                                          title: title, latest: latest)
                 else { return }
-                self?.labels[file] = name + String(Self.fromTitle) + title
+                self?.labels[file] = name + String(Self.fromTitle) + basis
             }
         }
     }
