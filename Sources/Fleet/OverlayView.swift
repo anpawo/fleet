@@ -514,7 +514,6 @@ struct OverlayView: View {
                         case let .group(name, sessions):
                         GroupTile(name: name, sessions: sessions,
                                   open: openGroup == name,
-                                  commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   scrolling: !eagerLayout,
                                   onToggle: {
@@ -833,9 +832,6 @@ struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
-    /// ⌘ over a folded card unfolds it without a click: the head's card inside says HEAD,
-    /// and one click on it is the terminal.
-    let commandHeld: Bool
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
@@ -904,7 +900,6 @@ struct GroupTile: View {
             // A group that is folded up and opened again starts at the top, and a name still
             // carrying the last scroll would be drawn off the card.
             .onChange(of: open) { scrolled = 0 }
-            .onChange(of: armed) { if armed { onToggle() } }
             // The empty room inside the card belongs to the directory: clicking it opens it,
             // and clicking it again folds it back up rather than falling through to the
             // panel's dismiss layer. The cards inside are buttons and take their own clicks.
@@ -929,9 +924,6 @@ struct GroupTile: View {
         .animation(.easeOut(duration: 0.18), value: hovering)
         .onHover { hovering = $0 }
     }
-
-    /// ⌘ over a folded card, which unfolds it. On an open card the chord does nothing.
-    private var armed: Bool { !open && hovering && commandHeld }
 
     /// Where the name's own line starts, measured from the top of the folded card. Named
     /// because the HEAD label above it has to divide what is left.
