@@ -107,7 +107,14 @@ struct CronColumn: View {
 
     /// The card under the pointer — the only one ⌘ unfolds. On the column rather than the
     /// card, like the two grids above it: a card is rebuilt every tick.
-    @State private var hovered: String?
+    /// Seeded from `FLEET_HOVER` so a render can show the box, which nothing else opens
+    /// without a pointer.
+    @State private var hovered: String? = ProcessInfo.processInfo.environment["FLEET_HOVER"]
+    /// Where the pointer is right now — on a card, on the box — as against `hovered`, which
+    /// is what the box is showing. Leaving the card for its own box must not take the box
+    /// away on the way: the clear waits a beat and looks at these before it goes through.
+    @State private var overCard: String?
+    @State private var overDetail = false
 
     /// What the cards actually need, measured. The block is that tall, up to the height it has
     /// been given: five agents must not leave a third of the column empty under them, and a
@@ -210,6 +217,7 @@ struct CronColumn: View {
                 row(entry.value, family: entry.key)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .clipped()
+                    .zIndex(1)
                 detail(of: entry.value)
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
@@ -221,6 +229,7 @@ struct CronColumn: View {
                 FlowLayout(spacing: 6) {
                     ForEach(loose) { job in card(job, family: nil, fills: true) }
                 }
+                .zIndex(1)
                 detail(of: loose)
             }
         }
@@ -263,8 +272,7 @@ struct CronColumn: View {
                 Text(job.note)
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let address = job.address {
                     let link = address.hasPrefix("http://") ? URL(string: address) : nil
                     // Only a web address opens. A SOCKS port shows as itself, because a
@@ -286,12 +294,19 @@ struct CronColumn: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CronCard.radius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: CronCard.radius, style: .continuous)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, 6)
+            // Up under the card, by the stack's gap and one point more: the card's fill,
+            // drawn over this, covers the box's top line where the two meet.
+            .padding(.top, -7)
+            .onHover { inside in
+                overDetail = inside
+                if !inside { settle() }
+            }
         }
     }
 
@@ -305,8 +320,8 @@ struct CronColumn: View {
                 .fixedSize()
                 .padding(.leading, 7)
                 .padding(.trailing, 2)
-                // On the cards' own first line, which sits under their padding.
-                .padding(.top, 9)
+                // On the pills' own line, which sits under their padding.
+                .padding(.top, 5)
             ForEach(jobs) { job in card(job, family: family) }
         }
         if scrolling {
@@ -333,10 +348,18 @@ struct CronColumn: View {
             // wrapped in an animation, so TODO slid down; shrinking, it did not, and
             // TODO jumped back up. A transaction covers the whole update, both ways.
             .onHover { inside in
-                withAnimation(TodoColumn.unroll) {
-                    if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
-                }
+                overCard = inside ? job.id : nil
+                if inside { withAnimation(TodoColumn.unroll) { hovered = job.id } } else { settle() }
             }
+    }
+
+    /// Clears the box once the pointer has had a moment to land somewhere — on the box
+    /// itself, or on another card, in which case there is nothing to clear.
+    private func settle() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard overCard == nil, !overDetail else { return }
+            withAnimation(TodoColumn.unroll) { hovered = nil }
+        }
     }
 }
 
@@ -407,28 +430,53 @@ struct CronCard: View {
         return String(job.name.dropFirst(family.count + 1))
     }
 
+    /// The card's corner, and the box's: the same, so the tab reads as part of the box.
+    static let radius: CGFloat = 8
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: fills ? .infinity : nil)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(job.ok ? .white.opacity(expanded ? 0.2 : 0.07)
-                                     : SessionState.running.tint.opacity(expanded ? 0.95 : 0.5),
-                              lineWidth: 1)
-        )
+        let border: Color = job.ok ? .white.opacity(expanded ? 0.2 : 0.07)
+                                   : SessionState.running.tint.opacity(expanded ? 0.95 : 0.5)
+        // Set like the state pills on the session cards: small, and no wider than the name.
+        Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.92))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: fills ? .infinity : nil)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            // With its box up the card is a tab on it: square at the bottom, and open there
+            // — no line between the name and what it says.
+            .clipShape(TabShape(open: expanded))
+            .overlay(TabShape(open: expanded).stroke(border, lineWidth: 1).padding(0.5))
     }
 
     static let tint = SessionState.awaitingAnswer.tint
+}
+
+/// A rounded rectangle, or — `open` — the top of one: rounded at the top, straight sides
+/// down to the bottom edge, and nothing along the bottom. Clipping to it leaves the bottom
+/// square, and stroking it leaves the bottom unlined.
+struct TabShape: Shape {
+    var open: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let r = CronCard.radius
+        guard open else {
+            return RoundedRectangle(cornerRadius: r, style: .continuous).path(in: rect)
+        }
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY),
+                          control: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r),
+                          control: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
 }
 
 /// The panel's right column: the todo list, oldest first — the one that has been sitting there

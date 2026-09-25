@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Combine
 import CoreAudio
 import IOKit.pwr_mgt
@@ -475,7 +476,9 @@ final class AppController: ObservableObject {
     func modifiersChanged(_ flags: NSEvent.ModifierFlags) {
         let held = flags.contains(.command)
         guard held != commandHeld else { return }
-        commandHeld = held
+        // Inside a transaction, like the hover that opens an agent's box: what closes when
+        // ⌘ goes up moves the TODO block under it, and a plain assignment had it jump.
+        withAnimation(TodoColumn.unroll) { commandHeld = held }
     }
 
     func hidePanel() {
