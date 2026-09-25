@@ -214,11 +214,14 @@ struct CronColumn: View {
                 // The name on the left and the cards in one row beside it, each as wide as
                 // its own name and the ones past the edge scrolled to: a family is a line,
                 // not a paragraph. The name scrolls with its cards.
-                row(entry.value, family: entry.key)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .clipped()
-                    .zIndex(1)
-                detail(of: entry.value)
+                // A point of overlap: the tab's fill covers the box's top line under it.
+                VStack(spacing: -1) {
+                    row(entry.value, family: entry.key)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .clipped()
+                        .zIndex(1)
+                    detail(of: entry.value)
+                }
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
@@ -304,10 +307,10 @@ struct CronColumn: View {
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, inset ? 6 : 0)
+            // A plain fade. The box is placed a point up under its tab by whoever lays it
+            // out — a negative padding did that, and a transition composites the view in
+            // a layer cut to its frame, which took the top of the box with it.
             .transition(.opacity)
-            // Up under the card, by the stack's gap and one point more: the card's fill,
-            // drawn over this, covers the box's top line where the two meet.
-            .padding(.top, -7)
             .onHover { inside in
                 overDetail = inside
                 if !inside { settle() }
@@ -413,7 +416,7 @@ struct FlowLayout: Layout {
         let rows = lines(subviews, width: width)
         var height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
                    + spacing * CGFloat(max(0, rows.count - 1))
-        if rows.contains(where: boxed) { height += spacing + boxHeight(subviews, width: width) }
+        if rows.contains(where: boxed) { height += boxHeight(subviews, width: width) - 1 }
         return CGSize(width: proposal.width ?? rows.map {
             $0.map(\.1.width).reduce(0, +) + spacing * CGFloat($0.count - 1) }.max() ?? 0,
                       height: height)
@@ -434,10 +437,11 @@ struct FlowLayout: Layout {
             }
             y += height + spacing
             if boxed(row) {
+                // A point up under the line: the tab's fill covers the box's top line.
                 let h = boxHeight(subviews, width: bounds.width)
-                subviews[0].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                subviews[0].place(at: CGPoint(x: bounds.minX, y: y - spacing - 1), anchor: .topLeading,
                                   proposal: ProposedViewSize(width: bounds.width, height: h))
-                y += h + spacing
+                y += h - spacing - 1 + spacing
             }
         }
     }
