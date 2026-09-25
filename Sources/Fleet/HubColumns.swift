@@ -306,11 +306,11 @@ struct CronColumn: View {
             // Up under the card, by the stack's gap and one point more: the card's fill,
             // drawn over this, covers the box's top line where the two meet.
             .padding(.top, -7)
-            // Fades in, from a touch above, once the tab has grown down to meet it; the
-            // tab's growth is the unroll's own length, so the fade waits that long. Out
+            // Revealed from the top down once the tab has grown down to meet it — the
+            // tab's growth is the unroll's own length, so the reveal waits that long. Out
             // with the tab, no wait.
             .transition(.asymmetric(
-                insertion: .opacity.combined(with: .offset(y: -6))
+                insertion: .modifier(active: Reveal(fraction: 0), identity: Reveal(fraction: 1))
                     .animation(TodoColumn.unroll.delay(0.18)),
                 removal: .opacity.animation(TodoColumn.unroll)))
             .onHover { inside in
@@ -465,6 +465,19 @@ struct CronCard: View {
     }
 
     static let tint = SessionState.awaitingAnswer.tint
+}
+
+/// The view's top `fraction`, and nothing under it: a curtain going down.
+struct Reveal: ViewModifier, Animatable {
+    var fraction: CGFloat
+    var animatableData: CGFloat {
+        get { fraction }
+        set { fraction = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.clipShape(Rectangle().scale(x: 1, y: fraction, anchor: .top))
+    }
 }
 
 /// A rounded rectangle, or — `open` — the top of one: rounded at the top, straight sides
