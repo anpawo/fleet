@@ -229,6 +229,9 @@ struct CronColumn: View {
                 FlowLayout(spacing: 6) {
                     ForEach(loose) { job in card(job, family: nil, fills: true) }
                 }
+                // In from the edges by what the box is, so a pill at either end stands on
+                // the box rather than past its corner.
+                .padding(.horizontal, 6)
                 .zIndex(1)
                 detail(of: loose)
             }
@@ -303,6 +306,13 @@ struct CronColumn: View {
             // Up under the card, by the stack's gap and one point more: the card's fill,
             // drawn over this, covers the box's top line where the two meet.
             .padding(.top, -7)
+            // Fades in, from a touch above, once the tab has grown down to meet it; the
+            // tab's growth is the unroll's own length, so the fade waits that long. Out
+            // with the tab, no wait.
+            .transition(.asymmetric(
+                insertion: .opacity.combined(with: .offset(y: -6))
+                    .animation(TodoColumn.unroll.delay(0.18)),
+                removal: .opacity.animation(TodoColumn.unroll)))
             .onHover { inside in
                 overDetail = inside
                 if !inside { settle() }
