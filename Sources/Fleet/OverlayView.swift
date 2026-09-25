@@ -833,9 +833,8 @@ struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
-    /// ⌘ down turns the `main` badge into a button: a plain click anywhere on this card
-    /// unfolds it, which is free and reversible, and going to the terminal is neither — it
-    /// closes the panel and can change Space with nothing to click to come back.
+    /// ⌘ over a folded card unfolds it without a click: the head's card inside says HEAD,
+    /// and one click on it is the terminal.
     let commandHeld: Bool
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
@@ -890,31 +889,10 @@ struct GroupTile: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
-                    // The same light the card's own border throws, and only while ⌘ is over
-                    // the card: it is the name lighting up under the chord that is about to
-                    // act on it, which is the other half of what MAIN says. Two passes — the
-                    // near one lifts the letters off the black, the far one says which fleet
-                    // the card belongs to.
-                    .shadow(color: Self.tint.opacity(armed ? 0.55 : 0), radius: 10)
-                    .shadow(color: Self.tint.opacity(armed ? 0.35 : 0), radius: 22)
                     // Centred in both states, on the same width: the title does not change
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
                             y: open ? spacing - scrolled : Self.titleTop)
-
-                // What ⌘ is aiming at, said rather than shaded: a lit rectangle only says
-                // "this card", which the pointer already said. Over the name, because the
-                // name is what it is about to be replaced by.
-                Self.mainLabel
-                    .opacity(armed ? 0.5 : 0)
-                    // Centred on the name, not on the card: a long name is clamped to the
-                    // left edge, and a label centred on the card would then sit off it.
-                    //
-                    // Halfway down what the title leaves above it, so the word has as much
-                    // room over it as under it.
-                    .offset(x: max(12, (box.size.width - nameWidth) / 2)
-                               + (nameWidth - Self.mainWidth) / 2,
-                            y: (Self.titleTop + Self.titleLead - Self.mainLine) / 2)
 
                 HStack(spacing: 7) {
                     count
@@ -926,6 +904,7 @@ struct GroupTile: View {
             // A group that is folded up and opened again starts at the top, and a name still
             // carrying the last scroll would be drawn off the card.
             .onChange(of: open) { scrolled = 0 }
+            .onChange(of: armed) { if armed { onToggle() } }
             // The empty room inside the card belongs to the directory: clicking it opens it,
             // and clicking it again folds it back up rather than falling through to the
             // panel's dismiss layer. The cards inside are buttons and take their own clicks.
@@ -940,7 +919,6 @@ struct GroupTile: View {
                 .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
         )
-        .animation(.easeOut(duration: 0.15), value: commandHeld)
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Self.tint, lineWidth: 2.5)
@@ -952,20 +930,19 @@ struct GroupTile: View {
         .onHover { hovering = $0 }
     }
 
-    /// ⌘ over a folded card, which is the chord that opens the group's main session rather
-    /// than the group. Only then: on an open card the chord does nothing.
+    /// ⌘ over a folded card, which unfolds it. On an open card the chord does nothing.
     private var armed: Bool { !open && hovering && commandHeld }
 
     /// Where the name's own line starts, measured from the top of the folded card. Named
-    /// because the MAIN label above it has to divide what is left.
+    /// because the HEAD label above it has to divide what is left.
     static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
 
-    /// Roughly the MAIN label's line height, the way `nameLine` is the title's.
+    /// Roughly the HEAD label's line height, the way `nameLine` is the title's.
     static let mainLine: CGFloat = 13
 
-    /// The word itself, worn here over the folded group and inside it over the head's card.
+    /// The word worn over the head's card inside an open group.
     static var mainLabel: some View {
-        Text("MAIN")
+        Text("HEAD")
             .font(.system(size: 11, weight: .bold))
             .tracking(3.2)
             .foregroundStyle(.white)
@@ -976,15 +953,6 @@ struct GroupTile: View {
     /// eye sees and not on two frames: measured on an offscreen render, halving the frames
     /// left 18.5pt over the word and 28.5 under it.
     static let titleLead: CGFloat = 10
-
-    /// Measured the same way and for the same reason as `nameWidth`, and once for all cards
-    /// since the word never changes.
-    private static let mainWidth: CGFloat = {
-        let font = NSFont.systemFont(ofSize: 11, weight: .bold)
-        // The tracking is not in the font, so it is not in the measurement either: four gaps
-        // of 3.2 between five letters.
-        return ("MAIN" as NSString).size(withAttributes: [.font: font]).width + 3.2 * 4
-    }()
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
     /// centring it on the folded card needs a number before anything is drawn.
@@ -1049,12 +1017,7 @@ struct GroupTile: View {
         }
     }
 
-    /// A plain click unfolds, which costs nothing and undoes itself. ⌘ goes straight to the
-    /// head's terminal, which closes the panel and can change Space with nothing to click to
-    /// come back — so it is asked for, never stumbled into.
-    private func tapped() {
-        if commandHeld, let head { onActivate(head) } else { onToggle() }
-    }
+    private func tapped() { onToggle() }
 
     /// The group's head: the session the others name as the sender of their brief. A peer
     /// message carries `from="uds:/tmp/cc-socks/<pid>.sock"`, and that pid is one of these
@@ -1148,7 +1111,7 @@ struct SessionTile: View {
     /// What the card is called, when the directory name it defaults to would say nothing —
     /// inside an unfolded group, where every card shares that directory.
     var heading: String?
-    /// Whether this is the group's head, said over the name the way the folded group says it.
+    /// Whether this is the group's head, said over the name.
     var main = false
     let onSelect: () -> Void
 
@@ -1242,7 +1205,7 @@ struct SessionTile: View {
         Text(heading ?? session.displayName)
             .font(.system(size: heading == nil ? 31 : 22, weight: .semibold))
             .foregroundStyle(.white)
-            // The head's name lit the way the folded group lights it under ⌘.
+            // The head's name lit in the group's own colour.
             .shadow(color: GroupTile.tint.opacity(main ? 0.55 : 0), radius: 10)
             .shadow(color: GroupTile.tint.opacity(main ? 0.35 : 0), radius: 22)
             .lineLimit(heading == nil ? 1 : 2)
