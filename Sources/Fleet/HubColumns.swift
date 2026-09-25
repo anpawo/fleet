@@ -318,7 +318,6 @@ struct CronCard: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
                 .truncationMode(.tail)
             if let address = job.address {
                 // At rest, not under ⌘: where a server answers is the one thing about it you
@@ -329,9 +328,6 @@ struct CronCard: View {
                     .foregroundStyle(link == nil ? .white.opacity(0.32) : Self.tint.opacity(0.9))
                     .underline(link != nil)
                     .lineLimit(1)
-                    // Assez bas pour que deux cartes tiennent côte à côte dans une boîte de
-                    // famille, qui est plus étroite que le bloc de 14 points.
-                    .minimumScaleFactor(0.55)
                     .onTapGesture { if commandHeld, let link { NSWorkspace.shared.open(link) } }
             }
             if expanded {
