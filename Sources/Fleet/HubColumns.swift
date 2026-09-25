@@ -138,7 +138,7 @@ struct CronColumn: View {
                   fills: false) {
             if scrolling {
                 ScrollView(.vertical) {
-                    VStack(spacing: 6) { rows(all) }
+                    VStack(spacing: 5) { rows(all) }
                         .background(
                             GeometryReader { inside in
                                 Color.clear.onAppear { natural = inside.size.height }
@@ -159,7 +159,7 @@ struct CronColumn: View {
                 .frame(maxHeight: min(natural > 0 ? natural : .infinity,
                                       max(40, limit - Self.chrome)), alignment: .top)
             } else {
-                VStack(spacing: 6) { rows(all) }
+                VStack(spacing: 5) { rows(all) }
                     .frame(maxHeight: max(40, limit - Self.chrome), alignment: .top)
                     .clipped()
             }
@@ -209,7 +209,7 @@ struct CronColumn: View {
         let families = Dictionary(grouping: jobs, by: familyName)
         let boxed = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
         let loose = jobs.filter { families[familyName($0)]?.count == 1 }
-        VStack(spacing: 6) {
+        VStack(spacing: 5) {
             ForEach(Array(boxed.enumerated()), id: \.element.key) { index, entry in
                 // The name on the left and the cards in one row beside it, each as wide as
                 // its own name and the ones past the edge scrolled to: a family is a line,
