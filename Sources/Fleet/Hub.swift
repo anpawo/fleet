@@ -270,7 +270,7 @@ final class HubStore: ObservableObject {
     /// making four round trips. Ten minutes, not one: every fetch reads the whole `mail`
     /// collection, handled mail included, and at one a minute that alone emptied the free
     /// tier's 50k daily reads (429 on 2026-09-23).
-    private static let freshness: TimeInterval = 600
+    nonisolated private static let freshness: TimeInterval = 600
 
     private var fetchedAt = Date.distantPast
     private var inFlight: Task<Void, Never>?
@@ -681,12 +681,16 @@ final class HubStore: ObservableObject {
     // MARK: - Reading
 
     /// Called when the panel appears. Cheap to call — it does nothing at all most times.
-    func refreshIfStale() {
+    func refreshIfStale(freshness: TimeInterval = HubStore.freshness) {
         guard isConfigured,
               inFlight == nil,
-              Date().timeIntervalSince(fetchedAt) > Self.freshness else { return }
+              Date().timeIntervalSince(fetchedAt) > freshness else { return }
         refresh()
     }
+
+    /// How many todos are due today or already overdue — what the menu bar shows so a day
+    /// with something on it is visible without opening the panel.
+    var dueToday: Int { todos.filter { $0.bucket == .today }.count }
 
     func refresh() {
         guard isConfigured else { return }

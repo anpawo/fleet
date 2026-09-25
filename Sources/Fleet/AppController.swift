@@ -384,6 +384,9 @@ final class AppController: ObservableObject {
         if reaper.struggling { publishMachineState() }
         // Ahead of the dormant gate too: a Reel arrives from the phone, not from a session.
         hub.pollReelsIfDue()
+        // The menu bar shows what is due today, and on a day the panel never opens nothing
+        // else would fetch it: three GETs every six hours, against a 50k daily read quota.
+        hub.refreshIfStale(freshness: 6 * 3600)
         launchd.tick(now: now)
         // Same reason: a terminal left empty behind a session that ended is not a session, so
         // nothing below this line would ever see it.
