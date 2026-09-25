@@ -177,8 +177,7 @@ struct CronColumn: View {
         let bad = all.filter { !$0.ok }
         half(good)
         // The two halves are the whole point of the block, and a border colour alone made you
-        // read every card to find where one ended. Drawn at nine tenths rather than edge to
-        // edge: a rule that touches the block's sides reads as the end of the block.
+        // read every card to find where one ended. Drawn short of the edges: a rule that touches the block's sides reads as the end of the block.
         if !good.isEmpty && !bad.isEmpty { rule }
         half(bad)
     }
@@ -187,7 +186,7 @@ struct CronColumn: View {
         Rectangle()
             .fill(.white.opacity(0.22))
             .frame(height: 2)
-            .scaleEffect(x: 0.9)
+            .scaleEffect(x: 0.95)
             .padding(.vertical, 5)
     }
 
@@ -211,6 +210,7 @@ struct CronColumn: View {
                 row(entry.value, family: entry.key)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .clipped()
+                detail(of: entry.value)
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
@@ -221,6 +221,7 @@ struct CronColumn: View {
                 FlowLayout(spacing: 6) {
                     ForEach(loose) { job in card(job, family: nil, fills: true) }
                 }
+                detail(of: loose)
             }
         }
     }
@@ -252,6 +253,48 @@ struct CronColumn: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
+    /// What the card under ⌘ and the pointer does, where it answers and when, in a box under
+    /// its line rather than in the card: a card that grew to its sentence moved every card
+    /// beside it. Nearly the block's width, like the rule, and short of the edges for the
+    /// same reason.
+    @ViewBuilder private func detail(of jobs: [Launchd.Job]) -> some View {
+        if commandHeld, let job = jobs.first(where: { $0.id == hovered }) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(job.note)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let address = job.address {
+                    let link = address.hasPrefix("http://") ? URL(string: address) : nil
+                    // Only a web address opens. A SOCKS port shows as itself, because a
+                    // browser sent there hangs on a page that will never arrive.
+                    Text(address)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(link == nil ? .white.opacity(0.32) : CronCard.tint.opacity(0.9))
+                        .underline(link != nil)
+                        .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
+                }
+                // A resident is on all the time — that is what the block it sits in means.
+                if job.schedule != "always on" {
+                    Text(job.schedule)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.32))
+                }
+            }
+            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 6)
+        }
+    }
+
     /// A family's cards in one line, clipped at the block's edge and scrolled sideways.
     @ViewBuilder private func row(_ jobs: [Launchd.Job], family: String) -> some View {
         let cards = HStack(alignment: .top, spacing: 6) {
@@ -281,8 +324,8 @@ struct CronColumn: View {
     }
 
     private func card(_ job: Launchd.Job, family: String?, fills: Bool = false) -> some View {
-        CronCard(job: job, expanded: hovered == job.id,
-                 commandHeld: commandHeld, family: family, fills: fills)
+        CronCard(job: job, expanded: commandHeld && hovered == job.id,
+                 family: family, fills: fills)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
             // to lean on: that modifier only reaches this column's own subtree, and
             // what the unfolding card pushes is the TODO block *below* the column.
@@ -347,15 +390,12 @@ struct FlowLayout: Layout {
 }
 
 /// One agent, half the block wide. A name and a border: green for one launchd has loaded and
-/// whose last run was clean, red for one that is unloaded or came back on an error. Under
-/// the pointer, what it does and how often it does it, a line each.
+/// whose last run was clean, red for one that is unloaded or came back on an error. What it
+/// does, where it answers and when is in a box under its line — see `CronColumn.detail` —
+/// and the card only lights its border while that box is up.
 struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
-    /// Whether ⌘ is down, which is what turns the address into a link. A plain click
-    /// anywhere in these columns dismisses the panel, so an address that opened on one would
-    /// fire every time you meant to close it.
-    let commandHeld: Bool
     /// The box this card sits in, when it sits in one — its name is already written above.
     var family: String?
     /// Whether the card takes the width it is offered, name in the middle, rather than its own.
@@ -374,35 +414,6 @@ struct CronCard: View {
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if let address = job.address {
-                // At rest, not under ⌘: where a server answers is the one thing about it you
-                // came to the card for, and a link you have to hold a key to see is a link you
-                // look up in the plist instead.
-                Text(address)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(link == nil ? .white.opacity(0.32) : Self.tint.opacity(0.9))
-                    .underline(link != nil)
-                    .lineLimit(1)
-                    .onTapGesture { if commandHeld, let link { NSWorkspace.shared.open(link) } }
-            }
-            if expanded {
-                // One line, and the card widens to it up to most of the block: a card as
-                // wide as its name would fold the sentence into a column.
-                Text(job.note)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 230, alignment: .leading)
-                // A resident is on all the time — that is what the block it sits in means.
-                // `always on` under five cards in a row said nothing any of them did not
-                // already say by being there.
-                if job.schedule != "always on" {
-                    Text(job.schedule)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.32))
-                }
-            }
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 12)
@@ -417,14 +428,7 @@ struct CronCard: View {
         )
     }
 
-    /// Only a web address opens. A SOCKS port shows as itself, because a browser sent there
-    /// hangs on a page that will never arrive.
-    private var link: URL? {
-        guard let address = job.address, address.hasPrefix("http://") else { return nil }
-        return URL(string: address)
-    }
-
-    private static let tint = SessionState.awaitingAnswer.tint
+    static let tint = SessionState.awaitingAnswer.tint
 }
 
 /// The panel's right column: the todo list, oldest first — the one that has been sitting there

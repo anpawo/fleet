@@ -150,12 +150,19 @@ enum Launchd {
         }
         if let calendar = plist["StartCalendarInterval"] {
             let entries = (calendar as? [[String: Any]]) ?? [(calendar as? [String: Any]) ?? [:]]
-            let times = entries.map { entry -> String in
+            // Five entries that differ only by weekday are one time on five days, not five
+            // times: the days go in front, and the same time is said once.
+            var times: [String] = []
+            for entry in entries {
                 let hour = entry["Hour"] as? Int
                 let minute = entry["Minute"] as? Int ?? 0
-                return hour.map { String(format: "%d:%02d", $0, minute) } ?? "\(minute)′"
+                let time = hour.map { String(format: "%d:%02d", $0, minute) } ?? "\(minute)′"
+                if !times.contains(time) { times.append(time) }
             }
-            return times.joined(separator: " \u{00B7} ")
+            let weekdays = Set(entries.compactMap { $0["Weekday"] as? Int }).sorted()
+            let when = weekdays.isEmpty ? "" : weekdays == [1, 2, 3, 4, 5] ? "weekdays "
+                     : weekdays.map { days[$0 % 7] }.joined(separator: " ") + " "
+            return when + times.joined(separator: " \u{00B7} ")
         }
         if let paths = plist["WatchPaths"] as? [String], let first = paths.first {
             return "on \((first as NSString).lastPathComponent)"
