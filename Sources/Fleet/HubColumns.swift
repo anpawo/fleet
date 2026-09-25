@@ -226,7 +226,7 @@ struct CronColumn: View {
                 // As many to a line as fit at their own width, and what the line has left
                 // shared out between them — a card that has been widened centres its name.
                 let shown = loose.first { commandHeld && $0.id == hovered }
-                FlowLayout(spacing: 6, box: shown?.id, ids: loose.map(\.id)) {
+                FlowLayout(spacing: 4, box: shown?.id, ids: loose.map(\.id)) {
                     detail(of: loose, inset: false)
                     ForEach(loose) { job in card(job, family: nil, fills: true) }
                 }
@@ -312,7 +312,7 @@ struct CronColumn: View {
 
     /// A family's cards in one line, clipped at the block's edge and scrolled sideways.
     @ViewBuilder private func row(_ jobs: [Launchd.Job], family: String) -> some View {
-        let cards = HStack(alignment: .top, spacing: 6) {
+        let cards = HStack(alignment: .top, spacing: 4) {
             Text(family.uppercased())
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.1)
@@ -466,7 +466,7 @@ struct CronCard: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 4)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 6)
             .frame(maxWidth: fills ? .infinity : nil)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
