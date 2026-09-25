@@ -265,7 +265,7 @@ struct WorkflowProgress {
     var started: Int
     var since: Date
 
-    /// "42% · 11m · 15m left": how far along, time since launch, time still to go.
+    /// "42% · 15m left", or "0% · 4m in · no eta yet" until the first agent finishes.
     ///
     /// ponytail: every phase weighs the same and the rest is extrapolated from the pace so
     /// far — a short last phase reads late, a long one early. Weigh phases by the agent time
@@ -275,11 +275,9 @@ struct WorkflowProgress {
         let inPhase = started > 0 ? Double(done) / Double(started) : 0
         let fraction = phaseIndex.map { (Double($0 - 1) + inPhase) / Double(max(phaseCount, 1)) }
             ?? inPhase
-        var parts = ["\(Int(fraction * 100))%", Self.duration(elapsed)]
-        if fraction > 0 {
-            parts.append(Self.duration(elapsed * (1 - fraction) / fraction) + " left")
-        }
-        return parts.joined(separator: " · ")
+        let percent = "\(Int(fraction * 100))%"
+        guard fraction > 0 else { return "\(percent) · \(Self.duration(elapsed)) in · no eta yet" }
+        return "\(percent) · \(Self.duration(elapsed * (1 - fraction) / fraction)) left"
     }
 
     private static func duration(_ seconds: TimeInterval) -> String {
