@@ -193,7 +193,7 @@ struct CronColumn: View {
         Rectangle()
             .fill(.white.opacity(0.6))
             .frame(height: 1)
-            .scaleEffect(x: 0.8)
+            .scaleEffect(x: 0.85)
             .padding(.vertical, 3)
     }
 
