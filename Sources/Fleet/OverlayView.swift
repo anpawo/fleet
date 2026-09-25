@@ -1242,6 +1242,9 @@ struct SessionTile: View {
         Text(heading ?? session.displayName)
             .font(.system(size: heading == nil ? 31 : 22, weight: .semibold))
             .foregroundStyle(.white)
+            // The head's name lit the way the folded group lights it under ⌘.
+            .shadow(color: GroupTile.tint.opacity(main ? 0.55 : 0), radius: 10)
+            .shadow(color: GroupTile.tint.opacity(main ? 0.35 : 0), radius: 22)
             .lineLimit(heading == nil ? 1 : 2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.6)
