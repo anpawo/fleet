@@ -124,6 +124,7 @@ enum Launchd {
         "fr.marius.my-setup-sync": "my-setup.sync",
         "fr.marius.m-mount": "s14.M: & F:",
         "scient.recon-mirror-check": "s14.Bas-mirror",
+        "fr.marius.recon-v3": "s14.recon-v3",
         "io.scient.tailscaled-userspace": "s14.tailscale",
     ]
 
