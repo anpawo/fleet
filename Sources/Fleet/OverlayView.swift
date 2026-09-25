@@ -1011,9 +1011,11 @@ struct GroupTile: View {
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 
+    /// The head first, top left, whatever it was touched last: it is the card you came for.
     private var rows: [[Session]] {
-        stride(from: 0, to: sessions.count, by: 2).map {
-            Array(sessions[$0 ..< min($0 + 2, sessions.count)])
+        let ordered = sessions.sorted { a, _ in a.id == head?.id }
+        return stride(from: 0, to: ordered.count, by: 2).map {
+            Array(ordered[$0 ..< min($0 + 2, ordered.count)])
         }
     }
 
