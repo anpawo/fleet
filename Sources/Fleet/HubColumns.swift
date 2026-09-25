@@ -443,6 +443,8 @@ struct CronCard: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 4)
+            // A little taller as a tab, so the box it stands on clears the pills beside it.
+            .padding(.bottom, expanded ? 4 : 0)
             .padding(.horizontal, 9)
             .frame(maxWidth: fills ? .infinity : nil)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
