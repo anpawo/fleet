@@ -216,7 +216,11 @@ struct CronColumn: View {
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
             }
             if !loose.isEmpty {
-                grid(loose)
+                // As many to a line as fit at their own width, and what the line has left
+                // shared out between them — a card that has been widened centres its name.
+                FlowLayout(spacing: 6) {
+                    ForEach(loose) { job in card(job, family: nil, fills: true) }
+                }
             }
         }
     }
@@ -276,9 +280,9 @@ struct CronColumn: View {
         }
     }
 
-    private func card(_ job: Launchd.Job, family: String?) -> some View {
+    private func card(_ job: Launchd.Job, family: String?, fills: Bool = false) -> some View {
         CronCard(job: job, expanded: hovered == job.id,
-                 commandHeld: commandHeld, family: family)
+                 commandHeld: commandHeld, family: family, fills: fills)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
             // to lean on: that modifier only reaches this column's own subtree, and
             // what the unfolding card pushes is the TODO block *below* the column.
@@ -290,6 +294,55 @@ struct CronColumn: View {
                     if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
                 }
             }
+    }
+}
+
+/// Cards in lines, each at its own width until the line is full, and then the line's slack
+/// shared equally between the cards on it, so every line ends flush at the right edge.
+struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [[(Int, CGSize)]] {
+        var lines: [[(Int, CGSize)]] = [[]]
+        var used: CGFloat = 0
+        for (i, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            let needed = size.width + (lines[lines.count - 1].isEmpty ? 0 : spacing)
+            if used + needed > width, !lines[lines.count - 1].isEmpty {
+                lines.append([])
+                used = 0
+            }
+            used += size.width + (lines[lines.count - 1].isEmpty ? 0 : spacing)
+            lines[lines.count - 1].append((i, size))
+        }
+        return lines
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let rows = lines(subviews, width: width)
+        let height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
+                   + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? rows.map {
+            $0.map(\.1.width).reduce(0, +) + spacing * CGFloat($0.count - 1) }.max() ?? 0,
+                      height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in lines(subviews, width: bounds.width) {
+            let natural = row.map(\.1.width).reduce(0, +) + spacing * CGFloat(row.count - 1)
+            let extra = max(0, bounds.width - natural) / CGFloat(row.count)
+            let height = row.map(\.1.height).max() ?? 0
+            var x = bounds.minX
+            for (i, size) in row {
+                let width = size.width + extra
+                subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                                  proposal: ProposedViewSize(width: width, height: size.height))
+                x += width + spacing
+            }
+            y += height + spacing
+        }
     }
 }
 
@@ -305,6 +358,8 @@ struct CronCard: View {
     let commandHeld: Bool
     /// The box this card sits in, when it sits in one — its name is already written above.
     var family: String?
+    /// Whether the card takes the width it is offered, name in the middle, rather than its own.
+    var fills = false
 
     /// What the card writes: `hermes-map` inside the S14 box, `s14.hermes-map` on its own.
     private var label: String {
@@ -351,6 +406,7 @@ struct CronCard: View {
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 12)
+        .frame(maxWidth: fills ? .infinity : nil)
         .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
