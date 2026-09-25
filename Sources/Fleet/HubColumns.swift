@@ -135,7 +135,8 @@ struct CronColumn: View {
                   tint: Self.tint,
                   fill: Self.tint.darkened(0.48),
                   minRows: 0,
-                  fills: false) {
+                  fills: false,
+                  topInset: 5) {
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 5) { rows(all) }
@@ -182,11 +183,13 @@ struct CronColumn: View {
         }
         let good = all.filter(\.ok)
         let bad = all.filter { !$0.ok }
-        half(good)
+        // Only the halves that have anything: an empty stack is nothing tall, but the stack
+        // round it still leaves its spacing round nothing.
+        if !good.isEmpty { half(good) }
         // The two halves are the whole point of the block, and a border colour alone made you
         // read every card to find where one ended. Drawn short of the edges: a rule that touches the block's sides reads as the end of the block.
         if !good.isEmpty && !bad.isEmpty { rule }
-        half(bad)
+        if !bad.isEmpty { half(bad) }
     }
 
     private var rule: some View {
@@ -742,6 +745,9 @@ struct HubColumn<Content: View>: View {
     /// they need. A block that scrolls has to be told how tall it is, and the one at the foot
     /// of the left column is as tall as what is left of the screen.
     var fills = false
+    /// The room under the heading. The agent blocks take less: their pills are shorter than a
+    /// card, and the same gap over them read as empty.
+    var topInset: CGFloat = 9
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -796,7 +802,7 @@ struct HubColumn<Content: View>: View {
             VStack(spacing: 8) { content }
                 .frame(minHeight: MailCard.room(forRows: minRows),
                        maxHeight: fills ? .infinity : nil, alignment: .top)
-                .padding(.top, 9)
+                .padding(.top, topInset)
         }
         .blockFrame(tint, fill: fill, radius: radius)
     }
