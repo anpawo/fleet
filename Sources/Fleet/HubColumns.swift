@@ -214,14 +214,10 @@ struct CronColumn: View {
                 // The name on the left and the cards in one row beside it, each as wide as
                 // its own name and the ones past the edge scrolled to: a family is a line,
                 // not a paragraph. The name scrolls with its cards.
-                // A point of overlap: the tab's fill covers the box's top line under it.
-                VStack(spacing: -1) {
-                    row(entry.value, family: entry.key)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .clipped()
-                        .zIndex(1)
-                    detail(of: entry.value)
-                }
+                row(entry.value, family: entry.key)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                detail(of: entry.value)
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
@@ -229,7 +225,6 @@ struct CronColumn: View {
             if !loose.isEmpty {
                 // As many to a line as fit at their own width, and what the line has left
                 // shared out between them — a card that has been widened centres its name.
-                // The box first, so the pills draw over it where the tab meets it.
                 let shown = loose.first { commandHeld && $0.id == hovered }
                 FlowLayout(spacing: 6, box: shown?.id, ids: loose.map(\.id)) {
                     detail(of: loose, inset: false)
@@ -307,9 +302,6 @@ struct CronColumn: View {
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, inset ? 6 : 0)
-            // A plain fade. The box is placed a point up under its tab by whoever lays it
-            // out — a negative padding did that, and a transition composites the view in
-            // a layer cut to its frame, which took the top of the box with it.
             .transition(.opacity)
             .onHover { inside in
                 overDetail = inside
@@ -347,8 +339,7 @@ struct CronColumn: View {
     }
 
     private func card(_ job: Launchd.Job, family: String?, fills: Bool = false) -> some View {
-        CronCard(job: job, expanded: commandHeld && hovered == job.id,
-                 family: family, fills: fills)
+        CronCard(job: job, family: family, fills: fills)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
             // to lean on: that modifier only reaches this column's own subtree, and
             // what the unfolding card pushes is the TODO block *below* the column.
@@ -416,7 +407,7 @@ struct FlowLayout: Layout {
         let rows = lines(subviews, width: width)
         var height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
                    + spacing * CGFloat(max(0, rows.count - 1))
-        if rows.contains(where: boxed) { height += boxHeight(subviews, width: width) - 1 }
+        if rows.contains(where: boxed) { height += spacing + boxHeight(subviews, width: width) }
         return CGSize(width: proposal.width ?? rows.map {
             $0.map(\.1.width).reduce(0, +) + spacing * CGFloat($0.count - 1) }.max() ?? 0,
                       height: height)
@@ -437,11 +428,10 @@ struct FlowLayout: Layout {
             }
             y += height + spacing
             if boxed(row) {
-                // A point up under the line: the tab's fill covers the box's top line.
                 let h = boxHeight(subviews, width: bounds.width)
-                subviews[0].place(at: CGPoint(x: bounds.minX, y: y - spacing - 1), anchor: .topLeading,
+                subviews[0].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
                                   proposal: ProposedViewSize(width: bounds.width, height: h))
-                y += h - spacing - 1 + spacing
+                y += h + spacing
             }
         }
     }
@@ -449,10 +439,10 @@ struct FlowLayout: Layout {
 
 /// One agent, half the block wide. A name and a border: green for one launchd has loaded and
 /// whose last run was clean, red for one that is unloaded or came back on an error. What it
-/// does, where it answers and when is in a box under its line — see `CronColumn.detail`.
+/// does, where it answers and when is in a box under its line while ⌘ and the pointer are
+/// on it — see `CronColumn.detail`.
 struct CronCard: View {
     let job: Launchd.Job
-    let expanded: Bool
     /// The box this card sits in, when it sits in one — its name is already written above.
     var family: String?
     /// Whether the card takes the width it is offered, name in the middle, rather than its own.
@@ -464,7 +454,7 @@ struct CronCard: View {
         return String(job.name.dropFirst(family.count + 1))
     }
 
-    /// The card's corner, and the box's: the same, so the tab reads as part of the box.
+    /// The card's corner, and the box's.
     static let radius: CGFloat = 8
 
     var body: some View {
@@ -476,43 +466,17 @@ struct CronCard: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 4)
-            // A little taller as a tab, so the box it stands on clears the pills beside it.
-            .padding(.bottom, expanded ? 4 : 0)
             .padding(.horizontal, 9)
             .frame(maxWidth: fills ? .infinity : nil)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            // With its box up the card is a tab on it: square at the bottom, and open there
-            // — no line between the name and what it says.
-            .clipShape(TabShape(open: expanded))
-            .overlay(TabShape(open: expanded).stroke(border, lineWidth: 1).padding(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+                .strokeBorder(border, lineWidth: 1))
     }
 
     static let tint = SessionState.awaitingAnswer.tint
 }
 
-/// A rounded rectangle, or — `open` — the top of one: rounded at the top, straight sides
-/// down to the bottom edge, and nothing along the bottom. Clipping to it leaves the bottom
-/// square, and stroking it leaves the bottom unlined.
-struct TabShape: Shape {
-    var open: Bool
-
-    func path(in rect: CGRect) -> Path {
-        let r = CronCard.radius
-        guard open else {
-            return RoundedRectangle(cornerRadius: r, style: .continuous).path(in: rect)
-        }
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY),
-                          control: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r),
-                          control: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        return path
-    }
-}
 
 /// The panel's right column: the todo list, oldest first — the one that has been sitting there
 /// longest is the one worth being reminded of.
