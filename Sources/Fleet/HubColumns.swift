@@ -191,10 +191,10 @@ struct CronColumn: View {
 
     private var rule: some View {
         Rectangle()
-            .fill(.white.opacity(0.22))
-            .frame(height: 2)
-            .scaleEffect(x: 0.95)
-            .padding(.vertical, 5)
+            .fill(.white.opacity(0.6))
+            .frame(height: 1)
+            .scaleEffect(x: 0.8)
+            .padding(.vertical, 3)
     }
 
     /// Agents that share a prefix go under its name, and the cards drop the prefix. Six cards
