@@ -514,6 +514,7 @@ struct OverlayView: View {
                         case let .group(name, sessions):
                         GroupTile(name: name, sessions: sessions,
                                   open: openGroup == name,
+                                  commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   scrolling: !eagerLayout,
                                   onToggle: {
@@ -832,6 +833,8 @@ struct GroupTile: View {
     let name: String
     let sessions: [Session]
     let open: Bool
+    /// ⌘-click goes to the head's terminal; a plain click only unfolds.
+    let commandHeld: Bool
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
@@ -1011,7 +1014,12 @@ struct GroupTile: View {
         }
     }
 
-    private func tapped() { onToggle() }
+    /// A plain click unfolds, which costs nothing and undoes itself. ⌘ goes straight to the
+    /// head's terminal, which closes the panel and can change Space with nothing to click to
+    /// come back — so it is asked for, never stumbled into.
+    private func tapped() {
+        if commandHeld, let head { onActivate(head) } else { onToggle() }
+    }
 
     /// The group's head: the session the others name as the sender of their brief. A peer
     /// message carries `from="uds:/tmp/cc-socks/<pid>.sock"`, and that pid is one of these
