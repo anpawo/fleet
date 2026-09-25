@@ -179,50 +179,42 @@ struct CronColumn: View {
         // The two halves are the whole point of the block, and a border colour alone made you
         // read every card to find where one ended. Drawn at nine tenths rather than edge to
         // edge: a rule that touches the block's sides reads as the end of the block.
-        if !good.isEmpty && !bad.isEmpty {
-            Rectangle()
-                .fill(.white.opacity(0.22))
-                .frame(height: 2)
-                .scaleEffect(x: 0.9)
-                .padding(.vertical, 5)
-        }
+        if !good.isEmpty && !bad.isEmpty { rule }
         half(bad)
     }
 
-    /// Agents that share a prefix go in one framed box under it, and the cards inside drop the
-    /// prefix. Six cards reading `s14.` and `mac.` spent most of their width saying which
-    /// machine they belong to, and `s14.tailscaled-userspace` did not fit at all.
+    private var rule: some View {
+        Rectangle()
+            .fill(.white.opacity(0.22))
+            .frame(height: 2)
+            .scaleEffect(x: 0.9)
+            .padding(.vertical, 5)
+    }
+
+    /// Agents that share a prefix go under its name, and the cards drop the prefix. Six cards
+    /// reading `s14.` and `mac.` spent most of their width saying which machine they belong
+    /// to, and `s14.tailscaled-userspace` did not fit at all. A rule closes each family off
+    /// from what follows — the same rule that parts the working agents from the failing —
+    /// rather than a box: a frame inside a block is a block inside a block.
     ///
-    /// Two or more, or nothing: a box around a single card is a frame that says what the card
-    /// already says. That is what keeps ROUTINE — where every prefix is worn by one agent —
-    /// exactly as it was.
+    /// Two or more, or nothing: a name over a single card says what the card already says.
+    /// That is what keeps ROUTINE — where every prefix is worn by one agent — exactly as it was.
     @ViewBuilder private func half(_ jobs: [Launchd.Job]) -> some View {
         let families = Dictionary(grouping: jobs, by: familyName)
         let boxed = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
         let loose = jobs.filter { families[familyName($0)]?.count == 1 }
         VStack(spacing: 6) {
-            ForEach(boxed, id: \.key) { family, members in
-                VStack(spacing: 6) {
-                    // Centred, unlike everything else in the panel: this is the title of a box
-                    // whose width does not depend on what is in it, the same exception the
-                    // session tiles already have.
-                    Text(family.uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(Self.tint.lightened(0.65))
-                        .frame(maxWidth: .infinity)
-                    grid(members, family: family)
-                }
-                .padding(7)
-                // `background(_:in:)` plutôt que `background` + `clipShape` : le clip coupait
-                // la bordure droite des cartes de la colonne de droite, qui dépassent la boîte
-                // d'un cheveu. Le fond est arrondi, les cartes ne sont plus rognées.
-                .background(Self.tint.opacity(0.07),
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Self.tint.opacity(0.28), lineWidth: 1)
-                )
+            ForEach(Array(boxed.enumerated()), id: \.element.key) { index, entry in
+                Text(entry.key.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(Self.tint.lightened(0.65))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 7)
+                grid(entry.value, family: entry.key)
+                // Only when something follows: a rule under the last thing in the block is a
+                // rule under nothing.
+                if index < boxed.count - 1 || !loose.isEmpty { rule }
             }
             if !loose.isEmpty {
                 grid(loose)
