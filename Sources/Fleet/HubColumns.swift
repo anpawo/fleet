@@ -205,13 +205,22 @@ struct CronColumn: View {
         let loose = jobs.filter { families[familyName($0)]?.count == 1 }
         VStack(spacing: 6) {
             ForEach(Array(boxed.enumerated()), id: \.element.key) { index, entry in
-                Text(entry.key.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(Self.tint.lightened(0.65))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 7)
-                grid(entry.value, family: entry.key)
+                // The name on the left and the cards in one row beside it, each as wide as
+                // its own name and the ones past the edge scrolled to: a family is a line,
+                // not a paragraph.
+                HStack(alignment: .top, spacing: 8) {
+                    Text(entry.key.uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Self.tint.lightened(0.65))
+                        .fixedSize()
+                        .padding(.leading, 7)
+                        // On the cards' own first line, which sits under their padding.
+                        .padding(.top, 9)
+                    row(entry.value, family: entry.key)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
@@ -242,22 +251,46 @@ struct CronColumn: View {
     @ViewBuilder private func stack(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
         VStack(spacing: 6) {
             ForEach(jobs) { job in
-                CronCard(job: job, expanded: commandHeld && hovered == job.id,
-                         commandHeld: commandHeld, family: family)
-                    // `withAnimation` rather than the `.animation(value: hovered)` this used
-                    // to lean on: that modifier only reaches this column's own subtree, and
-                    // what the unfolding card pushes is the TODO block *below* the column.
-                    // Growing, the block's height came from a measurement that is already
-                    // wrapped in an animation, so TODO slid down; shrinking, it did not, and
-                    // TODO jumped back up. A transaction covers the whole update, both ways.
-                    .onHover { inside in
-                        withAnimation(TodoColumn.unroll) {
-                            if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
-                        }
-                    }
+                card(job, family: family)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    /// A family's cards in one line, clipped at the block's edge and scrolled sideways.
+    @ViewBuilder private func row(_ jobs: [Launchd.Job], family: String) -> some View {
+        let cards = HStack(alignment: .top, spacing: 6) {
+            ForEach(jobs) { job in card(job, family: family) }
+        }
+        if scrolling {
+            ScrollView(.horizontal) { cards }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+        } else {
+            // At their own widths, as the scroll view keeps them. A flexible frame grows to
+            // a child that will not shrink and took the block with it; a frame of no width
+            // reports none, the cards spill out of it to the right, and the family line
+            // clips them at the block's edge.
+            cards.fixedSize(horizontal: true, vertical: false)
+                .frame(width: 0, alignment: .leading)
+        }
+    }
+
+    private func card(_ job: Launchd.Job, family: String?) -> some View {
+        CronCard(job: job, expanded: commandHeld && hovered == job.id,
+                 commandHeld: commandHeld, family: family)
+            // `withAnimation` rather than the `.animation(value: hovered)` this used
+            // to lean on: that modifier only reaches this column's own subtree, and
+            // what the unfolding card pushes is the TODO block *below* the column.
+            // Growing, the block's height came from a measurement that is already
+            // wrapped in an animation, so TODO slid down; shrinking, it did not, and
+            // TODO jumped back up. A transaction covers the whole update, both ways.
+            .onHover { inside in
+                withAnimation(TodoColumn.unroll) {
+                    if inside { hovered = job.id } else if hovered == job.id { hovered = nil }
+                }
+            }
     }
 }
 
@@ -288,7 +321,6 @@ struct CronCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
             if let address = job.address {
                 // At rest, not under ⌘: where a server answers is the one thing about it you
                 // came to the card for, and a link you have to hold a key to see is a link you
