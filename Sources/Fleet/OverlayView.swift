@@ -905,11 +905,7 @@ struct GroupTile: View {
                 // What ⌘ is aiming at, said rather than shaded: a lit rectangle only says
                 // "this card", which the pointer already said. Over the name, because the
                 // name is what it is about to be replaced by.
-                Text("MAIN")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(3.2)
-                    .foregroundStyle(.white)
-                    .fixedSize()
+                Self.mainLabel
                     .opacity(armed ? 0.5 : 0)
                     // Centred on the name, not on the card: a long name is clamped to the
                     // left edge, and a label centred on the card would then sit off it.
@@ -962,15 +958,24 @@ struct GroupTile: View {
 
     /// Where the name's own line starts, measured from the top of the folded card. Named
     /// because the MAIN label above it has to divide what is left.
-    private static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
+    static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
 
     /// Roughly the MAIN label's line height, the way `nameLine` is the title's.
-    private static let mainLine: CGFloat = 13
+    static let mainLine: CGFloat = 13
+
+    /// The word itself, worn here over the folded group and inside it over the head's card.
+    static var mainLabel: some View {
+        Text("MAIN")
+            .font(.system(size: 11, weight: .bold))
+            .tracking(3.2)
+            .foregroundStyle(.white)
+            .fixedSize()
+    }
 
     /// What the title's line box leaves above its capitals. The label is centred on what the
     /// eye sees and not on two frames: measured on an offscreen render, halving the frames
     /// left 18.5pt over the word and 28.5 under it.
-    private static let titleLead: CGFloat = 10
+    static let titleLead: CGFloat = 10
 
     /// Measured the same way and for the same reason as `nameWidth`, and once for all cards
     /// since the word never changes.
@@ -999,7 +1004,8 @@ struct GroupTile: View {
                         // Inside a directory the card wears its topic: the directory is what
                         // these sessions have in common, and a row of cards all saying
                         // "portfolio" is a row you cannot choose from.
-                        SessionTile(session: session, heading: session.label ?? session.topic) {
+                        SessionTile(session: session, heading: session.label ?? session.topic,
+                                    main: session.id == head?.id) {
                             onActivate(session)
                         }
                         .frame(width: inner)
@@ -1142,6 +1148,8 @@ struct SessionTile: View {
     /// What the card is called, when the directory name it defaults to would say nothing —
     /// inside an unfolded group, where every card shares that directory.
     var heading: String?
+    /// Whether this is the group's head, said over the name the way the folded group says it.
+    var main = false
     let onSelect: () -> Void
 
     /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
@@ -1192,6 +1200,13 @@ struct SessionTile: View {
                     statePill
                 }
                 .padding(11)
+
+                if main {
+                    GroupTile.mainLabel
+                        .opacity(0.5)
+                        .padding(.top, (GroupTile.titleTop + GroupTile.titleLead
+                                        - GroupTile.mainLine) / 2)
+                }
             }
             .frame(height: Self.height, alignment: .top)
             // The glow is cast by the card's own ground, a single shape, rather than by the

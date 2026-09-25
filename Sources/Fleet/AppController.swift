@@ -448,10 +448,20 @@ final class AppController: ObservableObject {
         sessions = registry.refresh()
     }
 
+    /// The one directory every session is in, when that is all the fleet is.
+    private var loneGroup: String? {
+        let keys = Set(sessions.map(\.groupKey))
+        guard keys.count == 1, sessions.count > 1 else { return nil }
+        return keys.first
+    }
+
     // MARK: - Panel
 
     private func showPanel() {
         isPanelVisible = true
+        // A fleet that is one directory has nothing to choose between on the grid: the
+        // group is the panel, so it comes up unfolded rather than as a lone card to click.
+        if openGroup == nil { openGroup = loneGroup }
         hub.advanceSpotlight()
         // Three GETs, and only if the last batch is over ten minutes old. The columns draw whatever
         // they already have in the meantime rather than waiting on the network.
