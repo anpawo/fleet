@@ -226,14 +226,15 @@ struct CronColumn: View {
             if !loose.isEmpty {
                 // As many to a line as fit at their own width, and what the line has left
                 // shared out between them — a card that has been widened centres its name.
-                FlowLayout(spacing: 6) {
+                // The box first, so the pills draw over it where the tab meets it.
+                let shown = loose.first { commandHeld && $0.id == hovered }
+                FlowLayout(spacing: 6, box: shown?.id, ids: loose.map(\.id)) {
+                    detail(of: loose, inset: false)
                     ForEach(loose) { job in card(job, family: nil, fills: true) }
                 }
                 // In from the edges by what the box is, so a pill at either end stands on
                 // the box rather than past its corner.
                 .padding(.horizontal, 6)
-                .zIndex(1)
-                detail(of: loose)
             }
         }
     }
@@ -269,7 +270,7 @@ struct CronColumn: View {
     /// its line rather than in the card: a card that grew to its sentence moved every card
     /// beside it. Nearly the block's width, like the rule, and short of the edges for the
     /// same reason.
-    @ViewBuilder private func detail(of jobs: [Launchd.Job]) -> some View {
+    @ViewBuilder private func detail(of jobs: [Launchd.Job], inset: Bool = true) -> some View {
         if commandHeld, let job = jobs.first(where: { $0.id == hovered }) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(job.note)
@@ -302,7 +303,7 @@ struct CronColumn: View {
                 RoundedRectangle(cornerRadius: CronCard.radius, style: .continuous)
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
-            .padding(.horizontal, 6)
+            .padding(.horizontal, inset ? 6 : 0)
             // Revealed from the top down once the tab has grown down to meet it — the
             // tab's growth is the unroll's own length, so the reveal waits that long. Out
             // with the tab, no wait.
@@ -375,13 +376,21 @@ struct CronColumn: View {
 
 /// Cards in lines, each at its own width until the line is full, and then the line's slack
 /// shared equally between the cards on it, so every line ends flush at the right edge.
+///
+/// With `box` set, the first subview is a box and the rest are the cards, in the order of
+/// `ids`: the box goes the full width under the line that holds the card `box` names — not
+/// under the flow, which with two lines put a line of pills between a tab and its box.
 struct FlowLayout: Layout {
     var spacing: CGFloat
+    var box: String? = nil
+    var ids: [String] = []
 
+    /// The cards' lines, as indexes into `subviews` — the box, when there is one, is at
+    /// index 0 and is not on any line.
     private func lines(_ subviews: Subviews, width: CGFloat) -> [[(Int, CGSize)]] {
         var lines: [[(Int, CGSize)]] = [[]]
         var used: CGFloat = 0
-        for (i, view) in subviews.enumerated() {
+        for (i, view) in subviews.enumerated() where !(box != nil && i == 0) {
             let size = view.sizeThatFits(.unspecified)
             let needed = size.width + (lines[lines.count - 1].isEmpty ? 0 : spacing)
             if used + needed > width, !lines[lines.count - 1].isEmpty {
@@ -394,11 +403,23 @@ struct FlowLayout: Layout {
         return lines
     }
 
+    /// Whether the box goes under this line.
+    private func boxed(_ row: [(Int, CGSize)]) -> Bool {
+        guard let box else { return false }
+        let offset = 1
+        return row.contains { i, _ in ids.indices.contains(i - offset) && ids[i - offset] == box }
+    }
+
+    private func boxHeight(_ subviews: Subviews, width: CGFloat) -> CGFloat {
+        box == nil ? 0 : subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let rows = lines(subviews, width: width)
-        let height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
+        var height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
                    + spacing * CGFloat(max(0, rows.count - 1))
+        if rows.contains(where: boxed) { height += spacing + boxHeight(subviews, width: width) }
         return CGSize(width: proposal.width ?? rows.map {
             $0.map(\.1.width).reduce(0, +) + spacing * CGFloat($0.count - 1) }.max() ?? 0,
                       height: height)
@@ -418,6 +439,12 @@ struct FlowLayout: Layout {
                 x += width + spacing
             }
             y += height + spacing
+            if boxed(row) {
+                let h = boxHeight(subviews, width: bounds.width)
+                subviews[0].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                                  proposal: ProposedViewSize(width: bounds.width, height: h))
+                y += h + spacing
+            }
         }
     }
 }
