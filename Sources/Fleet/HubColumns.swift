@@ -207,20 +207,10 @@ struct CronColumn: View {
             ForEach(Array(boxed.enumerated()), id: \.element.key) { index, entry in
                 // The name on the left and the cards in one row beside it, each as wide as
                 // its own name and the ones past the edge scrolled to: a family is a line,
-                // not a paragraph.
-                HStack(alignment: .top, spacing: 8) {
-                    Text(entry.key.uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(Self.tint.lightened(0.65))
-                        .fixedSize()
-                        .padding(.leading, 7)
-                        // On the cards' own first line, which sits under their padding.
-                        .padding(.top, 9)
-                    row(entry.value, family: entry.key)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
+                // not a paragraph. The name scrolls with its cards.
+                row(entry.value, family: entry.key)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
                 if index < boxed.count - 1 || !loose.isEmpty { rule }
@@ -261,6 +251,15 @@ struct CronColumn: View {
     /// A family's cards in one line, clipped at the block's edge and scrolled sideways.
     @ViewBuilder private func row(_ jobs: [Launchd.Job], family: String) -> some View {
         let cards = HStack(alignment: .top, spacing: 6) {
+            Text(family.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(Self.tint.lightened(0.65))
+                .fixedSize()
+                .padding(.leading, 7)
+                .padding(.trailing, 2)
+                // On the cards' own first line, which sits under their padding.
+                .padding(.top, 9)
             ForEach(jobs) { job in card(job, family: family) }
         }
         if scrolling {
@@ -278,7 +277,7 @@ struct CronColumn: View {
     }
 
     private func card(_ job: Launchd.Job, family: String?) -> some View {
-        CronCard(job: job, expanded: commandHeld && hovered == job.id,
+        CronCard(job: job, expanded: hovered == job.id,
                  commandHeld: commandHeld, family: family)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
             // to lean on: that modifier only reaches this column's own subtree, and
@@ -295,8 +294,8 @@ struct CronColumn: View {
 }
 
 /// One agent, half the block wide. A name and a border: green for one launchd has loaded and
-/// whose last run was clean, red for one that is unloaded or came back on an error. Under ⌘,
-/// and only the one being pointed at, what it does and how often it does it.
+/// whose last run was clean, red for one that is unloaded or came back on an error. Under
+/// the pointer, what it does and how often it does it, a line each.
 struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
@@ -336,10 +335,14 @@ struct CronCard: View {
                     .onTapGesture { if commandHeld, let link { NSWorkspace.shared.open(link) } }
             }
             if expanded {
+                // One line, and the card widens to it up to most of the block: a card as
+                // wide as its name would fold the sentence into a column.
                 Text(job.note)
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 230, alignment: .leading)
                 // A resident is on all the time — that is what the block it sits in means.
                 // `always on` under five cards in a row said nothing any of them did not
                 // already say by being there.
