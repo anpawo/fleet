@@ -304,13 +304,7 @@ struct CronColumn: View {
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, inset ? 6 : 0)
-            // Revealed from the top down once the tab has grown down to meet it — the
-            // tab's growth is the unroll's own length, so the reveal waits that long. Out
-            // with the tab, no wait.
-            .transition(.asymmetric(
-                insertion: .modifier(active: Reveal(fraction: 0), identity: Reveal(fraction: 1))
-                    .animation(TodoColumn.unroll.delay(0.18)),
-                removal: .opacity.animation(TodoColumn.unroll)))
+            .transition(.opacity)
             // Up under the card, by the stack's gap and one point more: the card's fill,
             // drawn over this, covers the box's top line where the two meet.
             .padding(.top, -7)
@@ -451,8 +445,7 @@ struct FlowLayout: Layout {
 
 /// One agent, half the block wide. A name and a border: green for one launchd has loaded and
 /// whose last run was clean, red for one that is unloaded or came back on an error. What it
-/// does, where it answers and when is in a box under its line — see `CronColumn.detail` —
-/// and the card only lights its border while that box is up.
+/// does, where it answers and when is in a box under its line — see `CronColumn.detail`.
 struct CronCard: View {
     let job: Launchd.Job
     let expanded: Bool
@@ -471,8 +464,7 @@ struct CronCard: View {
     static let radius: CGFloat = 8
 
     var body: some View {
-        let border: Color = job.ok ? .white.opacity(expanded ? 0.2 : 0.07)
-                                   : SessionState.running.tint.opacity(expanded ? 0.95 : 0.5)
+        let border: Color = job.ok ? .white.opacity(0.07) : SessionState.running.tint.opacity(0.5)
         // Set like the state pills on the session cards: small, and no wider than the name.
         Text(label)
             .font(.system(size: 10, weight: .semibold))
@@ -492,31 +484,6 @@ struct CronCard: View {
     }
 
     static let tint = SessionState.awaitingAnswer.tint
-}
-
-/// The view's top `fraction`, and nothing under it: a curtain going down.
-struct Reveal: ViewModifier, Animatable {
-    var fraction: CGFloat
-    var animatableData: CGFloat {
-        get { fraction }
-        set { fraction = newValue }
-    }
-
-    func body(content: Content) -> some View {
-        content.clipShape(Curtain(fraction: fraction))
-    }
-
-    /// The clip, drawn from above the view's own top: a transition is applied where the
-    /// container sees the view, which is after the pull-up under the tab, and a clip to
-    /// those bounds took the overlap with it.
-    private struct Curtain: Shape {
-        var fraction: CGFloat
-        func path(in rect: CGRect) -> Path {
-            let above: CGFloat = 8
-            return Path(CGRect(x: rect.minX, y: rect.minY - above, width: rect.width,
-                               height: (rect.height + above) * fraction))
-        }
-    }
 }
 
 /// A rounded rectangle, or — `open` — the top of one: rounded at the top, straight sides
