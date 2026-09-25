@@ -303,9 +303,6 @@ struct CronColumn: View {
                     .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, 6)
-            // Up under the card, by the stack's gap and one point more: the card's fill,
-            // drawn over this, covers the box's top line where the two meet.
-            .padding(.top, -7)
             // Revealed from the top down once the tab has grown down to meet it — the
             // tab's growth is the unroll's own length, so the reveal waits that long. Out
             // with the tab, no wait.
@@ -313,6 +310,9 @@ struct CronColumn: View {
                 insertion: .modifier(active: Reveal(fraction: 0), identity: Reveal(fraction: 1))
                     .animation(TodoColumn.unroll.delay(0.18)),
                 removal: .opacity.animation(TodoColumn.unroll)))
+            // Up under the card, by the stack's gap and one point more: the card's fill,
+            // drawn over this, covers the box's top line where the two meet.
+            .padding(.top, -7)
             .onHover { inside in
                 overDetail = inside
                 if !inside { settle() }
@@ -476,7 +476,19 @@ struct Reveal: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        content.clipShape(Rectangle().scale(x: 1, y: fraction, anchor: .top))
+        content.clipShape(Curtain(fraction: fraction))
+    }
+
+    /// The clip, drawn from above the view's own top: a transition is applied where the
+    /// container sees the view, which is after the pull-up under the tab, and a clip to
+    /// those bounds took the overlap with it.
+    private struct Curtain: Shape {
+        var fraction: CGFloat
+        func path(in rect: CGRect) -> Path {
+            let above: CGFloat = 8
+            return Path(CGRect(x: rect.minX, y: rect.minY - above, width: rect.width,
+                               height: (rect.height + above) * fraction))
+        }
     }
 }
 

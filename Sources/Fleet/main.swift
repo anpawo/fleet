@@ -769,10 +769,33 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
 
         // `--settings` renders the control centre instead of the panel — same reason: seeing
         // the layout without a window opening on whatever desktop you are working on.
+        // `--live` draws the panel the way the window does — scroll views and all — by hosting
+        // it in a window that is laid out and never shown. `ImageRenderer` leaves every
+        // scroll view blank, and the layout inside one is the layout you get on screen.
+        let live = CommandLine.arguments.contains("--live")
         let view = CommandLine.arguments.contains("--settings")
             ? AnyView(ControlCenterView(controller: controller).frame(width: 420, height: 620))
-            : AnyView(OverlayView(controller: controller, eagerLayout: true)
+            : AnyView(OverlayView(controller: controller, eagerLayout: !live)
                 .frame(width: size.width, height: size.height))
+        if live {
+            let host = NSHostingView(rootView: view)
+            host.frame = CGRect(origin: .zero, size: size)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless,
+                                  backing: .buffered, defer: false)
+            window.contentView = host
+            for _ in 0 ..< 10 { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            host.layoutSubtreeIfNeeded()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                print("render failed"); exit(1)
+            }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            guard let png = rep.representation(using: .png, properties: [:]) else {
+                print("render failed"); exit(1)
+            }
+            try? png.write(to: URL(fileURLWithPath: outPath))
+            print("wrote \(outPath)")
+            exit(0)
+        }
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
 
@@ -855,7 +878,7 @@ let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel-digest", "--reels",
-    "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
+    "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]
