@@ -18,6 +18,12 @@ dernière fois que quelqu'un a tapé `swift build` et rend l'ancienne interface 
 une capture qui montrait un panneau d'avant le changement. Le PNG sort en 2× : `--size 2000x1300`
 donne 4000×2600, à recadrer avec `sips -c <hauteur> <largeur> --cropOffset <y> <x>`.
 
+Ajouter `--live` dès que le changement touche une colonne latérale : sans lui, le rendu passe
+par `ImageRenderer`, qui laisse chaque scroll view vide et pose les vues *hors* scroll — la
+mise en page qu'il montre n'est pas celle de l'écran (vu le 25-09-2026 : un cadre coupé à
+l'écran, intact dans le rendu). `--live` héberge le panneau dans une fenêtre jamais montrée.
+`FLEET_HOVER=<label launchd>` avec `--cmd` ouvre le cadre d'un agent dans le rendu.
+
 ## The interface is in English
 
 Every word Fleet puts on screen — labels, headings, badges, category names, empty-state lines,
