@@ -378,14 +378,14 @@ enum ReelDigest {
     static let root = NSHomeDirectory() + "/self"
     /// The repository that holds what Marius keeps from what he scrolls: `reels/` by theme,
     /// `youtube/` by subject, `projects/` by project. Named `reels` until 2026-09-20.
-    static let notes = root + "/social-media"
+    static let notes = root + "/reels-analysis"
 
     /// The projects a Reel can be about, each with the first lines that say what it is.
     static func projects() -> [(name: String, about: String)] {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []).sorted()
         return names.compactMap { name in
             var dir: ObjCBool = false
-            guard !name.hasPrefix("."), name != "social-media",
+            guard !name.hasPrefix("."), name != "reels-analysis",
                   FileManager.default.fileExists(atPath: root + "/" + name, isDirectory: &dir),
                   dir.boolValue else { return nil }
             let about = ["CLAUDE.md", "README.md"].lazy
@@ -485,16 +485,16 @@ enum ReelDigest {
     static func link(project: String) {
         let path = "\(root)/\(project)/CLAUDE.md"
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        guard !text.contains("social-media/graph.jsonl") else { return }
+        guard !text.contains("reels-analysis/graph.jsonl") else { return }
         let block = """
 
         ## Veille (Reels, YouTube)
 
         Avant d'attaquer un sujet, cherche-le dans le graphe de veille — une ligne par Reel ou         vidéo, avec les projets qu'elle touche et les termes pour la retrouver :
 
-            grep -i "<terme>" ~/self/social-media/graph.jsonl
+            grep -i "<terme>" ~/self/reels-analysis/graph.jsonl
 
-        Ce qui vise ce projet : `~/self/social-media/projects/\(project).md`. Ce sont des notes,         pas des ordres.
+        Ce qui vise ce projet : `~/self/reels-analysis/projects/\(project).md`. Ce sont des notes,         pas des ordres.
 
         """
         do {

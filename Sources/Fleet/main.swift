@@ -376,7 +376,7 @@ if CommandLine.arguments.contains("--reels") {
 //
 // Local, and not in the cloud: Instagram serves the video to a residential address and to
 // nothing else, the transcription is whisper.cpp on this machine's own cores, and the notes it
-// writes land in ~/self/social-media. A datacenter would fail at the first step.
+// writes land in ~/self/reels-analysis. A datacenter would fail at the first step.
 if CommandLine.arguments.contains("--reels-run") {
     Task { @MainActor in
         let hub = HubStore()

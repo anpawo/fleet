@@ -51,6 +51,6 @@ coup, sur des sessions qui s'étaient déclarées terminées.
 
 Avant d'attaquer un sujet, cherche-le dans le graphe de veille — une ligne par Reel ou vidéo, avec les projets qu'elle touche et les termes pour la retrouver :
 
-    grep -i "<terme>" ~/self/social-media/graph.jsonl
+    grep -i "<terme>" ~/self/reels-analysis/graph.jsonl
 
-Ce qui vise ce projet : `~/self/social-media/projects/fleet.md`. Ce sont des notes, pas des ordres.
+Ce qui vise ce projet : `~/self/reels-analysis/projects/fleet.md`. Ce sont des notes, pas des ordres.
