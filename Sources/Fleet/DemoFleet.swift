@@ -17,7 +17,7 @@ enum DemoFleet {
             let name = names[i % names.count]
             let proc = ClaudeProcess(pid: pid_t(90000 + i), ppid: 1,
                                      cwd: "/Users/\(NSUserName())/self/\(name)",
-                                     tty: "/dev/ttys0\(i)", startedAt: Date(), cpuNanos: 0)
+                                     tty: "/dev/ttys0\(i)", startedAt: Date().addingTimeInterval(-3600), cpuNanos: 0)
 
             var info = TranscriptInfo(
                 path: "/tmp/\(name).jsonl",
@@ -46,6 +46,9 @@ enum DemoFleet {
                                               task: "Audit the palette",
                                               step: "Grep contrast-ratio",
                                               lastActivity: Date())]
+            }
+            if state == .delegated {
+                info.backgroundShellsStartedAt = [Date().addingTimeInterval(-22 * 60)]
             }
 
             return Session(proc: proc, transcript: info, state: state,

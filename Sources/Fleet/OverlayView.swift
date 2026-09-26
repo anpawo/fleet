@@ -1322,7 +1322,13 @@ struct SessionTile: View {
 
     private var statePill: some View {
         // A workflow's progress rides in the pill that says the session is waiting on it.
-        Text(session.workflow.map { "\(session.state.label): \($0.pill())" } ?? session.state.label)
+        let label = session.state.label
+        let text = session.workflow.map { "\(label): \($0.pill())" }
+            ?? session.delegatedSince.map {
+                "\(label) · \(WorkflowProgress.duration(Date().timeIntervalSince($0))) in"
+            }
+            ?? label
+        return Text(text)
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a

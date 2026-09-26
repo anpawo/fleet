@@ -279,7 +279,7 @@ struct WorkflowProgress {
         return "\(Int(fraction * 100))% · \(Self.duration(elapsed * (1 - fraction) / fraction)) left"
     }
 
-    private static func duration(_ seconds: TimeInterval) -> String {
+    static func duration(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds / 60)
         return minutes < 60 ? "\(minutes)m" : String(format: "%dh%02d", minutes / 60, minutes % 60)
     }
@@ -479,6 +479,12 @@ struct Session: Identifiable {
     /// with its session, and one a restart cut short never reports back.
     var workflow: WorkflowProgress? {
         transcript?.workflow.flatMap { $0.since > proc.startedAt ? $0 : nil }
+    }
+
+    /// When the oldest background shell still out was started. Claude Code never writes an
+    /// ETA for one, so "how long it has been" is all the pill can say about it.
+    var delegatedSince: Date? {
+        transcript?.backgroundShellsStartedAt.filter { $0 > proc.startedAt }.min()
     }
 
     var subagentLine: String? {
