@@ -92,9 +92,9 @@ struct MailColumn: View {
 /// Blue, off the RAM's own blue: the two blocks that report on the machine rather than on
 /// what you owe anyone.
 struct CronColumn: View {
-    /// What the block is called — CRONS for the routines, KEEPALIVE for the residents.
+    /// What the block is called.
     let title: String
-    /// The agents this block shows, already picked by kind — see `LaunchdStore`.
+    /// Every agent launchd has — see `LaunchdStore`.
     let jobs: [Launchd.Job]
     /// Whether ⌘ is down. A wall of names at rest; the one under the pointer says what it is
     /// for and how often it runs while it is held.
@@ -207,7 +207,6 @@ struct CronColumn: View {
     /// rather than a box: a frame inside a block is a block inside a block.
     ///
     /// Two or more, or nothing: a name over a single card says what the card already says.
-    /// That is what keeps ROUTINE — where every prefix is worn by one agent — exactly as it was.
     @ViewBuilder private func half(_ jobs: [Launchd.Job]) -> some View {
         let families = Dictionary(grouping: jobs, by: familyName)
         let boxed = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
@@ -288,12 +287,11 @@ struct CronColumn: View {
                         .underline(link != nil)
                         .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
                 }
-                // A resident is on all the time — that is what the block it sits in means.
-                if job.schedule != "always on" {
-                    Text(job.schedule)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.32))
-                }
+                // "always on" for a resident: routines and residents share the block, so the
+                // box is the only place that says which this one is.
+                Text(job.schedule)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.32))
             }
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
@@ -1636,9 +1634,10 @@ struct AlertsBlock: View {
         }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
-        // A routine whose last run ended badly, by name. The ROUTINE block says so too, in a
-        // red card among fifteen; this is the line you read without looking for it.
-        for job in crons where job.failing { out.append(job.name) }
+        // A routine whose last run ended badly, by name. The AGENTS block says so too, in a
+        // red card among fifteen; this is the line you read without looking for it. Only the
+        // routines: a resident's last exit is history, not health — see `Job.ok`.
+        for job in crons where job.triggered && job.failing { out.append(job.name) }
         if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }

@@ -265,8 +265,8 @@ struct OverlayView: View {
                 // grid that moves is a grid you have to find again. The panel leaves 126pt of
                 // room above this line, so the bar has somewhere to hang.
                 .overlay(alignment: .top) {
-                    if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.crons).isEmpty {
-                        AlertsBlock(hub: controller.hub, crons: controller.launchd.crons)
+                    if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.jobs).isEmpty {
+                        AlertsBlock(hub: controller.hub, crons: controller.launchd.jobs)
                             // As wide as the block it hangs over, and clear of its heading
                             // line: its own height, and the gap a block leaves under one.
                             .frame(width: centerWidth)
@@ -280,24 +280,17 @@ struct OverlayView: View {
                 }
             if controller.hub.isConfigured {
                 gap(Self.innerWeight)
-                // The two agent blocks take what their cards need and no more, a third of the
-                // column at the most; the list has the rest. Five agents under a block sized
-                // for fifteen was a third of the column of blue paper.
+                // The agent block takes what its cards need and no more, half the column at
+                // the most; the list has the rest. Five agents under a block sized for fifteen
+                // was a third of the column of blue paper.
                 //
-                // No podium here: both start on the fleet's own line. They are the other
-                // lists you are answerable to, and a step below the sessions read as a
-                // footnote to them.
+                // No podium here: it starts on the fleet's own line. It is the other list
+                // you are answerable to, and a step below the sessions read as a footnote to
+                // them.
                 GeometryReader { space in
-                    let free = space.size.height - 2 * Self.blockGap
+                    let free = space.size.height - Self.blockGap
                     VStack(alignment: .leading, spacing: Self.blockGap) {
-                        CronColumn(title: "ROUTINE", jobs: controller.launchd.crons,
-                                   commandHeld: controller.commandHeld,
-                                   scrolling: !eagerLayout, limit: max(0, free / 3))
-                        // Half rather than a third, unlike ROUTINE above: a resident carries
-                        // the address it answers on under its name, so its cards are two lines
-                        // where a routine's are one. A block only ever takes what its cards
-                        // need, so a ceiling nobody reaches costs the list underneath nothing.
-                        CronColumn(title: "KEEP ALIVE", jobs: controller.launchd.alive,
+                        CronColumn(title: "AGENTS", jobs: controller.launchd.jobs,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 2))
                         TodoColumn(hub: controller.hub,
@@ -306,10 +299,10 @@ struct OverlayView: View {
                                    scrolling: !eagerLayout)
                             .frame(maxHeight: .infinity)
                     }
-                    // Pinned to the top of the column. The two agent blocks take only what
-                    // their cards need, so the stack is shorter than the space it is given —
-                    // and a stack left to sit in the middle of that space starts the routines
-                    // below the fleet's own line.
+                    // Pinned to the top of the column. The agent block takes only what its
+                    // cards need, so the stack is shorter than the space it is given — and a
+                    // stack left to sit in the middle of that space starts the agents below
+                    // the fleet's own line.
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                     // The same height as the column on the other side, so the two lists you

@@ -12,9 +12,9 @@ import SwiftUI
 ///
 /// Two kinds live in that folder and they are not the same thing: the ones that run on a
 /// trigger — a clock, a calendar, a file being written — and the ones that only keep a program
-/// alive. Routines and applications. `triggered` says which, and the panel gives each its own
-/// block: fourteen lines of which four were the thing you came to see is fourteen lines
-/// nobody reads.
+/// alive. Routines and applications. `triggered` says which, and it is what a card's health is
+/// judged against — see `Job.ok`. One block for both: they are drawn by family, and mac.guard
+/// next to mac.revive says more than a resident block next to a routine block did.
 enum Launchd {
     static let folder = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/LaunchAgents")
@@ -46,13 +46,11 @@ enum Launchd {
         /// whatever block the card ends up in.
         var triggered: Bool
 
-        /// Which block it goes in. Nearly always `!triggered`, but not always — see `guards`.
-        var resident: Bool
-
         /// What the border says, and it does not mean the same thing for the two kinds. A
         /// routine is well when launchd knows about it and its last run did not end badly; a
-        /// resident is well when it is up, and nothing else. A calendar job has no pid between
-        /// runs and is perfectly alive; a server with no pid is the thing you needed to see.
+        /// resident — an application launchd keeps up — is well when it is up, and nothing
+        /// else. A calendar job has no pid between runs and is perfectly alive; a server with
+        /// no pid is the thing you needed to see.
         ///
         /// A resident's last exit status is history, not health: tailscaled died once when brew
         /// relinked it, KeepAlive brought it straight back, and the 78 it left behind kept its
@@ -94,19 +92,12 @@ enum Launchd {
             let port = state?.pid.flatMap { ports[$0] }
             let enabled = state != nil
             let failing = (state?.exit ?? 0) > 0
-            // A card in KEEP ALIVE says "always on", whatever holds the loop. mac.revive is a
-            // routine on a 30-second timer standing among residents, and `every 30s` beside
-            // four `always on` read as the odd one out rather than as the pair it makes with
-            // mac.guard — which is the whole reason it was put there.
-            let resident = trigger == nil || guards.contains(label)
             return Job(id: label,
                        name: shorten(label),
-                       schedule: resident ? (trigger == nil ? resting(plist) : "always on")
-                                          : trigger!,
+                       schedule: trigger ?? resting(plist),
                        enabled: enabled,
                        failing: failing,
                        triggered: trigger != nil,
-                       resident: resident,
                        ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist),
                        address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" })
@@ -170,17 +161,6 @@ enum Launchd {
         }
         return nil
     }
-
-    /// Routines that belong with the residents anyway. mac-guard and mac-revive do the same
-    /// job from either side — one stops what is about to freeze the Mac, the other starts back
-    /// what should be running — and putting them in different blocks on the strength of who
-    /// holds the loop (mac-guard sleeps inside its own process, mac-revive lets launchd count
-    /// the thirty seconds) hid the pair.
-    ///
-    /// Their health is still read as a routine's: mac-revive exits as soon as it has looked,
-    /// so it has no pid to have, and judging it the way a server is judged would leave it red
-    /// for ever.
-    private static let guards: Set<String> = ["fr.marius.revive"]
 
     /// The panel does not report on itself. If you can read this block, Fleet is running —
     /// a green card saying so is a line that can never say anything.
@@ -334,10 +314,8 @@ enum Launchd {
 /// does not need better, and nothing here changes unless an agent is installed or dies.
 @MainActor
 final class LaunchdStore: ObservableObject {
-    /// The routines — what runs on its own.
-    @Published private(set) var crons: [Launchd.Job]
-    /// The residents — programs launchd keeps up.
-    @Published private(set) var alive: [Launchd.Job]
+    /// Every agent, routine or resident, in one list: the block draws them by family, not by kind.
+    @Published private(set) var jobs: [Launchd.Job]
 
     private var lastScan = Date()
     private var scanning = false
@@ -345,9 +323,7 @@ final class LaunchdStore: ObservableObject {
     /// The first read is synchronous, once, at launch — the panel can open before the first
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
     init() {
-        let scanned = Launchd.jobs().filter(\.running)
-        crons = scanned.filter { !$0.resident }
-        alive = scanned.filter(\.resident)
+        jobs = Launchd.jobs().filter(\.running)
     }
 
     /// Called from `AppController.tick`, on the timer that is already running.
@@ -358,8 +334,7 @@ final class LaunchdStore: ObservableObject {
         Task.detached(priority: .utility) {
             let scanned = Launchd.jobs(probing: true).filter(\.running)
             await MainActor.run {
-                self.crons = scanned.filter { !$0.resident }
-                self.alive = scanned.filter(\.resident)
+                self.jobs = scanned
                 self.scanning = false
             }
         }

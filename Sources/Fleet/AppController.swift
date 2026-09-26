@@ -184,7 +184,7 @@ final class AppController: ObservableObject {
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
 
-    /// The machine's own routines — the launchd agents that run on a clock. Owned here for
+    /// The machine's own agents — what launchd runs on a clock or keeps up. Owned here for
     /// the same reason as the two above: the scan is off the main thread, and the panel must
     /// find the last one already done rather than start one of its own while it is drawing.
     let launchd = LaunchdStore()
