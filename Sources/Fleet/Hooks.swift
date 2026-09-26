@@ -52,6 +52,16 @@ enum Hooks {
         record(atPath: (stateDirectory as NSString).appendingPathComponent(sessionID + ".json"))
     }
 
+    /// One line the session wrote about itself — `<id>.context` beside its state file. The
+    /// title Claude Code stamps is written once, early, and the last prompt says what was
+    /// asked, not what the work has become; this is the session's own word, when it gave one.
+    static func context(sessionID: String) -> String? {
+        let path = (stateDirectory as NSString).appendingPathComponent(sessionID + ".context")
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
+    }
+
     /// Every session the hooks currently have something to say about, keyed by session id.
     static func records() -> [String: Record] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: stateDirectory)
@@ -200,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 10
+    static let version = 11
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -374,7 +384,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 10
+    # fleet-hook-version: 11
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -390,7 +400,7 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context"
         exit 0
     fi
 

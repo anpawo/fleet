@@ -436,6 +436,9 @@ struct Session: Identifiable {
     }
 
     var topic: String {
+        if let path = transcript?.path,
+           let said = Hooks.context(sessionID: ((path as NSString).lastPathComponent as NSString)
+               .deletingPathExtension) { return said }
         if let t = transcript?.title, !t.isEmpty { return t }
         if let p = transcript?.lastPrompt, !p.isEmpty { return p }
         // No title and nothing you ever typed: a session another session drives by message
