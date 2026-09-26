@@ -1153,6 +1153,11 @@ struct SessionTile: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 HStack(alignment: .top, spacing: 7) {
+                    Text(session.folder)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .lineLimit(1)
+                        .truncationMode(.head)
                     Spacer(minLength: 6)
                     subagentPill
                     statePill
