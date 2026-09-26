@@ -21,12 +21,12 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["com.mr.", "fr.marius.", "eu.epitech.", "scient.", "io.scient."]
+    private static let mine = ["com.mr.", "mac.", "s14.", "epitech.", "firestore.", "my-setup."]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
         var id: String
-        /// The label without its prefix — "fleet.reels" rather than "com.mr.fleet.reels".
+        /// The label itself — the labels are named the way the panel says them (26-09-2026).
         var name: String
         /// When it runs, in the fewest words that say it.
         var schedule: String
@@ -104,30 +104,14 @@ enum Launchd {
         }.sorted { $0.name < $1.name }
     }
 
-    /// The label without the part that only says whose it is — except for the S14 agents, whose
-    /// two prefixes (`scient.` and `io.scient.`) both mean the same job and neither of which is
-    /// the word he uses. They all come back as "s14.<name>".
-    /// Names he uses that the label does not carry.
+    /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `s14.recon-v3`…), so a
+    /// card says its label. One reads better as two drive letters than as a word.
     private static let names = [
-        "fr.marius.mac-guard": "mac.guard",
-        "fr.marius.revive": "mac.revive",
-        "eu.epitech.scan": "epitech.scan",
-        "fr.marius.my-setup-sync": "my-setup.sync",
-        "fr.marius.m-mount": "s14.M: & F:",
-        "scient.recon-mirror-check": "s14.BAS-mirror",
-        "fr.marius.recon-v3": "s14.recon-v3",
-        "io.scient.tailscaled-userspace": "s14.tailscale",
+        "s14.mounts": "s14.M: & F:",
     ]
 
     private static func shorten(_ label: String) -> String {
-        if let name = names[label] { return name }
-        for prefix in ["io.scient.", "scient."] where label.hasPrefix(prefix) {
-            return "s14." + label.dropFirst(prefix.count)
-        }
-        for prefix in mine where label.hasPrefix(prefix) {
-            return String(label.dropFirst(prefix.count))
-        }
-        return label
+        names[label] ?? label
     }
 
     /// What makes the job run, read off the plist in the order launchd itself would — or
@@ -180,18 +164,21 @@ enum Launchd {
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
-        "com.mr.fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
-        "fr.marius.revive": "Starts back what should be running and is not.",
-        "eu.epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
-        "fr.marius.mac-guard": "Stops whatever is about to freeze the Mac.",
-        "fr.marius.my-setup-sync": "Pushes this machine's settings and dotfiles to my-setup.",
-        "fr.marius.m-mount": "Keeps M: and F: from mo-recon mounted over sshfs, and remounts them when the tunnel drops.",
-        "io.scient.outline": "Syncs the S14 Outline wiki.",
-        "io.scient.tailscaled-userspace": "Tailscale in userspace — the way onto the S14 boxes.",
-        "scient.hermes-map": "Serves the Hermes dependency map.",
-        "scient.recon-journal": "Serves the S14 recon journal.",
-        "scient.recon-web": "Serves the S14 recon browser.",
-        "scient.recon-mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
+        "firestore.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
+        "mac.revive": "Starts back what should be running and is not.",
+        "epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
+        "mac.guard": "Stops whatever is about to freeze the Mac.",
+        "my-setup.sync": "Pushes this machine's settings and dotfiles to my-setup.",
+        "s14.mounts": "Keeps M: and F: from mo-recon mounted over sshfs, and remounts them when the tunnel drops.",
+        "s14.outline": "Syncs the S14 Outline wiki.",
+        "s14.tailscale": "Tailscale in userspace — the way onto the S14 boxes.",
+        "s14.hermes-map": "Serves the Hermes dependency map.",
+        "s14.recon-journal": "Serves the S14 recon journal.",
+        "s14.recon-v1": "Runs Bas's V1 recon in a sandbox on mo-recon, hourly, on the latest trade date.",
+        "s14.recon-v3": "Runs V3 on both books, hourly, and opens the two reports in Excel.",
+        "s14.recon-web": "Serves the S14 recon browser.",
+        "s14.mcp-renew": "Renews the scient MCP token before its 24 h run out.",
+        "s14.S-mirror-on-M": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a

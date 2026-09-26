@@ -372,7 +372,7 @@ if CommandLine.arguments.contains("--reels") {
 
 // `--reels-run` drains the backlog and exits: every Reel the phone could not check, then every
 // checked Reel nobody has read. This is the whole analyser — the resident app only ever reads
-// the collection to say what is in it. Run from its own LaunchAgent, `com.mr.fleet.reels`.
+// the collection to say what is in it. Run from its own LaunchAgent, `firestore.reels`.
 //
 // Local, and not in the cloud: Instagram serves the video to a residential address and to
 // nothing else, the transcription is whisper.cpp on this machine's own cores, and the notes it
