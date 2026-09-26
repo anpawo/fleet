@@ -1400,6 +1400,8 @@ struct MemoryStrip: View {
     /// agents too, and a list of kill buttons unfolding in the corner every time reads as
     /// the panel changing under your hands.
     @State private var hovered = CommandLine.arguments.contains("--strain")
+    /// Drives the warning's pulse; flipped once on appear, the animation repeats by itself.
+    @State private var flash = false
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
@@ -1415,7 +1417,8 @@ struct MemoryStrip: View {
         // "One line at rest" was written and never enforced: with nothing to put under the
         // heading the frame still ran 13pt past it, so an idle machine got a bar of empty
         // amber with a chip sitting on it. A block with nothing to say is the heading alone.
-        let hasBody = tight || share(reaper.footprint.swap) >= Self.swapWorthSaying
+        let hasBody = (tight && commandHeld && hovered)
+            || share(reaper.footprint.swap) >= Self.swapWorthSaying
 
         let stack = VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -1425,6 +1428,19 @@ struct MemoryStrip: View {
                     .foregroundStyle(tight ? tint : .white.opacity(0.92))
                     .titleGround(Self.chipGround)
                 Spacer(minLength: 3)
+                // Under strain the verdict is a pulsing triangle halfway between the name
+                // and the readout: a sentence under the heading said nothing the colour
+                // did not, and took a line to say it.
+                if tight {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(amber)
+                        .opacity(flash ? 1 : 0.2)
+                        .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true),
+                                   value: flash)
+                        .onAppear { flash = true }
+                    Spacer(minLength: 3)
+                }
                 // The whole readout, where every other block puts its count. A heading over a
                 // single line of figures is a heading over nothing: the block is one line at
                 // rest, and it only grows when there is something to say underneath.
@@ -1439,23 +1455,6 @@ struct MemoryStrip: View {
             // Four, not two: the chip's own ground hangs 7pt past the words, so two left them
             // 7pt off the pane where the top and bottom leave 9.
             .padding(.horizontal, 4)
-
-            // Under the rule rather than beside the name: the sentence is a sentence, and the
-            // heading line is a name, a button and no room for a third thing.
-            if tight {
-                Text(headline)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(amber.opacity(0.9))
-                    // Indented onto the pills' own text column, not the block's edge: the
-                    // sentence and the names it explains start on the same line, and the two
-                    // points it used to sit at put it eight left of everything under it.
-                    .padding(.horizontal, HogPill.inset + 4)
-                    // Clear of the heading by about what the frame leaves under the last pill:
-                    // at five points off the chip the sentence still read as part of the title,
-                    // and the pills under it were as close again.
-                    .padding(.top, 10)
-                    .padding(.bottom, 4)
-            }
 
             // Two of the four. Cached is never a problem and compressed is a leading
             // indicator; neither is something you act on. What is worth a glance is how full
@@ -1569,7 +1568,6 @@ struct MemoryStrip: View {
 
     /// Why the block is amber, in the few words the heading has room for. The long version of
     /// the same sentence is what the sessions are told — see `Hooks.machinePath`.
-    private var headline: String { reaper.struggleReason.uppercased() }
 
     /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
     /// glance than the share does.
