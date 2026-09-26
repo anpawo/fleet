@@ -280,10 +280,12 @@ struct CronColumn: View {
                 if let address = job.address {
                     let link = address.hasPrefix("http://") ? URL(string: address) : nil
                     // Only a web address opens. A SOCKS port shows as itself, because a
-                    // browser sent there hangs on a page that will never arrive.
+                    // browser sent there hangs on a page that will never arrive. In the
+                    // note's own type, not the schedule's: the grey line under the box is
+                    // the one that says when, and nothing else wears it.
                     Text(address)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(link == nil ? .white.opacity(0.32) : CronCard.tint.opacity(0.9))
+                        .font(.system(size: 10))
+                        .foregroundStyle(link == nil ? .white.opacity(0.55) : CronCard.tint.opacity(0.9))
                         .underline(link != nil)
                         .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
                 }
@@ -1634,7 +1636,7 @@ struct AlertsBlock: View {
         }
         let failed = hub.failedRuns.count
         if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
-        // A routine whose last run ended badly, by name. The AGENTS block says so too, in a
+        // A routine whose last run ended badly, by name. The CRONS block says so too, in a
         // red card among fifteen; this is the line you read without looking for it. Only the
         // routines: a resident's last exit is history, not health — see `Job.ok`.
         for job in crons where job.triggered && job.failing { out.append(job.name) }
