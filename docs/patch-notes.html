@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>14</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>15</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">4a4f5da</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">c07ddc5</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,41 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore · shells en tâche de fond</span>
+        <span class="chip chip-sha">c07ddc5</span>
+      </div>
+      <h3>BACKGROUND-TASK pendant 3h45 pour un shell fini en 20&nbsp;ms</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          La carte s14 affiche <code>BACKGROUND-TASK · 3h45 in</code> alors que la session n'a
+          plus aucune tâche&nbsp;: sa barre d'état Claude Code ne montre plus «&nbsp;1 shell&nbsp;».
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le shell <code>byzj32xvx</code> a fini si vite que sa <code>&lt;task-notification&gt;</code>
+          en file est datée 18:17:57.055Z, 20&nbsp;ms <em>avant</em> le <code>tool_result</code>
+          qui l'a lancé (18:17:57.075Z). Fleet ne comptait une fin que si elle était postérieure
+          au lancement&nbsp;: ce shell n'était jamais fini. Le <code>TaskStop</code> de l'attente
+          <code>bvzwxns4m</code>, soupçonné au départ, était bien lu.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un id d'appel n'est lancé qu'une fois&nbsp;: toute fin le termine, quelle que soit sa
+          date. Même règle pour les agents et les workflows.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>Fleet --selftest — « a notification stamped before its shell's launch still ends it »
+sans le correctif : 4 FAILED     avec : all ok
+fleet --scan : s14 [READY]</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
