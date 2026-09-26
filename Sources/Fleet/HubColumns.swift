@@ -229,15 +229,14 @@ struct CronColumn: View {
         return groups
     }
 
-    /// A family's name and its cards in lines, as many to a line as fit at their own width,
-    /// and what the line has left shared out between them — a card that has been widened
-    /// centres its name. The name is on the first line, and the box goes under whichever
-    /// line holds the card ⌘ is on.
+    /// A family's name and its cards in lines, as many to a line as fit at their own width.
+    /// The name is on the first line, and the box goes under whichever line holds the card
+    /// ⌘ is on.
     @ViewBuilder private func group(_ jobs: [Launchd.Job], family: String) -> some View {
         let shown = jobs.first { commandHeld && $0.id == hovered }
         // The name is a subview of the flow like the cards, so it needs a slot in `ids` for
         // the box to find the cards past it.
-        FlowLayout(spacing: 4, box: shown?.id, ids: [""] + jobs.map(\.id), labeled: true) {
+        FlowLayout(spacing: 4, box: shown?.id, ids: [""] + jobs.map(\.id)) {
             detail(of: jobs, inset: false)
             Text(family.uppercased())
                 .font(.system(size: 9, weight: .semibold))
@@ -249,7 +248,7 @@ struct CronColumn: View {
                 // On the pills' own line, which sits under their padding.
                 .padding(.top, 5)
             ForEach(jobs) { job in
-                card(job, family: family == Self.other ? nil : family, fills: true)
+                card(job, family: family == Self.other ? nil : family)
             }
         }
         // In from the edges by what the box is, so a pill at either end stands on
@@ -310,8 +309,8 @@ struct CronColumn: View {
         }
     }
 
-    private func card(_ job: Launchd.Job, family: String?, fills: Bool = false) -> some View {
-        CronCard(job: job, family: family, fills: fills)
+    private func card(_ job: Launchd.Job, family: String?) -> some View {
+        CronCard(job: job, family: family)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
             // to lean on: that modifier only reaches this column's own subtree, and
             // what the unfolding card pushes is the TODO block *below* the column.
@@ -334,8 +333,7 @@ struct CronColumn: View {
     }
 }
 
-/// Cards in lines, each at its own width until the line is full, and then the line's slack
-/// shared equally between the cards on it, so every line ends flush at the right edge.
+/// Cards in lines, each at its own width, as many to a line as fit.
 ///
 /// With `box` set, the first subview is a box and the rest are the cards, in the order of
 /// `ids`: the box goes the full width under the line that holds the card `box` names — not
@@ -344,13 +342,6 @@ struct FlowLayout: Layout {
     var spacing: CGFloat
     var box: String? = nil
     var ids: [String] = []
-    /// Whether the first card is a name rather than a card: it keeps its own width, and the
-    /// line's slack goes to the cards alone. Without this, MAC took a third of its line.
-    var labeled = false
-
-    private func isLabel(_ i: Int) -> Bool {
-        labeled && i == (box == nil ? 0 : 1)
-    }
 
     /// The cards' lines, as indexes into `subviews` — the box, when there is one, is at
     /// index 0 and is not on any line.
@@ -395,16 +386,12 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for row in lines(subviews, width: bounds.width) {
-            let natural = row.map(\.1.width).reduce(0, +) + spacing * CGFloat(row.count - 1)
-            let cards = row.filter { !isLabel($0.0) }.count
-            let extra = cards == 0 ? 0 : max(0, bounds.width - natural) / CGFloat(cards)
             let height = row.map(\.1.height).max() ?? 0
             var x = bounds.minX
             for (i, size) in row {
-                let width = size.width + (isLabel(i) ? 0 : extra)
                 subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
-                                  proposal: ProposedViewSize(width: width, height: size.height))
-                x += width + spacing
+                                  proposal: ProposedViewSize(size))
+                x += size.width + spacing
             }
             y += height + spacing
             if boxed(row) {
@@ -425,9 +412,6 @@ struct CronCard: View {
     let job: Launchd.Job
     /// The box this card sits in, when it sits in one — its name is already written above.
     var family: String?
-    /// Whether the card takes the width it is offered, name in the middle, rather than its own.
-    var fills = false
-
     /// What the card writes: `hermes-map` inside the S14 box, `s14.hermes-map` on its own.
     private var label: String {
         guard let family, job.name.hasPrefix(family + ".") else { return job.name }
@@ -447,7 +431,6 @@ struct CronCard: View {
             .truncationMode(.tail)
             .padding(.vertical, 4)
             .padding(.horizontal, 6)
-            .frame(maxWidth: fills ? .infinity : nil)
             // A shade of the block's blue for a resident, the panel's near-black for a
             // routine: the two kinds share the block, and the ground is what tells them apart.
             .background(job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
