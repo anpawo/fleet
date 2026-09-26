@@ -746,6 +746,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--cmd") {
             controller.modifiersChanged(.command)
         }
+        // `--strain` draws the memory block in its amber state, which otherwise needs the
+        // machine to actually be on its knees.
+        if CommandLine.arguments.contains("--strain") {
+            controller.reaper.simulateStrain()
+        }
 
         // `--open <directory>` draws a group unfolded. It is the one state a render cannot
         // otherwise reach — nothing opens a group but a click — and it is the state whose
@@ -879,7 +884,7 @@ let knownFlags: Set<String> = [
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel-digest", "--reels",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
-    "--selftest", "--settings", "--shadows", "--show", "--size", "--spaces-bar", "--start",
+    "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]
 if let unknown = CommandLine.arguments.dropFirst().first(where: {

@@ -273,6 +273,13 @@ final class Reaper: ObservableObject {
         onFluidity?(true, struggleReason)
     }
 
+    /// For `--render --strain`: the amber state, over whatever is really holding the memory.
+    func simulateStrain() {
+        struggling = true
+        struggleReason = "every core is busy (load 4.2 per core)"
+        hogs = Reaper.topHogs(reapable: [])
+    }
+
     // MARK: - Idleness
 
     private func sampleIdleness(_ candidates: [Reapable]) {

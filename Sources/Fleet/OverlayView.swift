@@ -1399,7 +1399,7 @@ struct MemoryStrip: View {
     /// And only while the pointer is on the block: ⌘ is held for the fleet, the todos, the
     /// agents too, and a list of kill buttons unfolding in the corner every time reads as
     /// the panel changing under your hands.
-    @State private var hovered = false
+    @State private var hovered = CommandLine.arguments.contains("--strain")
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
