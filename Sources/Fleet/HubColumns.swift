@@ -202,68 +202,65 @@ struct CronColumn: View {
 
     /// Agents that share a prefix go under its name, and the cards drop the prefix. Six cards
     /// reading `s14.` and `mac.` spent most of their width saying which machine they belong
-    /// to, and `s14.tailscaled-userspace` did not fit at all. A rule closes each family off
-    /// from what follows — the same rule that parts the working agents from the failing —
+    /// to, and `s14.tailscaled-userspace` did not fit at all. The ones with no family of two
+    /// or more go under OTHER, at the end, with their whole name. A rule closes each family
+    /// off from what follows — the same rule that parts the working agents from the failing —
     /// rather than a box: a frame inside a block is a block inside a block.
-    ///
-    /// Two or more, or nothing: a name over a single card says what the card already says.
     @ViewBuilder private func half(_ jobs: [Launchd.Job]) -> some View {
-        let families = Dictionary(grouping: jobs, by: familyName)
-        let boxed = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
-        let loose = jobs.filter { families[familyName($0)]?.count == 1 }
+        let groups = groups(jobs)
         VStack(spacing: 5) {
-            ForEach(Array(boxed.enumerated()), id: \.element.key) { index, entry in
-                // The name on the left and the cards in one row beside it, each as wide as
-                // its own name and the ones past the edge scrolled to: a family is a line,
-                // not a paragraph. The name scrolls with its cards.
-                row(entry.value, family: entry.key)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .clipped()
-                detail(of: entry.value)
+            ForEach(Array(groups.enumerated()), id: \.element.key) { index, entry in
+                group(entry.value, family: entry.key)
                 // Only when something follows: a rule under the last thing in the block is a
                 // rule under nothing.
-                if index < boxed.count - 1 || !loose.isEmpty { rule }
-            }
-            if !loose.isEmpty {
-                // As many to a line as fit at their own width, and what the line has left
-                // shared out between them — a card that has been widened centres its name.
-                let shown = loose.first { commandHeld && $0.id == hovered }
-                FlowLayout(spacing: 4, box: shown?.id, ids: loose.map(\.id)) {
-                    detail(of: loose, inset: false)
-                    ForEach(loose) { job in card(job, family: nil, fills: true) }
-                }
-                // In from the edges by what the box is, so a pill at either end stands on
-                // the box rather than past its corner.
-                .padding(.horizontal, 6)
+                if index < groups.count - 1 { rule }
             }
         }
+    }
+
+    /// The group the cards with no family of their own go in.
+    private static let other = "other"
+
+    private func groups(_ jobs: [Launchd.Job]) -> [(key: String, value: [Launchd.Job])] {
+        let families = Dictionary(grouping: jobs, by: familyName)
+        var groups = families.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }
+        let loose = jobs.filter { families[familyName($0)]?.count == 1 }
+        if !loose.isEmpty { groups.append((key: Self.other, value: loose)) }
+        return groups
+    }
+
+    /// A family's name and its cards in lines, as many to a line as fit at their own width,
+    /// and what the line has left shared out between them — a card that has been widened
+    /// centres its name. The name is on the first line, and the box goes under whichever
+    /// line holds the card ⌘ is on.
+    @ViewBuilder private func group(_ jobs: [Launchd.Job], family: String) -> some View {
+        let shown = jobs.first { commandHeld && $0.id == hovered }
+        // The name is a subview of the flow like the cards, so it needs a slot in `ids` for
+        // the box to find the cards past it.
+        FlowLayout(spacing: 4, box: shown?.id, ids: [""] + jobs.map(\.id), labeled: true) {
+            detail(of: jobs, inset: false)
+            Text(family.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(Self.tint.lightened(0.65))
+                .fixedSize()
+                .padding(.leading, 1)
+                .padding(.trailing, 2)
+                // On the pills' own line, which sits under their padding.
+                .padding(.top, 5)
+            ForEach(jobs) { job in
+                card(job, family: family == Self.other ? nil : family, fills: true)
+            }
+        }
+        // In from the edges by what the box is, so a pill at either end stands on
+        // the box rather than past its corner.
+        .padding(.horizontal, 6)
     }
 
     /// What comes before the first dot — `s14` for `s14.hermes-map`. An agent with no dot is
-    /// its own family of one, which is to say no box.
+    /// its own family of one, which is to say OTHER.
     private func familyName(_ job: Launchd.Job) -> String {
         String(job.name.prefix { $0 != "." })
-    }
-
-    @ViewBuilder private func grid(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
-        // Two independent stacks rather than a grid. In a grid the two cards of a row share a
-        // height, so unfolding one pushed the card beside it — and everything under it on the
-        // other side — down the block. Here a card only ever moves what is under it in its own
-        // stack. Odds and evens, so the reading order across the two is still 1 2 / 3 4.
-        HStack(alignment: .top, spacing: 6) {
-            stack(jobs.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element), family: family)
-            stack(jobs.enumerated().filter { !$0.offset.isMultiple(of: 2) }.map(\.element), family: family)
-        }
-    }
-
-    @ViewBuilder private func stack(_ jobs: [Launchd.Job], family: String? = nil) -> some View {
-        VStack(spacing: 6) {
-            ForEach(jobs) { job in
-                card(job, family: family)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     /// What the card under ⌘ and the pointer does, where it answers and when, in a box under
@@ -313,34 +310,6 @@ struct CronColumn: View {
         }
     }
 
-    /// A family's cards in one line, clipped at the block's edge and scrolled sideways.
-    @ViewBuilder private func row(_ jobs: [Launchd.Job], family: String) -> some View {
-        let cards = HStack(alignment: .top, spacing: 4) {
-            Text(family.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(1.1)
-                .foregroundStyle(Self.tint.lightened(0.65))
-                .fixedSize()
-                .padding(.leading, 7)
-                .padding(.trailing, 2)
-                // On the pills' own line, which sits under their padding.
-                .padding(.top, 5)
-            ForEach(jobs) { job in card(job, family: family) }
-        }
-        if scrolling {
-            ScrollView(.horizontal) { cards }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize)
-        } else {
-            // At their own widths, as the scroll view keeps them. A flexible frame grows to
-            // a child that will not shrink and took the block with it; a frame of no width
-            // reports none, the cards spill out of it to the right, and the family line
-            // clips them at the block's edge.
-            cards.fixedSize(horizontal: true, vertical: false)
-                .frame(width: 0, alignment: .leading)
-        }
-    }
-
     private func card(_ job: Launchd.Job, family: String?, fills: Bool = false) -> some View {
         CronCard(job: job, family: family, fills: fills)
             // `withAnimation` rather than the `.animation(value: hovered)` this used
@@ -375,6 +344,13 @@ struct FlowLayout: Layout {
     var spacing: CGFloat
     var box: String? = nil
     var ids: [String] = []
+    /// Whether the first card is a name rather than a card: it keeps its own width, and the
+    /// line's slack goes to the cards alone. Without this, MAC took a third of its line.
+    var labeled = false
+
+    private func isLabel(_ i: Int) -> Bool {
+        labeled && i == (box == nil ? 0 : 1)
+    }
 
     /// The cards' lines, as indexes into `subviews` — the box, when there is one, is at
     /// index 0 and is not on any line.
@@ -420,11 +396,12 @@ struct FlowLayout: Layout {
         var y = bounds.minY
         for row in lines(subviews, width: bounds.width) {
             let natural = row.map(\.1.width).reduce(0, +) + spacing * CGFloat(row.count - 1)
-            let extra = max(0, bounds.width - natural) / CGFloat(row.count)
+            let cards = row.filter { !isLabel($0.0) }.count
+            let extra = cards == 0 ? 0 : max(0, bounds.width - natural) / CGFloat(cards)
             let height = row.map(\.1.height).max() ?? 0
             var x = bounds.minX
             for (i, size) in row {
-                let width = size.width + extra
+                let width = size.width + (isLabel(i) ? 0 : extra)
                 subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
                                   proposal: ProposedViewSize(width: width, height: size.height))
                 x += width + spacing
@@ -471,7 +448,10 @@ struct CronCard: View {
             .padding(.vertical, 4)
             .padding(.horizontal, 6)
             .frame(maxWidth: fills ? .infinity : nil)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            // A shade of the block's blue for a resident, the panel's near-black for a
+            // routine: the two kinds share the block, and the ground is what tells them apart.
+            .background(job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
+                                      : Color(red: 0.10, green: 0.12, blue: 0.18))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                 .strokeBorder(border, lineWidth: 1))
