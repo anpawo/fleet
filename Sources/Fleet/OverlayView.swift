@@ -1368,6 +1368,10 @@ struct MemoryStrip: View {
     /// controls: each carries a ✕, and a list of kill buttons is not something to leave lying
     /// on a panel you glance at.
     let commandHeld: Bool
+    /// And only while the pointer is on the block: ⌘ is held for the fleet, the todos, the
+    /// agents too, and a list of kill buttons unfolding in the corner every time reads as
+    /// the panel changing under your hands.
+    @State private var hovered = false
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
@@ -1438,7 +1442,7 @@ struct MemoryStrip: View {
                     // Under pressure the pills are the processes holding the memory, which is
                     // the only thing to do about it.
                     VStack(alignment: .leading, spacing: 5) {
-                        if commandHeld {
+                        if commandHeld && hovered {
                             // One after the other, each easing down out of the bar, so the eye
                             // follows the list as it forms rather than finding it there. Gone at
                             // once when ⌘ comes up: there is nothing to watch on the way out.
@@ -1451,7 +1455,7 @@ struct MemoryStrip: View {
                             }
                         }
                     }
-                    .animation(.easeOut(duration: 0.4), value: commandHeld)
+                    .animation(.easeOut(duration: 0.4), value: commandHeld && hovered)
                 } else {
                     let ram = reaper.footprint
                     // Not "when there is any". Swap used never comes back down — a page that
@@ -1477,6 +1481,7 @@ struct MemoryStrip: View {
         // share of the RAM in use. Every other block is a flat tint because every other block
         // is a count of things; this one is a level.
         return stack
+            .onHover { hovered = $0 }
             .background(alignment: .top) {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 corner
