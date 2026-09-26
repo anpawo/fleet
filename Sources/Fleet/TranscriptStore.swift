@@ -300,7 +300,21 @@ final class TranscriptStore {
         let complete = data[..<lastBreak]
         var lines = complete.split(separator: UInt8(ascii: "\n"))
         // A cold read starting mid-file opens on a fragment; a resumed one starts on a boundary.
-        if resumable == nil, start > 0, !lines.isEmpty { lines.removeFirst() }
+        if resumable == nil, start > 0, !lines.isEmpty {
+            lines.removeFirst()
+            // A shell sent to the background hours ago is still out when nothing since has
+            // ended it, and that "since" can be megabytes: a Fleet restarted with the start
+            // past the tail read the session as finished. Only the lines that start or end
+            // one are worth the head of the file, and they say so in fixed words.
+            try? handle.seek(toOffset: 0)
+            let head = (try? handle.read(upToCount: Int(start))) ?? Data()
+            for raw in head.split(separator: UInt8(ascii: "\n"))
+            where Self.delegationMarks.contains(where: { raw.range(of: $0) != nil }) {
+                if let obj = try? JSONSerialization.jsonObject(with: Data(raw)) as? [String: Any] {
+                    state.ingest(obj)
+                }
+            }
+        }
 
         for raw in lines {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(raw)) as? [String: Any]
@@ -314,6 +328,10 @@ final class TranscriptStore {
                                  state: state, info: info)
         return info
     }
+
+    private static let delegationMarks = ["background with ID", "moved to the background",
+                                          "Workflow launched in background", "<task-notification>",
+                                          "Successfully stopped task"].map { Data($0.utf8) }
 
     /// Sessions are long and only recent state matters, so a cold read starts near the end.
     private static func tailStart(size: UInt64) -> UInt64 {

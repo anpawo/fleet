@@ -157,6 +157,15 @@ enum SelfCheck {
                "a prompt queued over a running turn counts as a prompt")
         expect(after?.preview.last?.text == "and the icons" ? 1 : 0, 1,
                "and shows on the tile")
+
+        // A shell started well before the tail a cold read covers, and nothing ending it since:
+        // a Fleet started now must still count it.
+        append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m8","content":[{"type":"tool_use","id":"toolu_sh3","name":"Bash","input":{"command":"sleep 99"}}]}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_sh3","content":"Command running in background with ID: b3x3y3z. Output is being written to: /tmp/z"}]}}"#)
+        let filler = #"{"type":"assistant","timestamp":"\#(stamp(2))","message":{"id":"m9","content":[{"type":"text","text":"\#(String(repeating: "x", count: 4000))"}]}}"#
+        for _ in 0 ..< (Config.transcriptTailBytes / 4000 + 2) { append(filler) }
+        expect(TranscriptStore().info(for: session)?.backgroundShellsStartedAt.count ?? -1, 1,
+               "a shell started before the parsed tail is still a shell out after a restart")
     }
 
     // MARK: - Ghosts
