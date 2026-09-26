@@ -125,6 +125,11 @@ enum SelfCheck {
         append(#"{"type":"attachment","timestamp":"\#(stamp(2))","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>b2x2y2z</task-id>\n<tool-use-id>toolu_sh2</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
         expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
                "and a queued task-notification ends it")
+        // Done before its own tool_result is written: the notification is stamped first.
+        append(#"{"type":"attachment","timestamp":"\#(stamp(4))","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>b4x4y4z</task-id>\n<tool-use-id>toolu_sh4</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_sh4","content":"Command running in background with ID: b4x4y4z. Output is being written to: /tmp/w"}]}}"#)
+        expect(store.info(for: session)?.backgroundShellsStartedAt.count ?? -1, 0,
+               "a notification stamped before its shell's launch still ends it")
         // A workflow reports back the same way a background shell does, and its journal says
         // how far it has got: the phase of the last agent started, that phase's agents done.
         // The last line is half-written, as it is while an agent is being started.

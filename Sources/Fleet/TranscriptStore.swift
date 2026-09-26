@@ -620,11 +620,13 @@ private struct ParseState {
             pendingToolNames: inFlight.map(\.name),
             pendingToolLabels: inFlight.map(\.label),
             pendingTaskIDs: pending.filter { Self.agentTools.contains($0.value.name) }.map(\.key),
+            // A call id is spawned once, so any ending ends it — whatever its stamp: a shell
+            // that finishes at once has its notification queued ahead of its own tool_result.
             unfinishedAgentIDs: agentSpawnedAt
-                .filter { (agentEndedAt[$0.key] ?? .distantPast) < $0.value }
+                .filter { agentEndedAt[$0.key] == nil }
                 .map(\.key),
             backgroundShellsStartedAt: shellSpawnedAt
-                .filter { (agentEndedAt[$0.key] ?? .distantPast) < $0.value }
+                .filter { agentEndedAt[$0.key] == nil }
                 .map(\.value),
             lastCompletedTool: lastCompleted,
             cwd: cwd,
@@ -633,8 +635,7 @@ private struct ParseState {
             lastMessageAt: lastMessageAt,
             preview: preview,
             workflows: workflowFiles.compactMap { id, files in
-                guard let since = shellSpawnedAt[id],
-                      (agentEndedAt[id] ?? .distantPast) < since else { return nil }
+                guard let since = shellSpawnedAt[id], agentEndedAt[id] == nil else { return nil }
                 return WorkflowLaunch(dir: files.dir, script: files.script, since: since)
             }.sorted { $0.since < $1.since }
         )
