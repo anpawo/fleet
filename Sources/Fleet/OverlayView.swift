@@ -1152,15 +1152,21 @@ struct SessionTile: View {
                 // whatever the spacers said.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                HStack(alignment: .top, spacing: 7) {
-                    Text(session.folder)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                    Spacer(minLength: 6)
-                    subagentPill
-                    statePill
+                // Pills side by side while the row fits, stacked in the corner when it
+                // doesn't: a long workflow pill beside a sub-agent count used to shrink one
+                // and break the other over two lines, and eat the folder name.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 7) {
+                        folder
+                        Spacer(minLength: 6)
+                        subagentPill
+                        statePill
+                    }
+                    HStack(alignment: .top, spacing: 7) {
+                        folder
+                        Spacer(minLength: 6)
+                        VStack(alignment: .trailing, spacing: 4) { subagentPill; statePill }
+                    }
                 }
                 .padding(11)
 
@@ -1310,6 +1316,16 @@ struct SessionTile: View {
         }
     }
 
+    private var folder: some View {
+        Text(session.folder)
+            .font(.system(size: 10.5, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.4))
+            .lineLimit(1)
+            .truncationMode(.head)
+            // Capped so a long path outside ~/self truncates instead of stacking the pills.
+            .frame(maxWidth: 110, alignment: .leading)
+    }
+
     /// Sits next to the state pill while sub-agents are out. The pill says the session is
     /// working; this says who is actually doing the work.
     @ViewBuilder private var subagentPill: some View {
@@ -1318,6 +1334,7 @@ struct SessionTile: View {
             Text("SUB-AGENTS: \(running)")
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)
+                .lineLimit(1)
                 .foregroundStyle(Self.subagentTint)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)

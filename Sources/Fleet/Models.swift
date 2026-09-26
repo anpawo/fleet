@@ -419,12 +419,12 @@ struct Session: Identifiable {
         return dirName
     }
 
-    /// What the tile writes in its corner: under `~/self` only what follows it — the
-    /// project and any sub-folder, which is what tells two cards apart — and elsewhere the
-    /// whole path.
+    /// What the tile writes in its corner: under `~/self` the project alone, whatever
+    /// sub-folder the session sits in, and elsewhere the whole path.
     var folder: String {
         let projects = NSHomeDirectory() + "/self/"
-        return cwd.hasPrefix(projects) ? String(cwd.dropFirst(projects.count)) : displayPath
+        guard cwd.hasPrefix(projects) else { return displayPath }
+        return cwd.dropFirst(projects.count).split(separator: "/").first.map(String.init) ?? displayPath
     }
 
     /// Working directory with $HOME collapsed to "~".
