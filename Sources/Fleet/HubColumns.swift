@@ -458,7 +458,7 @@ struct CronCard: View {
     }
 
     /// The card's corner, and the box's.
-    static let radius: CGFloat = 6
+    static let radius: CGFloat = 5
 
     var body: some View {
         let border: Color = job.ok ? .white.opacity(0.07) : SessionState.running.tint.opacity(0.5)
