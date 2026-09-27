@@ -333,11 +333,11 @@ struct OverlayView: View {
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Pulled out to MEMORY's 10pt from the frame: this frame reaches 26pt past the grid
-            // for the tiles' glow, not 13, and the key in the middle is taller than a name and
-            // pushed it down. Both measured on a render.
+            // MEMORY's 10pt from the frame, which reaches 9pt past the grid rather than 13;
+            // and the key in the middle is taller than a name and pushed it down. Both measured
+            // on a render.
             fleetHeading
-                .padding(.horizontal, -11)
+                .padding(.horizontal, 6)
                 .offset(y: -1.5)
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
@@ -381,9 +381,10 @@ struct OverlayView: View {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
-        // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
-        // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 26, bottomSpread: 13)
+        // 10pt either side of the tiles, the gap the title keeps from the frame (asked for on
+        // 2026-09-27). A tile's hover glow reaches 22pt past the grid, so it now spills over
+        // the frame on the outer columns.
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 9, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
