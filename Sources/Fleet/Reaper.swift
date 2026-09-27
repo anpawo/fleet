@@ -464,6 +464,11 @@ final class Reaper: ObservableObject {
             return ppid == 1 ? .orphanSession : nil
         }
 
+        // An installed app is one somebody meant to keep, even when a session is what started it:
+        // `open -a` from an install script passes CLAUDE_PID on, and mr. screenshot was reaped
+        // with its session (27-09).
+        if path.contains("/Applications/") { return nil }
+
         // Everything a session runs from its tools carries the session's pid in its environment.
         // Only a candidate here: whether that session is still there is the half that changes,
         // and it is asked at reap time — see `ownerGone`.

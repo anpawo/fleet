@@ -180,20 +180,27 @@ enum SelfCheck {
     private static func ghosts(_ expect: (Bool, Bool, String) -> Void) {
         var dead: pid_t = 99_000
         while kill(dead, 0) == 0 { dead += 1 }
-        func spawn(owner: pid_t) -> Process {
+        let installed = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fleet-check/Applications/sleep")
+        try? FileManager.default.createDirectory(at: installed.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: installed)
+        try? FileManager.default.copyItem(atPath: "/bin/sleep", toPath: installed.path)
+        func spawn(owner: pid_t, from binary: String = "/bin/sleep") -> Process {
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+            p.executableURL = URL(fileURLWithPath: binary)
             p.arguments = ["30"]
             p.environment = ["CLAUDE_PID": String(owner)]
             try? p.run()
             return p
         }
         let orphan = spawn(owner: dead), child = spawn(owner: getpid())
-        defer { orphan.terminate(); child.terminate() }
+        let app = spawn(owner: dead, from: installed.path)
+        defer { orphan.terminate(); child.terminate(); app.terminate() }
         usleep(200_000)
 
         let found = Dictionary(uniqueKeysWithValues: Reaper.candidates().map { ($0.pid, $0.kind) })
         expect(found[orphan.processIdentifier] == .ghost, true, "ghosts: a tool process is a candidate")
+        expect(app.isRunning && found[app.processIdentifier] == nil, true,
+               "an installed app a session opened is not a ghost")
         expect(Reaper.ownerGone(orphan.processIdentifier), true, "its session gone, it is a ghost")
         expect(Reaper.ownerGone(child.processIdentifier), false, "its session alive, it is left alone")
     }
