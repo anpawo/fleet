@@ -1710,7 +1710,7 @@ struct ReelBlock: View {
                     Text("REELS")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(3.2)
-                        .foregroundStyle(Self.tint)
+                        .foregroundStyle(.white.opacity(0.92))
                         .titleGround(Self.chipGround)
                     Spacer(minLength: 3)
                     readout.titleGround(Self.chipGround)
