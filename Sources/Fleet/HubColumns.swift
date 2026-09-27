@@ -1720,14 +1720,23 @@ struct ReelBlock: View {
                     if hub.reinterpreting {
                         working("Rereading with your context\u{2026}")
                     } else {
-                        TextField("Add context to correct the reading", text: $hub.reelContext,
-                                  axis: .vertical)
+                        // The hint drawn by hand, dimmed: the field paints its own placeholder
+                        // in its text colour, whatever `prompt` is given, so it read as written.
+                        TextField("", text: $hub.reelContext, axis: .vertical)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11))
                             .foregroundStyle(.white.opacity(0.9))
                             .tint(.white.opacity(0.8))
                             .lineLimit(1 ... 2)
                             .focused($typing)
+                            .background(alignment: .leading) {
+                                if hub.reelContext.isEmpty {
+                                    Text("Add context to correct the reading")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Self.tint.opacity(0.5))
+                                        .allowsHitTesting(false)
+                                }
+                            }
                     }
                 }
                 // A tap in the padding would otherwise be an unclaimed tap, which puts the
