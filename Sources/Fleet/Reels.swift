@@ -171,7 +171,9 @@ enum ReelCheck {
 
     /// Run the whole thing on one Reel and write the outcome to its document, whichever way it
     /// went. Never throws: the caller is a timer, and the document is where the answer goes.
-    static func run(_ reel: Reel, progress: @escaping (String) -> Void = { _ in }) async {
+    /// Returns whether it worked, for the job's exit code.
+    @discardableResult
+    static func run(_ reel: Reel, progress: @escaping (String) -> Void = { _ in }) async -> Bool {
         let dir = FileManager.default.temporaryDirectory
             .appending(path: "fleet-reels").appending(path: reel.id)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -180,12 +182,14 @@ enum ReelCheck {
             let fields = try await check(reel, in: dir, progress: progress)
             try await Firestore.patch("factcheck/\(reel.id)", fields: fields)
             NSLog("Fleet: reel \(reel.id) — \(fields["verdict"].map { "\($0)" } ?? "?")")
+            return true
         } catch {
             NSLog("Fleet: reel \(reel.id) failed — \(error.localizedDescription)")
             try? await Firestore.patch("factcheck/\(reel.id)", fields: [
                 "fleetError": ["stringValue": String(error.localizedDescription.prefix(500))],
                 "fleetTriedAt": Firestore.timestamp(Date()),
             ])
+            return false
         }
     }
 

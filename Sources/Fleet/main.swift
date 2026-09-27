@@ -396,8 +396,9 @@ if CommandLine.arguments.contains("--reels-run") {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
         print("reels: \(hub.reels.count) unread, \(hub.reelsReadToday) read today"
-              + (hub.working ? " — still working, stopped at the cap" : ""))
-        exit(0)
+              + (hub.working ? " — still working, stopped at the cap" : "")
+              + (hub.failedThisRun ? " — a check or a read failed" : ""))
+        exit(hub.failedThisRun ? 1 : 0)
     }
     RunLoop.main.run()
 }

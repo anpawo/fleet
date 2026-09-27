@@ -610,6 +610,10 @@ final class HubStore: ObservableObject {
     /// machine you are working on is the wrong kind of help at an hour it chose itself.
     var mayCheck: () -> Bool = { false }
 
+    /// Whether a check or a read failed since launch — `fleet --reels-run` exits 1 on it, which
+    /// is what turns its CRONS card red.
+    private(set) var failedThisRun = false
+
     /// Whether a check or a read is running right now — what the drain waits on.
     var working: Bool { reelCheck != nil }
 
@@ -659,7 +663,7 @@ final class HubStore: ObservableObject {
             }
             checkingReel = next.id
             reelCheck = Task {
-                await ReelCheck.run(next)
+                if !(await ReelCheck.run(next)) { failedThisRun = true }
                 reelCheck = nil
                 checkingReel = nil
                 await syncReels()
@@ -708,6 +712,7 @@ final class HubStore: ObservableObject {
         } catch {
             NSLog("Fleet: could not read reel \(reel.id) — \(error.localizedDescription)")
             digestFailed.insert(reel.id)
+            failedThisRun = true
         }
     }
 
