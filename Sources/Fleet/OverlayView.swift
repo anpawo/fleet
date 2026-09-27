@@ -333,7 +333,12 @@ struct OverlayView: View {
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Pulled out to MEMORY's 10pt from the frame: this frame reaches 26pt past the grid
+            // for the tiles' glow, not 13, and the key in the middle is taller than a name and
+            // pushed it down. Both measured on a render.
             fleetHeading
+                .padding(.horizontal, -11)
+                .offset(y: -1.5)
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
             if scrolling {
