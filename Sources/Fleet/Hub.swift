@@ -560,9 +560,15 @@ final class HubStore: ObservableObject {
 
     /// The Reels the phone was handed, minus the ones put away — for `fleet --reels`.
     @Published private(set) var reels: [Reel] = []
-    /// The runs that came back broken, newest first — a check the phone gave up on, or one
-    /// this Mac could not carry out. What the RUNS bar counts.
+    /// The Reels this Mac could not check, newest first, each as ALERT names it: which Reel,
+    /// and what stopped it. The phone giving up is not in here — it gives up on most of them,
+    /// and this Mac takes them over on its next run.
     @Published private(set) var failedRuns: [String] = []
+    /// When the resident app last started `fleet --reels-run` for work it saw waiting.
+    private var kickedAt = Date.distantPast
+    /// On in the resident app only: a render or a `fleet --reels` listing must not start a
+    /// two-minute pipeline on the way to printing something.
+    var kicksJob = false
     /// How many the background read has been through today: all the panel says about Reels,
     /// now that nobody reads them there.
     @Published private(set) var reelsReadToday = 0
@@ -640,13 +646,22 @@ final class HubStore: ObservableObject {
             readReels = Array(all.filter { $0.digestedAt != nil }
                 .sorted { $0.digestedAt! > $1.digestedAt! }.prefix(30))
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
-            // Both kinds of failure, because they are two different things gone wrong: the
-            // phone's own pipeline giving up on a Reel, and this Mac failing to check one.
             // Put away counts as dealt with: a Reel you have already read the failure of is not
             // news, and a bar that stays red for ever is a bar nobody looks at.
-            failedRuns = all.filter { !$0.seen && ($0.status == "failed" || !$0.fleetError.isEmpty) }
+            failedRuns = all.filter { !$0.seen && !$0.fleetError.isEmpty }
                 .sorted { $0.createdAt > $1.createdAt }
-                .map { $0.status == "failed" ? "check" : "fleet" }
+                .map { "reel \(String($0.label.prefix(24))): \(String($0.fleetError.prefix(40)))" }
+            // The resident app does no check itself, but it does not leave one waiting for the
+            // job's next hour either: work in sight starts the job now (asked 2026-09-27, after
+            // two Reels sat unread for an hour). `kickstart` without -k leaves a running job be.
+            if kicksJob, Date().timeIntervalSince(kickedAt) > 300,
+               all.contains(where: { $0.needsCheck || ($0.needsDigest && !digestFailed.contains($0.id)) }) {
+                kickedAt = Date()
+                let kick = Process()
+                kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                kick.arguments = ["kickstart", "gui/\(getuid())/firestore.reels"]
+                try? kick.run()
+            }
             guard reelCheck == nil, mayCheck() else { return }
             guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
                 if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })

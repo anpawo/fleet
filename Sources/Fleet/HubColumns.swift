@@ -1603,8 +1603,7 @@ struct AlertsBlock: View {
             // chip per name.
             out.append(contentsOf: failure.components(separatedBy: ", "))
         }
-        let failed = hub.failedRuns.count
-        if failed > 0 { out.append(failed == 1 ? "1 run failed" : "\(failed) runs failed") }
+        out.append(contentsOf: hub.failedRuns)
         // A routine whose last run ended badly, by name. The CRONS block says so too, in a
         // red card among fifteen; this is the line you read without looking for it. Only the
         // routines: a resident's last exit is history, not health — see `Job.ok`.
@@ -1633,8 +1632,8 @@ struct AlertsBlock: View {
         "agenda",
         Epitech.Sources.outage,
         "scan 2d old",
-        "1 run failed",
-    ].randomElement() ?? "1 run failed"
+        "reel @someone: yt-dlp: private account",
+    ].randomElement() ?? "epitech scan"
 
     /// Built like every other block on the panel: the name on its chip at the top left, the
     /// frame the width of what it heads. What is wrong goes in the middle of the line, on a
