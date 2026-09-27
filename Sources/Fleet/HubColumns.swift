@@ -1689,3 +1689,36 @@ struct AlertsBlock: View {
     }
 }
 
+
+/// A Reel being analyzed by `fleet --reels-run`, hung over the memory on the alert's line —
+/// and nothing at all the rest of the time.
+struct ReelBlock: View {
+    @ObservedObject var hub: HubStore
+
+    private static let tint = Color(red: 1.00, green: 0.45, blue: 0.72)
+
+    var body: some View {
+        if hub.checkingReel != nil {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(Self.tint)
+                Text("Analyzing a reel\u{2026}")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Self.tint)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(height: AlertsBlock.height - 26)
+            .padding(.horizontal, 4)
+            .background {
+                let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                corner
+                    .fill(Self.tint.darkened(0.58).opacity(0.78))
+                    .overlay(corner.strokeBorder(Self.tint, lineWidth: 1))
+                    .padding(-13)
+            }
+        }
+    }
+}

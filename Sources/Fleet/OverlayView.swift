@@ -255,6 +255,11 @@ struct OverlayView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, -Self.blockSpread)
                 .padding(.top, -Self.blockSpread)
+                // On the alert's line, and hung the same way — see the fleet's overlay below.
+                .overlay(alignment: .top) {
+                    ReelBlock(hub: controller.hub)
+                        .offset(y: -(AlertsBlock.height + 26 - Self.menuBar / 2))
+                }
                 gap(Self.innerWeight)
             }
             fleet(scrolling: scrolling)

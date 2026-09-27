@@ -569,9 +569,33 @@ final class HubStore: ObservableObject {
     /// How many the background read has been through today: all the panel says about Reels,
     /// now that nobody reads them there.
     @Published private(set) var reelsReadToday = 0
-    /// The Reel a check is running on right now, when one is. One at a time — whisper takes
-    /// every core it is given, and two of them is the machine Fleet exists to prevent.
-    @Published private(set) var checkingReel: String?
+    /// The Reel a check or a read is running on right now, when one is. One at a time — whisper
+    /// takes every core it is given, and two of them is the machine Fleet exists to prevent.
+    ///
+    /// The work runs in `fleet --reels-run`, not in the app that draws the panel, so the job
+    /// leaves the shortcode in a file for as long as it works, beside its pid: a job killed at
+    /// its cap never gets to take the file away, and a dead pid is what says it is stale.
+    @Published var checkingReel: String? {
+        didSet {
+            guard mayCheck(), checkingReel != oldValue else { return }
+            if let id = checkingReel {
+                try? "\(getpid()) \(id)".write(toFile: Self.checkingFile, atomically: true, encoding: .utf8)
+            } else {
+                try? FileManager.default.removeItem(atPath: Self.checkingFile)
+            }
+        }
+    }
+    private static let checkingFile = (Hooks.home as NSString).appendingPathComponent("reel-checking")
+
+    /// From the resident app's tick: what the job is working on, if it is still alive.
+    func readCheckingReel() {
+        guard !mayCheck() else { return }
+        let parts = (try? String(contentsOfFile: Self.checkingFile, encoding: .utf8))?
+            .split(separator: " ") ?? []
+        let alive = parts.count == 2 && Int32(parts[0]).map { kill($0, 0) == 0 } == true
+        let id = alive ? String(parts[1]) : nil
+        if checkingReel != id { checkingReel = id }
+    }
     /// Whether this process may start a check at all. Off by default, and turned on by the
     /// one job whose business it is — `fleet --reels-run`. Every `fleet --something` builds a
     /// store too, and none of them should start a two-minute pipeline on the way to printing
@@ -614,9 +638,11 @@ final class HubStore: ObservableObject {
             guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
                 if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })
                     .max(by: { $0.createdAt < $1.createdAt }) {
+                    checkingReel = next.id
                     reelCheck = Task {
                         await digest(next)
                         reelCheck = nil
+                        checkingReel = nil
                         await syncReels()
                     }
                 }

@@ -751,6 +751,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--strain") {
             controller.reaper.simulateStrain()
         }
+        // `--reel` draws the pink block a Reel being analyzed hangs over the memory.
+        if CommandLine.arguments.contains("--reel") {
+            controller.hub.checkingReel = "demo"
+        }
 
         // `--open <directory>` draws a group unfolded. It is the one state a render cannot
         // otherwise reach — nothing opens a group but a click — and it is the state whose
@@ -882,7 +886,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
-    "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel-digest", "--reels",
+    "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel", "--reel-digest", "--reels",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
