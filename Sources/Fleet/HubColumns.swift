@@ -694,6 +694,9 @@ struct HubColumn<Content: View>: View {
     /// What goes top right in place of the count, when a number of rows is not the figure worth
     /// having there.
     var badge: String?
+    /// The same corner, in colours — EPITECH's credits, each figure in the colour of its pile.
+    /// Wins over `badge`.
+    var badgeText: Text?
     /// How many rows of room the column keeps whether or not it has them to show. An empty
     /// MAIL that collapses to a line, and grows back the moment something lands, moves every
     /// block under it — the left column would rearrange itself all morning.
@@ -722,7 +725,11 @@ struct HubColumn<Content: View>: View {
     }
 
     @ViewBuilder private var corner: some View {
-        if let cornerLabel {
+        if let badgeText {
+            badgeText
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .titleGround()
+        } else if let cornerLabel {
             Text(cornerLabel)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.45))
@@ -1376,6 +1383,7 @@ struct EpitechColumn: View {
                   tint: BlockTint.epitech,
                   fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
+                  badgeText: ledger,
                   minRows: 3,
                   fills: true,
                   collapsed: hub.schoolEmpty,
@@ -1447,6 +1455,23 @@ struct EpitechColumn: View {
 
     private func hover(_ id: String, _ inside: Bool) {
         if inside { hovered = id } else if hovered == id { hovered = nil }
+    }
+
+    /// `banked + under way + still to open + missing / target`, each figure in its pile's colour:
+    /// green banked, orange for the modules under way, the plain grey for what has not begun,
+    /// and a pale red for what doing all of it would still leave short.
+    private var ledger: Text? {
+        guard let plan = hub.epitech?.plan else { return nil }
+        let grey = Color.white.opacity(0.45)
+        let plus = Text("+").foregroundColor(grey)
+        var text = Text("\(plan.banked)").foregroundColor(SessionState.ready.tint)
+            + plus + Text("\(plan.ongoing)").foregroundColor(SessionState.apiError.tint)
+            + plus + Text("\(plan.upcoming)").foregroundColor(grey)
+        if plan.missing > 0 {
+            text = text + plus
+                + Text("\(plan.missing)").foregroundColor(Color(red: 1.00, green: 0.66, blue: 0.64))
+        }
+        return text + Text("/\(plan.target)").foregroundColor(grey)
     }
 
     /// Banked apart from still to earn, both out of the target; what doing all of it still

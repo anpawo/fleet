@@ -340,7 +340,7 @@ if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     }
     print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
     if let plan = snapshot.plan {
-        print("credits: done \(plan.banked) · to do \(plan.pending) · reachable \(plan.reachable)/\(plan.target) · missing \(plan.missing)")
+        print("credits: done \(plan.banked) · to do \(plan.pending) (\(plan.ongoing) on-going, \(plan.upcoming) upcoming) · reachable \(plan.reachable)/\(plan.target) · missing \(plan.missing)")
         for line in plan.done { print("  done   \(line.credits)  \(line.name)") }
         for line in plan.todo { print("  to do  \(line.credits)  \(line.name)") }
     } else {

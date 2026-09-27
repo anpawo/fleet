@@ -55,6 +55,9 @@ enum Epitech {
         /// A module whose term is over and whose grade has not come in: done on your side,
         /// not yet on the intra's. Nil for the extras, which no page tracks at all.
         var awaitingGrade = false
+        /// A module whose term has begun — under way, or over and waiting on its grade. The
+        /// extras and the modules still to open are not.
+        var started = false
     }
 
     /// The two years' worth of credits, split into what is banked and what is still to earn.
@@ -69,6 +72,8 @@ enum Epitech {
         var todo: [CreditLine]
         var banked: Int { done.reduce(0) { $0 + $1.credits } }
         var pending: Int { todo.reduce(0) { $0 + $1.credits } }
+        var ongoing: Int { todo.filter(\.started).reduce(0) { $0 + $1.credits } }
+        var upcoming: Int { pending - ongoing }
         var reachable: Int { banked + pending }
         var missing: Int { max(0, target - reachable) }
     }
@@ -296,7 +301,8 @@ enum Epitech {
                       seen.insert(registration.code).inserted else { return nil }
                 return CreditLine(id: registration.code, name: shortenModule(registration.name),
                                   credits: credits,
-                                  awaitingGrade: (date(registration.end) ?? now) <= now)
+                                  awaitingGrade: (date(registration.end) ?? now) <= now,
+                                  started: (date(registration.start) ?? now) <= now)
             }
             todo += extras.filter { $0.done != true }
                 .map { CreditLine(id: $0.name, name: $0.name, credits: $0.credits) }

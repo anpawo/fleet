@@ -74,7 +74,7 @@ EOF
 echo '{"target":120,"years":[2025,2026],"extras":[{"name":"Internship","credits":30},{"name":"Sport","credits":1,"done":true}]}' \
   > "$DIR/credit-plan.json"
 got=$("$BIN" --epitech "$DIR/state.json" 2>/dev/null | sed -n 's/^credits: //p')
-want="done 49 · to do 37 · reachable 86/120 · missing 34"
+want="done 49 · to do 37 (7 on-going, 30 upcoming) · reachable 86/120 · missing 34"
 if [ "$got" = "$want" ]; then printf '  ok    le grand livre sépare fait et à faire\n'
 else printf '  FAIL  le grand livre\n        attendu: %s\n        obtenu : %s\n' "$want" "$got"; fail=1; fi
 
