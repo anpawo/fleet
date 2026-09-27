@@ -46,8 +46,34 @@ enum Epitech {
         var optional = false
     }
 
+    /// One line of the credit ledger: a module the intra has signed off, a module under way, or
+    /// something the school counts that my.epitech never lists — the internship, a hackathon.
+    struct CreditLine: Identifiable {
+        var id: String
+        var name: String
+        var credits: Int
+    }
+
+    /// The two years' worth of credits, split into what is banked and what is still to earn.
+    ///
+    /// The target is not the sixty of one year: PGE4 and PGE5 are judged together, on 120, and a
+    /// year abroad that banked 38 is a debt the fifth year pays off with its extras. Everything
+    /// you are registered to is counted as reachable — the figure is what you get if you do it
+    /// all, and `missing` is what doing it all still leaves short.
+    struct CreditPlan {
+        var target: Int
+        var done: [CreditLine]
+        var todo: [CreditLine]
+        var banked: Int { done.reduce(0) { $0 + $1.credits } }
+        var pending: Int { todo.reduce(0) { $0 + $1.credits } }
+        var reachable: Int { banked + pending }
+        var missing: Int { max(0, target - reachable) }
+    }
+
     struct Snapshot {
         var modules: [Module]
+        /// Nil without `credit-plan.json` beside the state, or before the intra answered.
+        var plan: CreditPlan?
         /// Projects still wanting a rendu, whatever module they hang off.
         var projectsDue: Int
         /// Credits banked this school year, out of the sixty a year is worth. Nil when the scan
@@ -86,9 +112,18 @@ enum Epitech {
         }
 
         struct Intra: Decodable {
+            struct Acquired: Decodable {
+                let code: String
+                let title: String
+                let credits: Int
+                let year: Int
+            }
+
             let ok: Bool
             let credits: Int?
             let error: String?
+            /// Every module the intra has signed off, all years. Absent on scans that predate it.
+            let acquired: [Acquired]?
         }
 
         struct Edsquare: Decodable {
@@ -102,6 +137,20 @@ enum Epitech {
         let errors: [String]?
         let intra: Intra?
         let edsquare: Edsquare?
+    }
+
+    /// What `credit-plan.json` says: the target, the school years it spans, and the credits the
+    /// school counts that are on no my.epitech page. Kept by hand, beside `credits.json`.
+    private struct PlanFile: Decodable {
+        struct Extra: Decodable {
+            let name: String
+            let credits: Int
+            let done: Bool?
+        }
+
+        let target: Int
+        let years: [Int]
+        let extras: [Extra]?
     }
 
     static var file: URL {
@@ -193,6 +242,13 @@ enum Epitech {
             due[deadline.id] = Rendu(id: deadline.id, title: shorten(deadline.title), date: at,
                                      optional: deadline.title.contains("[SECONDARY]"))
         }
+        let planFile = (try? Data(contentsOf: file.deletingLastPathComponent()
+            .appending(path: "credit-plan.json")))
+            .flatMap { try? JSONDecoder().decode(PlanFile.self, from: $0) }
+        let acquired = (state.intra?.ok == true ? state.intra?.acquired : nil)?
+            .filter { planFile?.years.contains($0.year) ?? false } ?? []
+        let signedOff = Set(acquired.map(\.code))
+
         let byUnit = Dictionary(grouping: state.deadlines.filter { due[$0.id] != nil },
                                 by: { $0.unit ?? "" })
 
@@ -201,7 +257,10 @@ enum Epitech {
         // with nothing due is still a module you are registered to. The count on the heading
         // stays a count of rendus, which is why it no longer matches the number of cards.
         let modules = state.registrations.compactMap { registration -> Module? in
-            guard let end = date(registration.end), end > now else { return nil }
+            // A module the intra has signed off is banked: it is on the ledger's done side, not
+            // a card of the term still to get through.
+            guard let end = date(registration.end), end > now,
+                  !signedOff.contains(registration.code) else { return nil }
             let year = Calendar.current.component(.year,
                                                   from: date(registration.start) ?? end)
             let ids: Set<String> = Set((byUnit[registration.code] ?? []).map { $0.id })
@@ -219,8 +278,31 @@ enum Epitech {
                           year: year, rendus: rendus)
         }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
+        var plan: CreditPlan?
+        if let planFile, state.intra?.acquired != nil {
+            let extras = planFile.extras ?? []
+            var done = acquired.map {
+                CreditLine(id: $0.code, name: shortenModule($0.title), credits: $0.credits)
+            }
+            done += extras.filter { $0.done == true }
+                .map { CreditLine(id: $0.name, name: $0.name, credits: $0.credits) }
+            // One line per unit: the same module can be listed under two instances.
+            var seen = signedOff
+            var todo = state.registrations.compactMap { registration -> CreditLine? in
+                guard let credits = registration.credits, credits > 0,
+                      seen.insert(registration.code).inserted else { return nil }
+                return CreditLine(id: registration.code, name: shortenModule(registration.name),
+                                  credits: credits)
+            }
+            todo += extras.filter { $0.done != true }
+                .map { CreditLine(id: $0.name, name: $0.name, credits: $0.credits) }
+            plan = CreditPlan(target: planFile.target,
+                              done: done.sorted { $0.credits > $1.credits },
+                              todo: todo.sorted { $0.credits > $1.credits })
+        }
+
         let readAt = date(state.generatedAt) ?? .distantPast
-        return Snapshot(modules: modules, projectsDue: due.count,
+        return Snapshot(modules: modules, plan: plan, projectsDue: due.count,
                         credits: state.intra?.ok == true ? state.intra?.credits : nil,
                         failure: failure(state, readAt: readAt, sources: sources),
                         readAt: readAt)

@@ -1396,16 +1396,39 @@ struct EpitechColumn: View {
     private static let pair = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
     @ViewBuilder private var rows: some View {
-        if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
-            LazyVGrid(columns: Self.pair, spacing: 8) {
-                ForEach(snapshot.modules) { module in
-                    ModuleCard(module: module, lit: lit(module.id))
-                        .epitechOpen(commandHeld: commandHeld, url: module.url,
-                                     onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
+        if let snapshot = hub.epitech, let plan = snapshot.plan {
+            // Two piles, not one list: what is banked no longer asks anything of you, and
+            // mixed in with the term it reads as work.
+            LedgerHeading(title: "DONE", credits: plan.banked)
+            if plan.done.isEmpty {
+                HubEmptyLine(text: "Nothing signed off yet")
+            } else {
+                LazyVGrid(columns: Self.pair, spacing: 8) {
+                    ForEach(plan.done) { CreditCard(line: $0, banked: true) }
                 }
             }
+            LedgerHeading(title: "TO DO", credits: plan.pending,
+                          note: plan.missing > 0 ? "\(plan.missing) short of \(plan.target)" : nil)
+            LazyVGrid(columns: Self.pair, spacing: 8) {
+                moduleCards(snapshot)
+                // What the school counts and my.epitech never lists: the internship, the
+                // hackathons, sport. Registered modules already have their card above.
+                ForEach(plan.todo.filter { line in
+                    !snapshot.modules.contains { $0.code == line.id }
+                }) { CreditCard(line: $0, banked: false) }
+            }
+        } else if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
+            LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot) }
         } else {
             HubEmptyLine(text: hub.epitech == nil ? "No scan" : "No module open")
+        }
+    }
+
+    private func moduleCards(_ snapshot: Epitech.Snapshot) -> some View {
+        ForEach(snapshot.modules) { module in
+            ModuleCard(module: module, lit: lit(module.id))
+                .epitechOpen(commandHeld: commandHeld, url: module.url,
+                             onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
         }
     }
 
@@ -1415,12 +1438,81 @@ struct EpitechColumn: View {
         if inside { hovered = id } else if hovered == id { hovered = nil }
     }
 
-    /// Banked, and what is left of the year's sixty — the only figure the heading carries.
+    /// What doing everything you are in would bring, out of the target — and how far short that
+    /// still falls. Without a plan, banked and what is left of the year's sixty.
     private var credits: String? {
+        if let plan = hub.epitech?.plan {
+            return plan.missing > 0 ? "\(plan.reachable)/\(plan.target) −\(plan.missing)"
+                : "\(plan.reachable)/\(plan.target)"
+        }
         guard let credits = hub.epitech?.credits else { return nil }
         return "\(credits)+\(max(0, Epitech.creditsPerYear - credits))/\(Epitech.creditsPerYear)"
     }
 
+}
+
+/// The line over each pile of the EPITECH block: its name, what it adds up to, and — on the
+/// to-do pile — how short of the target doing all of it still leaves you.
+struct LedgerHeading: View {
+    let title: String
+    let credits: Int
+    var note: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.45))
+            Text("\(credits) CR")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6))
+            Spacer(minLength: 4)
+            if let note {
+                Text(note)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(SessionState.running.tint)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+/// A line of the ledger that is not a module under way: one the intra signed off, or a credit
+/// the school counts that no my.epitech page carries.
+struct CreditCard: View {
+    let line: Epitech.CreditLine
+    let banked: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(line.name)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(banked ? 0.55 : 0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 2)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(line.credits) CR")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                Spacer(minLength: 4)
+                if banked {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(SessionState.ready.tint)
+                } else {
+                    Text("not on my.epitech")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.28))
+                }
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .panelCard()
+    }
 }
 
 /// What a card in the EPITECH block is, said in a word.

@@ -339,7 +339,13 @@ if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
         }
     }
     print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
-    print("credits: \(snapshot.credits.map { "\($0)/\(Epitech.creditsPerYear)" } ?? "unknown")")
+    if let plan = snapshot.plan {
+        print("credits: done \(plan.banked) · to do \(plan.pending) · reachable \(plan.reachable)/\(plan.target) · missing \(plan.missing)")
+        for line in plan.done { print("  done   \(line.credits)  \(line.name)") }
+        for line in plan.todo { print("  to do  \(line.credits)  \(line.name)") }
+    } else {
+        print("credits: \(snapshot.credits.map { "\($0)/\(Epitech.creditsPerYear)" } ?? "unknown")")
+    }
     print("trouble: \(snapshot.failure ?? "none")")
     exit(0)
 }

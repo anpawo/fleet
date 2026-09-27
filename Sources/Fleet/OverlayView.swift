@@ -1424,7 +1424,7 @@ struct MemoryStrip: View {
                      tint: ramTint.opacity(0.45),
                      fill: .black.opacity(0.41),
                      level: BlockLevel(share: share(reaper.footprint.used), tint: ramTint.opacity(0.42)),
-                     bodyGap: 6) {
+                     bodyGap: 6, middleBetween: true) {
             // Under strain the verdict is a pulsing triangle halfway between the name and the
             // readout: a sentence under the heading said nothing the colour did not.
             if tight {

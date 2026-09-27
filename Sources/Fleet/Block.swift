@@ -23,6 +23,9 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
     var level: BlockLevel?
     /// Between the title bar and the body.
     var bodyGap: CGFloat = 9
+    /// `middle` halfway between the name and `trailing` rather than centred on the whole bar —
+    /// MEMORY's warning, whose readout is wide enough to pull the bar's centre onto it.
+    var middleBetween = false
     @ViewBuilder var middle: () -> Middle
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -41,12 +44,16 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
                 .foregroundStyle(titleColor)
                 .titleGround()
                 Spacer(minLength: 3)
+                if middleBetween {
+                    middle()
+                    Spacer(minLength: 3)
+                }
                 trailing()
             }
             // The chips' ground hangs 7pt past the words: this leaves 10pt of pane round them,
             // the frame reaching `spread` past the block.
             .padding(.horizontal, 17 - spread)
-            .overlay { middle() }
+            .overlay { if !middleBetween { middle() } }
             content()
         }
         .blockFrame(tint, fill: fill, spread: spread, bottomSpread: bottomSpread, level: level)
