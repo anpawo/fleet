@@ -22,6 +22,9 @@ enum Epitech {
         /// The school year the intra files it under — the year the registration started, which
         /// is the only part of a module's URL that is not already on the card.
         var year: Int
+        /// Its term has begun — the card wears the corner's orange, the colour of the credits
+        /// under way.
+        var started: Bool
         var rendus: [Rendu]
 
         /// Its page on my.epitech — where ⌘-clicking the card lands.
@@ -283,7 +286,9 @@ enum Epitech {
                           name: shortenModule(registration.name), end: end,
                           code: registration.code, instance: registration.instance,
                           credits: registration.credits,
-                          year: year, rendus: rendus)
+                          year: year,
+                          started: (date(registration.start) ?? now) <= now,
+                          rendus: rendus)
         }.sorted { ($0.rendus.first?.date ?? $0.end) < ($1.rendus.first?.date ?? $1.end) }
 
         var plan: CreditPlan?

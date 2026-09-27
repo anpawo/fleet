@@ -1453,14 +1453,14 @@ struct EpitechColumn: View {
         guard let plan = hub.epitech?.plan else { return nil }
         let grey = Color.white.opacity(0.45)
         let plus = Text(" + ").foregroundColor(grey)
-        var text = Text("\(plan.banked)").foregroundColor(SessionState.ready.tint)
-            + plus + Text("\(plan.ongoing)").foregroundColor(SessionState.apiError.tint)
+        var text = Text("\(plan.banked)").foregroundColor(LedgerTint.banked)
+            + plus + Text("\(plan.ongoing)").foregroundColor(LedgerTint.ongoing)
             + plus + Text("\(plan.upcoming)").foregroundColor(grey)
         if plan.missing > 0 {
             text = text + plus
-                + Text("\(plan.missing)").foregroundColor(Color(red: 1.00, green: 0.50, blue: 0.47))
+                + Text("\(plan.missing)").foregroundColor(LedgerTint.missing)
         }
-        return text + Text("/\(plan.target)").foregroundColor(grey)
+        return text + Text(" / \(plan.target)").foregroundColor(grey)
     }
 
     /// Banked apart from still to earn, both out of the target; what doing all of it still
@@ -1537,8 +1537,15 @@ struct CreditCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard()
+        .panelCard(tint: banked ? LedgerTint.banked : line.started ? LedgerTint.ongoing : nil)
     }
+}
+
+/// The ledger's colours, shared by the heading's figures and the cards they count.
+enum LedgerTint {
+    static let banked = SessionState.ready.tint
+    static let ongoing = SessionState.apiError.tint
+    static let missing = Color(red: 1.00, green: 0.50, blue: 0.47)
 }
 
 /// What a card in the EPITECH block is, said in a word.
@@ -1585,11 +1592,14 @@ extension View {
             }
     }
 
-    /// The card every row of the EPITECH block sits on.
-    func panelCard(lit: Bool = false) -> some View {
+    /// The card every row of the EPITECH block sits on. `tint` washes it in the colour of the
+    /// pile its credits are counted in on the heading — dark, so the heading's figure stays the
+    /// bright one.
+    func panelCard(lit: Bool = false, tint: Color? = nil) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
+            .background((tint ?? .clear).opacity(0.16))
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
@@ -1645,7 +1655,7 @@ struct ModuleCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard(lit: lit)
+        .panelCard(lit: lit, tint: module.started ? LedgerTint.ongoing : nil)
     }
 }
 
