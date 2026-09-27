@@ -686,7 +686,13 @@ final class HubStore: ObservableObject {
             let digest = try await Claude.digest(reel, themes: ReelDigest.themes(),
                                                  projects: ReelDigest.projects(), sessions: sessions)
             await Task.detached { ReelDigest.apply(digest, reel, sessions: sessions) }.value
-            try await Firestore.patch("factcheck/\(reel.id)", fields: ["digestedAt": Firestore.timestamp(Date())])
+            var fields: [String: Any] = ["digestedAt": Firestore.timestamp(Date())]
+            // The note is the line the REELS block shows. Not over one the sparkle wrote, except
+            // on a second reading, which is Marius correcting it.
+            if let note = digest.note, reel.reminder.isEmpty || !tell {
+                fields["reminder"] = ["stringValue": note]
+            }
+            try await Firestore.patch("factcheck/\(reel.id)", fields: fields)
             if let line = digest.todo, !todos.contains(where: { $0.name.contains(reel.id) }) {
                 add(line)
                 if !reel.seen { markSeen(reel) }

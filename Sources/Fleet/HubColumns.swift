@@ -1690,84 +1690,63 @@ struct AlertsBlock: View {
 }
 
 
-/// Hung over the memory on the alert's line: a Reel being analyzed by `fleet --reels-run`,
-/// and otherwise the last one analyzed, with a field to tell the reading what it got wrong.
+/// Hung over the memory on the alert's line, built like MEMORY: the name on the left, and on
+/// the right what the last Reel read was about — or a spinner while one is being read. A click
+/// opens a field under it to tell the reading what it got wrong.
 struct ReelBlock: View {
     @ObservedObject var hub: HubStore
 
+    @State private var open = false
     @FocusState private var typing: Bool
 
     private static let tint = Color(red: 1.00, green: 0.45, blue: 0.72)
+    /// As on MEMORY: the chips float in the block's colour.
+    private static let chipGround = 0.55
 
     var body: some View {
-        if hub.checkingReel != nil {
-            pane { working("Analyzing a reel\u{2026}") }
-        } else if let reel = hub.lastReel {
-            pane {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(spacing: 8) {
-                        Text(reel.label)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Self.tint)
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text(reel.badge)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Self.tint.opacity(0.7))
-                    }
-                    .frame(height: 14)
-                    .help(reel.summary)
-                    if hub.reinterpreting {
-                        working("Rereading with your context\u{2026}")
-                    } else {
-                        // The hint drawn by hand, dimmed: the field paints its own placeholder
-                        // in its text colour, whatever `prompt` is given, so it read as written.
-                        TextField("", text: $hub.reelContext, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .tint(.white.opacity(0.8))
-                            .lineLimit(1 ... 2)
-                            .focused($typing)
-                            .background(alignment: .leading) {
-                                if hub.reelContext.isEmpty {
-                                    Text("Add context to correct the reading")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Self.tint.opacity(0.5))
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                    }
+        if hub.checkingReel != nil || hub.lastReel != nil {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 8) {
+                    Text("REELS")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(3.2)
+                        .foregroundStyle(Self.tint)
+                        .titleGround(Self.chipGround)
+                    Spacer(minLength: 3)
+                    readout.titleGround(Self.chipGround)
                 }
-                // A tap in the padding would otherwise be an unclaimed tap, which puts the
-                // panel away — see `NewTodoRow`.
-                .contentShape(Rectangle())
-                .onTapGesture { typing = true }
-                .onChange(of: typing) { hub.reelContextFocused = typing }
+                .frame(height: 14)
+                if open, hub.checkingReel == nil, !hub.reinterpreting {
+                    // The hint drawn by hand, dimmed: the field paints its own placeholder in
+                    // its text colour, whatever `prompt` is given, so it read as written.
+                    TextField("", text: $hub.reelContext, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .tint(.white.opacity(0.8))
+                        .lineLimit(1 ... 2)
+                        .focused($typing)
+                        .background(alignment: .leading) {
+                            if hub.reelContext.isEmpty {
+                                Text("Add context to correct the reading")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Self.tint.opacity(0.5))
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .onAppear { typing = true }
+                }
             }
-        }
-    }
-
-    private func working(_ text: String) -> some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .progressViewStyle(.circular)
-                .controlSize(.mini)
-                // `.tint` is ignored by the macOS spinner; its light grey multiplied is pink.
-                .colorMultiply(Self.tint)
-            Text(text)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Self.tint)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        // The ALERT bar's drawn height, 40pt, less its 13pt of pane over and under.
-        .frame(height: 14)
-    }
-
-    private func pane(@ViewBuilder _ content: () -> some View) -> some View {
-        content()
             .padding(.horizontal, 4)
+            // A tap in the padding would otherwise be an unclaimed tap, which puts the panel
+            // away — see `NewTodoRow`.
+            .contentShape(Rectangle())
+            .onTapGesture {
+                open = true
+                typing = true
+            }
+            .onChange(of: typing) { hub.reelContextFocused = typing }
+            .onChange(of: hub.reinterpreting) { if hub.reinterpreting { open = false } }
             .background {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 corner
@@ -1775,5 +1754,28 @@ struct ReelBlock: View {
                     .overlay(corner.strokeBorder(Self.tint, lineWidth: 1))
                     .padding(-13)
             }
+        }
+    }
+
+    @ViewBuilder private var readout: some View {
+        if hub.checkingReel != nil || hub.reinterpreting {
+            HStack(spacing: 7) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.mini)
+                    // `.tint` is ignored by the macOS spinner; its light grey multiplied is pink.
+                    .colorMultiply(Self.tint)
+                Text(hub.reinterpreting ? "rereading\u{2026}" : "analyzing\u{2026}")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+        } else if let reel = hub.lastReel {
+            // Reels read before the note was kept on the document have only the summary.
+            Text([reel.reminder, reel.summary, reel.label].first { !$0.isEmpty } ?? reel.id)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                .help(reel.summary)
+        }
     }
 }
