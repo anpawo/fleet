@@ -435,7 +435,7 @@ it also self-heal whenever you start a session, add a `SessionStart` hook to
         "hooks": [
           {
             "type": "command",
-            "command": "launchctl kickstart gui/$UID/com.mr.fleet"
+            "command": "launchctl kickstart gui/$UID/app.fleet"
           }
         ]
       }

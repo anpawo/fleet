@@ -896,7 +896,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // through to here, and the fall-through is the whole agent starting up: a typo in a flag used
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
-    "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
+    "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",

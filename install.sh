@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-LABEL="com.mr.fleet"
+LABEL="app.fleet"
 DEST="$HOME/Applications/Fleet.app"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 BIN="$HOME/.local/bin"
@@ -19,6 +19,13 @@ if [ -e "$HOME/Applications/ClaudeFleet.app" ] || [ -e "$HOME/Library/LaunchAgen
 	launchctl bootout "gui/$UID/com.mr.claudefleet" 2>/dev/null || true
 	rm -f "$HOME/Library/LaunchAgents/com.mr.claudefleet.plist"
 	rm -rf "$HOME/Applications/ClaudeFleet.app"
+fi
+# One-time migration: the agent was `com.mr.fleet` until 2026-09-27, when app agents took the
+# `app.` prefix. The bundle id stays `com.mr.fleet` — the TCC grants and the Keychain items are
+# filed under it.
+if [ -e "$HOME/Library/LaunchAgents/com.mr.fleet.plist" ]; then
+	launchctl bootout "gui/$UID/com.mr.fleet" 2>/dev/null || true
+	rm -f "$HOME/Library/LaunchAgents/com.mr.fleet.plist"
 fi
 
 echo "==> Installing to $DEST"

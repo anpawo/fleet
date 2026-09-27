@@ -21,7 +21,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["com.mr.", "mac.", "s14.", "epitech.", "firestore.", "my-setup."]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "firestore.", "my-setup."]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
@@ -39,7 +39,7 @@ enum Launchd {
         ///
         /// A kill counts too — launchctl reports one as minus the signal, and a watchdog that
         /// had to kill a routine is a routine that failed. The one job killed on purpose,
-        /// Fleet's own on every `install.sh`, is not listed (see `hidden`).
+        /// Fleet's own on every `install.sh`, is an app, judged on being up rather than on this.
         var failing: Bool
         /// Runs on its own — a clock, a calendar, a watched file. The other kind is an
         /// application launchd has been told to keep up. This is what `ok` is judged against,
@@ -83,7 +83,7 @@ enum Launchd {
         return names.compactMap { file -> Job? in
             guard file.hasSuffix(".plist") else { return nil }
             let label = String(file.dropLast(6))
-            guard mine.contains(where: label.hasPrefix), !hidden.contains(label) else { return nil }
+            guard mine.contains(where: label.hasPrefix) else { return nil }
             guard let data = try? Data(contentsOf: folder.appending(path: file)),
                   let plist = try? PropertyListSerialization.propertyList(
                       from: data, format: nil) as? [String: Any] else { return nil }
@@ -146,10 +146,6 @@ enum Launchd {
         return nil
     }
 
-    /// The panel does not report on itself. If you can read this block, Fleet is running —
-    /// a green card saying so is a line that can never say anything.
-    private static let hidden: Set<String> = ["com.mr.fleet"]
-
     private static let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     /// What an agent with no trigger is doing there: it is a program launchd has been told to
@@ -178,7 +174,9 @@ enum Launchd {
         "s14.recon-v3": "Runs V3 on both books, hourly, and opens the two reports in Excel.",
         "s14.recon-web": "Serves the S14 recon browser.",
         "s14.mcp-renew": "Renews the scient MCP token before its 24 h run out.",
-        "s14.S-mirror-on-M": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
+        "s14.mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
+        "app.fleet": "This panel.",
+        "app.screenshot": "Screenshots and screen recordings, on ⌘⇧5.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a

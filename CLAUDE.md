@@ -2,7 +2,7 @@
 
 ## Toute mise à jour se termine par un redémarrage de l'app
 
-Fleet tourne en permanence via le LaunchAgent `com.mr.fleet`. Une modification du code ne
+Fleet tourne en permanence via le LaunchAgent `app.fleet`. Une modification du code ne
 change rien tant que le processus en cours n'a pas été tué et relancé — la copie installée
 dans `~/Applications/Fleet.app` est celle qui tourne, pas `.build`.
 

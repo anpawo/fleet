@@ -115,7 +115,7 @@ struct CronColumn: View {
     @State private var overDetail = false
     /// The pointer is on the block. Folded to its heading otherwise: fifteen healthy routines
     /// are wallpaper, and the verdict on the heading says whether any of them is not.
-    @State private var open = false
+    @State private var open = CommandLine.arguments.contains("--crons-open")
 
     /// What the cards actually need, measured. The block is that tall, up to the height it has
     /// been given: five agents must not leave a third of the column empty under them, and a
@@ -234,31 +234,37 @@ struct CronColumn: View {
         return groups
     }
 
-    /// A family's name and its cards in lines, as many to a line as fit at their own width.
-    /// The name is on the first line, and the box goes under whichever line holds the card
-    /// ⌘ is on.
+    /// A family's name and its cards on one line, scrolled sideways past the block's edge —
+    /// a family is a line, never a paragraph (asked again on 2026-09-27). The box of the card
+    /// ⌘ is on goes under the line.
     @ViewBuilder private func group(_ jobs: [Launchd.Job], family: String) -> some View {
-        let shown = jobs.first { commandHeld && $0.id == hovered }
-        // The name is a subview of the flow like the cards, so it needs a slot in `ids` for
-        // the box to find the cards past it.
-        FlowLayout(spacing: 4, box: shown?.id, ids: [""] + jobs.map(\.id)) {
-            detail(of: jobs, inset: false)
-            Text(family.uppercased())
+        let cards = HStack(alignment: .top, spacing: 4) {
+            Text(family == "app" ? "APPS" : family.uppercased())
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.1)
-                .foregroundStyle(Self.tint.lightened(0.65))
+                .foregroundStyle((family == "app" ? CronCard.appTint : Self.tint).lightened(0.65))
                 .fixedSize()
-                .padding(.leading, 1)
+                .padding(.leading, 7)
                 .padding(.trailing, 2)
                 // On the pills' own line, which sits under their padding.
                 .padding(.top, 5)
-            ForEach(jobs) { job in
-                card(job, family: family == Self.other ? nil : family)
-            }
+            ForEach(jobs) { job in card(job, family: family == Self.other ? nil : family) }
         }
-        // In from the edges by what the box is, so a pill at either end stands on
-        // the box rather than past its corner.
-        .padding(.horizontal, 6)
+        VStack(alignment: .leading, spacing: 5) {
+            if scrolling {
+                ScrollView(.horizontal) { cards }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+            } else {
+                // At their own widths, as the scroll view keeps them: a frame of no width
+                // reports none, and the line clips what spills past the block's edge.
+                cards.fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 0, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+            }
+            detail(of: jobs)
+        }
     }
 
     /// What comes before the first dot — `s14` for `s14.hermes-map`. An agent with no dot is
@@ -338,77 +344,6 @@ struct CronColumn: View {
     }
 }
 
-/// Cards in lines, each at its own width, as many to a line as fit.
-///
-/// With `box` set, the first subview is a box and the rest are the cards, in the order of
-/// `ids`: the box goes the full width under the line that holds the card `box` names — not
-/// under the flow, which with two lines put a line of pills between a tab and its box.
-struct FlowLayout: Layout {
-    var spacing: CGFloat
-    var box: String? = nil
-    var ids: [String] = []
-
-    /// The cards' lines, as indexes into `subviews` — the box, when there is one, is at
-    /// index 0 and is not on any line.
-    private func lines(_ subviews: Subviews, width: CGFloat) -> [[(Int, CGSize)]] {
-        var lines: [[(Int, CGSize)]] = [[]]
-        var used: CGFloat = 0
-        for (i, view) in subviews.enumerated() where !(box != nil && i == 0) {
-            let size = view.sizeThatFits(.unspecified)
-            let needed = size.width + (lines[lines.count - 1].isEmpty ? 0 : spacing)
-            if used + needed > width, !lines[lines.count - 1].isEmpty {
-                lines.append([])
-                used = 0
-            }
-            used += size.width + (lines[lines.count - 1].isEmpty ? 0 : spacing)
-            lines[lines.count - 1].append((i, size))
-        }
-        return lines
-    }
-
-    /// Whether the box goes under this line.
-    private func boxed(_ row: [(Int, CGSize)]) -> Bool {
-        guard let box else { return false }
-        let offset = 1
-        return row.contains { i, _ in ids.indices.contains(i - offset) && ids[i - offset] == box }
-    }
-
-    private func boxHeight(_ subviews: Subviews, width: CGFloat) -> CGFloat {
-        box == nil ? 0 : subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        let rows = lines(subviews, width: width)
-        var height = rows.map { $0.map(\.1.height).max() ?? 0 }.reduce(0, +)
-                   + spacing * CGFloat(max(0, rows.count - 1))
-        if rows.contains(where: boxed) { height += spacing + boxHeight(subviews, width: width) }
-        return CGSize(width: proposal.width ?? rows.map {
-            $0.map(\.1.width).reduce(0, +) + spacing * CGFloat($0.count - 1) }.max() ?? 0,
-                      height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in lines(subviews, width: bounds.width) {
-            let height = row.map(\.1.height).max() ?? 0
-            var x = bounds.minX
-            for (i, size) in row {
-                subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
-                                  proposal: ProposedViewSize(size))
-                x += size.width + spacing
-            }
-            y += height + spacing
-            if boxed(row) {
-                let h = boxHeight(subviews, width: bounds.width)
-                subviews[0].place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
-                                  proposal: ProposedViewSize(width: bounds.width, height: h))
-                y += h + spacing
-            }
-        }
-    }
-}
-
 /// One agent, half the block wide. A name and a border: green for one launchd has loaded and
 /// whose last run was clean, red for one that is unloaded or came back on an error. What it
 /// does, where it answers and when is in a box under its line while ⌘ and the pointer are
@@ -436,16 +371,19 @@ struct CronCard: View {
             .truncationMode(.tail)
             .padding(.vertical, 4)
             .padding(.horizontal, 6)
-            // A shade of the block's blue for a resident, the panel's near-black for a
-            // routine: the two kinds share the block, and the ground is what tells them apart.
-            .background(job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
-                                      : Color(red: 0.10, green: 0.12, blue: 0.18))
+            // The ground tells the three kinds apart: the panel's near-black for a routine, a
+            // shade of the block's blue for a resident, violet for an app — something you use,
+            // like Fleet or the screenshot tool, rather than something that runs for you.
+            .background(job.id.hasPrefix("app.") ? Color(red: 0.17, green: 0.11, blue: 0.25)
+                        : job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
+                                        : Color(red: 0.10, green: 0.12, blue: 0.18))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                 .strokeBorder(border, lineWidth: 1))
     }
 
     static let tint = SessionState.awaitingAnswer.tint
+    static let appTint = SessionState.delegated.tint
 }
 
 

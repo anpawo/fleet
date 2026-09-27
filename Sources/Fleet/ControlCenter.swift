@@ -397,7 +397,7 @@ struct ControlCenterView: View {
     private func quit() {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        task.arguments = ["bootout", "gui/\(getuid())/com.mr.fleet"]
+        task.arguments = ["bootout", "gui/\(getuid())/app.fleet"]
         try? task.run()          // kills us on success; the terminate below covers the rest
         task.waitUntilExit()
         NSApp.terminate(nil)
