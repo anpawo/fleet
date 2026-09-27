@@ -590,7 +590,7 @@ final class HubStore: ObservableObject {
     }
     private static let checkingFile = (Hooks.home as NSString).appendingPathComponent("reel-checking")
 
-    /// The Reels read so far, newest first: what REELS lists under the pointer.
+    /// The Reels read in the last 24 hours, newest first: what REELS lists under the pointer.
     @Published private(set) var readReels: [Reel] = []
     /// The one whose context field is open, and what is being written in it.
     @Published var contextReelID: String?
@@ -643,8 +643,11 @@ final class HubStore: ObservableObject {
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
-            readReels = Array(all.filter { $0.digestedAt != nil }
-                .sorted { $0.digestedAt! > $1.digestedAt! }.prefix(30))
+            // The last day's, not every Reel ever read: what REELS lists is what just came
+            // through, and the notes keep the rest (asked 2026-09-28).
+            let dayAgo = Date().addingTimeInterval(-86_400)
+            readReels = all.filter { ($0.digestedAt ?? .distantPast) > dayAgo }
+                .sorted { $0.digestedAt! > $1.digestedAt! }
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
             // Put away counts as dealt with: a Reel you have already read the failure of is not
             // news, and a bar that stays red for ever is a bar nobody looks at.
