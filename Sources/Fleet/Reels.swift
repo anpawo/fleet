@@ -35,6 +35,8 @@ struct Reel: Identifiable {
     var reminder: String
     /// When the background read of a checked Reel — see `ReelDigest` — has been done.
     var digestedAt: Date?
+    /// What Marius added from the panel, to set the reading straight — see `HubStore.reinterpret`.
+    var context: String
 
     init(_ doc: Firestore.Document) {
         id = doc.id
@@ -56,6 +58,7 @@ struct Reel: Identifiable {
         category = doc.string("category")
         reminder = doc.string("reminder")
         digestedAt = doc.date("digestedAt")
+        context = doc.string("context")
     }
 
     /// The shelves a filed Reel goes on, in the order the card pages through them. The names
@@ -264,10 +267,23 @@ enum ReelCheck {
 
         progress("Checking on the web\u{2026}")
         let verdict = try await Claude.factCheck(transcript: transcript, caption: caption,
-                                                 author: author)
+                                                 author: author, context: reel.context)
         try? JSONSerialization.data(withJSONObject: verdict, options: .prettyPrinted)
             .write(to: dir.appending(path: "verdict.json"))
+        return verdictFields(verdict).merging([
+            "status": ["stringValue": "done"],
+            "error": ["stringValue": ""],
+            "fleetError": ["stringValue": ""],
+            "transcript": ["stringValue": transcript],
+            "author": ["stringValue": author],
+            "caption": ["stringValue": caption],
+            "checkedBy": ["stringValue": "fleet"],
+            "checkedAt": Firestore.timestamp(Date()),
+        ]) { $1 }
+    }
 
+    /// The verdict's own fields, which a second reading with Marius's context rewrites alone.
+    static func verdictFields(_ verdict: [String: Any]) -> [String: Any] {
         let claims = (verdict["claims"] as? [[String: Any]] ?? []).compactMap { claim -> [String: Any]? in
             let statement = (claim["affirmation"] as? String ?? "").trimmingCharacters(in: .whitespaces)
             guard !statement.isEmpty else { return nil }
@@ -281,19 +297,15 @@ enum ReelCheck {
         }
         let confidence = min(max((verdict["confiance"] as? NSNumber)?.intValue ?? 0, 0), 100)
         return [
-            "status": ["stringValue": "done"],
-            "error": ["stringValue": ""],
-            "fleetError": ["stringValue": ""],
             "verdict": ["stringValue": verdictOf(verdict["verdict"])],
             "confidence": ["integerValue": String(confidence)],
-            "summary": ["stringValue": (verdict["resume"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)],
+            "summary": ["stringValue": summaryOf(verdict)],
             "claims": ["arrayValue": ["values": claims]],
-            "transcript": ["stringValue": transcript],
-            "author": ["stringValue": author],
-            "caption": ["stringValue": caption],
-            "checkedBy": ["stringValue": "fleet"],
-            "checkedAt": Firestore.timestamp(Date()),
         ]
+    }
+
+    static func summaryOf(_ verdict: [String: Any]) -> String {
+        (verdict["resume"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Seconds between two stills of a video that says nothing, and how many at most: a
@@ -327,7 +339,7 @@ enum ReelCheck {
         "vrai", "plutot_vrai", "melange", "plutot_faux", "faux", "invérifiable",
     ]
 
-    private static func verdictOf(_ raw: Any?) -> String {
+    static func verdictOf(_ raw: Any?) -> String {
         let word = (raw as? String ?? "").trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
         return verdicts.contains(word) ? word : "invérifiable"
@@ -426,6 +438,23 @@ enum ReelDigest {
         handle.seekToEndOfFile()
         handle.write(Data(line.utf8))
         try? handle.close()
+    }
+
+    /// Takes back every line an earlier reading of this Reel left in the notes, before a new
+    /// one with Marius's context writes its own.
+    static func forget(_ reel: Reel) {
+        let mark = "instagram.com/reel/\(reel.id)/"
+        let files = ["reels", "projects"].flatMap { dir in
+            ((try? FileManager.default.contentsOfDirectory(atPath: "\(notes)/\(dir)")) ?? [])
+                .filter { $0.hasSuffix(".md") }.map { "\(notes)/\(dir)/\($0)" }
+        } + ["\(notes)/graph.jsonl"]
+        for path in files {
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8), text.contains(mark)
+            else { continue }
+            let kept = text.split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { !$0.contains(mark) }.joined(separator: "\n")
+            try? kept.write(toFile: path, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Writes everything but the todo. Only names the model was offered are acted on.

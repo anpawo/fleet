@@ -256,9 +256,12 @@ struct OverlayView: View {
                 .padding(.horizontal, -Self.blockSpread)
                 .padding(.top, -Self.blockSpread)
                 // On the alert's line, and hung the same way — see the fleet's overlay below.
+                // Held by its bottom edge, level with the alert's, so a second line grows
+                // up into the room over the panel rather than down onto the memory.
                 .overlay(alignment: .top) {
                     ReelBlock(hub: controller.hub)
-                        .offset(y: -(AlertsBlock.height + 26 - Self.menuBar / 2))
+                        .frame(height: 120, alignment: .bottom)
+                        .offset(y: -(120 + AlertsBlock.height + 12 - Self.menuBar / 2))
                 }
                 gap(Self.innerWeight)
             }

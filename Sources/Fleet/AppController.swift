@@ -541,7 +541,7 @@ final class AppController: ObservableObject {
         guard isPanelVisible else { return false }
         // A row open for editing owns Return before the new-todo row does: only one of the two
         // can have the caret, and the edit is the one you are looking at.
-        return hub.commitEdit() || hub.commitDraft()
+        return hub.commitEdit() || hub.commitReelContext() || hub.commitDraft()
     }
 
     /// Esc, while the panel is up. The new-todo row first — backing out of a half-written todo

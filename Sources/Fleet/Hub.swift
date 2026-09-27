@@ -587,6 +587,15 @@ final class HubStore: ObservableObject {
     }
     private static let checkingFile = (Hooks.home as NSString).appendingPathComponent("reel-checking")
 
+    /// The Reel read most recently, which the pink block shows when nothing is being read.
+    @Published private(set) var lastReel: Reel?
+    /// What is being written under it, to set its reading straight.
+    @Published var reelContext = ""
+    /// Whether that field holds the caret — see `composerFocused`.
+    @Published var reelContextFocused = false
+    /// A second reading, with the context, is on its way.
+    @Published private(set) var reinterpreting = false
+
     /// From the resident app's tick: what the job is working on, if it is still alive.
     func readCheckingReel() {
         guard !mayCheck() else { return }
@@ -626,6 +635,7 @@ final class HubStore: ObservableObject {
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
+            lastReel = all.filter { $0.digestedAt != nil }.max { $0.digestedAt! < $1.digestedAt! }
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
             // Both kinds of failure, because they are two different things gone wrong: the
             // phone's own pipeline giving up on a Reel, and this Mac failing to check one.
@@ -670,14 +680,14 @@ final class HubStore: ObservableObject {
 
     /// The background read of a checked Reel: notes, project files and live sessions through
     /// `ReelDigest`, and the rare todo here — which files the Reel away like the sparkle does.
-    private func digest(_ reel: Reel) async {
+    private func digest(_ reel: Reel, tell: Bool = true) async {
         do {
-            let sessions = liveSessions()
+            let sessions = tell ? liveSessions() : [:]
             let digest = try await Claude.digest(reel, themes: ReelDigest.themes(),
                                                  projects: ReelDigest.projects(), sessions: sessions)
             await Task.detached { ReelDigest.apply(digest, reel, sessions: sessions) }.value
             try await Firestore.patch("factcheck/\(reel.id)", fields: ["digestedAt": Firestore.timestamp(Date())])
-            if let line = digest.todo {
+            if let line = digest.todo, !todos.contains(where: { $0.name.contains(reel.id) }) {
                 add(line)
                 if !reel.seen { markSeen(reel) }
             }
@@ -687,6 +697,43 @@ final class HubStore: ObservableObject {
             NSLog("Fleet: could not read reel \(reel.id) — \(error.localizedDescription)")
             digestFailed.insert(reel.id)
         }
+    }
+
+    /// Return in the context field under the last Reel.
+    func commitReelContext() -> Bool {
+        guard reelContextFocused, let reel = lastReel else { return false }
+        let text = reelContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        reelContext = ""
+        guard !text.isEmpty, !reinterpreting else { return true }
+        reinterpreting = true
+        Task {
+            await reinterpret(reel, adding: text)
+            reinterpreting = false
+            await syncReels()
+        }
+        return true
+    }
+
+    /// The Reel read again with what Marius said about it: the verdict first, then the notes,
+    /// which replace the ones the first reading left. The sessions are not told twice.
+    private func reinterpret(_ reel: Reel, adding text: String) async {
+        var reel = reel
+        reel.context = reel.context.isEmpty ? text : reel.context + "\n" + text
+        do {
+            try await Firestore.patch("factcheck/\(reel.id)", fields: ["context": ["stringValue": reel.context]])
+            if !reel.transcript.isEmpty || !reel.caption.isEmpty {
+                let verdict = try await Claude.factCheck(transcript: reel.transcript, caption: reel.caption,
+                                                         author: reel.author, context: reel.context)
+                try await Firestore.patch("factcheck/\(reel.id)", fields: ReelCheck.verdictFields(verdict))
+                reel.verdict = ReelCheck.verdictOf(verdict["verdict"])
+                reel.summary = ReelCheck.summaryOf(verdict)
+            }
+        } catch {
+            NSLog("Fleet: could not recheck reel \(reel.id) — \(error.localizedDescription)")
+        }
+        let forgotten = reel
+        await Task.detached { ReelDigest.forget(forgotten) }.value
+        await digest(reel, tell: false)
     }
 
     /// Put away, kept.

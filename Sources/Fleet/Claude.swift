@@ -220,12 +220,15 @@ enum Claude {
 
     /// One Reel's transcript, checked against the web. The object is the phone's JSON, keys
     /// and all; `ReelCheck` turns it into the document.
-    static func factCheck(transcript: String, caption: String, author: String) async throws
-        -> [String: Any] {
+    static func factCheck(transcript: String, caption: String, author: String,
+                          context: String = "") async throws -> [String: Any] {
         var prompt = ""
         if !author.isEmpty { prompt += "Compte : @\(author)\n" }
         if !caption.isEmpty { prompt += "Légende du post : \(caption)\n" }
         prompt += "\nTranscription de la vidéo :\n\"\"\"\n\(transcript)\n\"\"\"\n"
+        if !context.isEmpty {
+            prompt += "\nCe qu'en dit Marius, qui a vu le Reel (fait foi, à la différence du Reel) :\n\(context)\n"
+        }
 
         // Sonnet with the web: the verdict rests on what it finds, not on what it remembers,
         // and a Reel is rarely about something worth Opus.
@@ -258,6 +261,9 @@ enum Claude {
         if !reel.caption.isEmpty { facts += "Légende : \(reel.caption.prefix(600))\n" }
         if !reel.summary.isEmpty { facts += "Ce qu'en a conclu la vérification : \(reel.summary)\n" }
         if !reel.transcript.isEmpty { facts += "Transcription :\n\"\"\"\n\(reel.transcript.prefix(3000))\n\"\"\"\n" }
+        if !reel.context.isEmpty {
+            facts += "Ce qu'en dit Marius lui-même (fait foi, à la différence du Reel) :\n\(reel.context)\n"
+        }
         let projectList = projects.map { "- \($0.name): \($0.about)" }.joined(separator: "\n")
         let sessionList = sessions.isEmpty ? "(none)"
             : sessions.map { "- \($0.key): \($0.value)" }.joined(separator: "\n")
