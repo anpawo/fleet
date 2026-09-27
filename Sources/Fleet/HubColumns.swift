@@ -713,9 +713,6 @@ struct HubColumn<Content: View>: View {
     /// A verdict in the middle of the heading, for a block folded shut: a green check when
     /// all is well, a red cross when not. Nil draws nothing.
     var healthy: Bool?
-    /// A warning in words, halfway between the name and the corner figure — EPITECH's credits
-    /// still missing. Red: it is only there when something is short.
-    var alarm: String?
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -738,15 +735,8 @@ struct HubColumn<Content: View>: View {
     }
 
     var body: some View {
-        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset,
-              middleBetween: alarm != nil) {
-            if let alarm {
-                Text(alarm)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(SessionState.running.tint)
-                    .lineLimit(1)
-                    .fixedSize()
-            } else if let healthy {
+        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset) {
+            if let healthy {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
@@ -1386,8 +1376,7 @@ struct EpitechColumn: View {
                   badgeText: ledger,
                   minRows: 3,
                   fills: true,
-                  collapsed: hub.schoolEmpty,
-                  alarm: hub.epitech?.plan.flatMap { $0.missing > 0 ? "\($0.missing) missing" : nil }) {
+                  collapsed: hub.schoolEmpty) {
             // The todo column's block, down to the scroll: a term of modules and a fortnight
             // of mail is longer than any screen, and the block is as tall as what is left of
             // the left column either way.
@@ -1463,13 +1452,13 @@ struct EpitechColumn: View {
     private var ledger: Text? {
         guard let plan = hub.epitech?.plan else { return nil }
         let grey = Color.white.opacity(0.45)
-        let plus = Text("+").foregroundColor(grey)
+        let plus = Text(" + ").foregroundColor(grey)
         var text = Text("\(plan.banked)").foregroundColor(SessionState.ready.tint)
             + plus + Text("\(plan.ongoing)").foregroundColor(SessionState.apiError.tint)
             + plus + Text("\(plan.upcoming)").foregroundColor(grey)
         if plan.missing > 0 {
             text = text + plus
-                + Text("\(plan.missing)").foregroundColor(Color(red: 1.00, green: 0.66, blue: 0.64))
+                + Text("\(plan.missing)").foregroundColor(Color(red: 1.00, green: 0.50, blue: 0.47))
         }
         return text + Text("/\(plan.target)").foregroundColor(grey)
     }
