@@ -32,9 +32,6 @@ struct MailColumn: View {
         HubColumn(title: "MAIL",
                   count: hub.mail.count,
                   showsZero: true,
-                  // What is wrong with Firestore is over the fleet now — see `AlertsBlock`.
-                  // What is left here is which pile you are looking at.
-                  note: hub.showingSeen ? "seen" : nil,
                   tint: BlockTint.mail,
                   fill: BlockTint.mail.darkened(0.36),
                   minRows: 3,
@@ -116,6 +113,9 @@ struct CronColumn: View {
     /// away on the way: the clear waits a beat and looks at these before it goes through.
     @State private var overCard: String?
     @State private var overDetail = false
+    /// The pointer is on the block. Folded to its heading otherwise: fifteen healthy routines
+    /// are wallpaper, and the verdict on the heading says whether any of them is not.
+    @State private var open = false
 
     /// What the cards actually need, measured. The block is that tall, up to the height it has
     /// been given: five agents must not leave a third of the column empty under them, and a
@@ -138,7 +138,8 @@ struct CronColumn: View {
                   minRows: 0,
                   fills: false,
                   topInset: 5,
-                  collapsed: all.isEmpty) {
+                  collapsed: all.isEmpty || !open,
+                  healthy: all.isEmpty ? nil : all.allSatisfy(\.ok)) {
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 5) { rows(all) }
@@ -169,6 +170,8 @@ struct CronColumn: View {
         }
         .animation(TodoColumn.unroll, value: commandHeld)
         .animation(TodoColumn.unroll, value: natural)
+        // In a transaction, so TODO underneath grows and shrinks with it.
+        .onHover { inside in withAnimation(OverlayView.fold) { open = inside } }
         // Its own height, not the slot's. A `maxHeight` alone reads as "flexible up to", so
         // the stack handed it the whole third and the block sat centred in the empty half.
         .fixedSize(horizontal: false, vertical: true)
@@ -716,6 +719,9 @@ struct HubColumn<Content: View>: View {
     var topInset: CGFloat = 9
     /// Nothing to list: the heading line alone, count and all — see `HubStore.mailEmpty`.
     var collapsed = false
+    /// A verdict in the middle of the heading, for a block folded shut: a green check when
+    /// all is well, a red cross when not. Nil draws nothing.
+    var healthy: Bool?
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -766,6 +772,13 @@ struct HubColumn<Content: View>: View {
             // Four: the chips' ground hangs 7pt past the words, so the pane shows 10pt round
             // them on every side — MEMORY's numbers.
             .padding(.horizontal, 4)
+            .overlay {
+                if let healthy {
+                    Image(systemName: healthy ? "checkmark" : "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
+                }
+            }
 
             // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.

@@ -242,9 +242,6 @@ struct Todo: Identifiable {
 @MainActor
 final class HubStore: ObservableObject {
     @Published var mail: [Mail] = []
-    /// Whether the mail on show is the Seen pile rather than the new one — which is to say,
-    /// whether the inbox is empty.
-    @Published private(set) var showingSeen = false
     @Published private(set) var todos: [Todo] = []
     /// The Epitech modules under way, from the scan's own file. Nil until the first read.
     @Published private(set) var epitech: Epitech.Snapshot?
@@ -831,13 +828,9 @@ final class HubStore: ObservableObject {
                     return $0.receivedAt > $1.receivedAt
                 }
 
-            // Nothing new is good news, and a column of good news is a strip of empty black
-            // taking up a sixth of the panel. What you were part-way through is the next most
-            // useful thing it can hold — and the heading changes with it, because a mail you
-            // have already dealt with once must not be able to pass for one that arrived.
-            let fresh = unread.filter { $0.state == "new" }
-            mail = fresh.isEmpty ? unread.filter { $0.state == "ongoing" } : fresh
-            showingSeen = fresh.isEmpty && !mail.isEmpty
+            // New mail only. Nothing new is good news, and the block folds to its heading
+            // rather than filling up with the pile already dealt with.
+            mail = unread.filter { $0.state == "new" }
             let all = todoPage.map(Todo.init)
             todos = all.filter(\.open).sorted(by: Self.before)
             // The first opening after a launch has nothing to light until this lands.
