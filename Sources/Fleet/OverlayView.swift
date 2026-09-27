@@ -94,15 +94,20 @@ struct OverlayView: View {
     /// they earn a glance each, and anything wider starts competing with the fleet.
     private let sideWidth: CGFloat = 288
 
-    /// How the leftover width is shared out: 2 : 3 : 3 : 2, edges to insides. Ratios rather
-    /// than points, so the balance holds on a laptop screen and on a 34-inch one — a fixed
-    /// margin on a wide display would pin the columns to the bezel and leave the middle adrift.
+    /// The leftover width goes to the two edges, equally.
     private static let edgeWeight = 2
-    private static let innerWeight = 3
+
+    /// What the eye sees between any two blocks, across and down — the one margin on the
+    /// panel, asked for on 2026-09-27.
+    static let frameGap: CGFloat = 25
+
+    /// Between a side column and the fleet: the side frame reaches 13pt past its column, the
+    /// fleet's 9pt past its grid.
+    private static let innerGap: CGFloat = frameGap + 13 + 9
 
     /// The one space between two blocks of a side column. A frame reaches 13pt past its
-    /// content at the bottom and at the top of the next, so what the eye sees is twenty-six.
-    private static let blockGap: CGFloat = 52
+    /// content at the bottom and at the top of the next.
+    private static let blockGap: CGFloat = frameGap + 26
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -194,11 +199,7 @@ struct OverlayView: View {
     /// glance down the page is not: the fleet stays exactly where it has always been, in the
     /// middle, and the sides are only in your eye if you look for them.
     ///
-    /// The four gaps are the layout — one at each edge, one between each pair — and they carry
-    /// all of the flex, since the three blocks themselves are fixed. The inside gaps are half
-    /// again as wide as the outside ones, so the columns sit slightly out towards the edges of
-    /// the screen: a column too close to the grid reads as part of it, and it is not — it is
-    /// the other half of your day.
+    /// The three blocks are fixed and `frameGap` apart; the two edges carry all of the flex.
     ///
     /// Both vanish together on a machine with no key in the Keychain, so the grid re-centres
     /// instead of sitting between two empty apologies.
@@ -260,9 +261,9 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     ReelBlock(hub: controller.hub)
                         .frame(height: 120, alignment: .bottom)
-                        .offset(y: -(120 + AlertsBlock.height + 32 - Self.menuBar / 2))
+                        .offset(y: -(120 + AlertsBlock.height + 22 - Self.menuBar / 2))
                 }
-                gap(Self.innerWeight)
+                Spacer(minLength: 0).frame(width: Self.innerGap)
             }
             fleet(scrolling: scrolling)
                 .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
@@ -282,13 +283,12 @@ struct OverlayView: View {
                             // bar back down, because the window is the whole screen and the
                             // room above the fleet starts under the menu bar, not at the top
                             // of the glass — centred on the glass the bar ran under it.
-                            // Twenty more since the blocks took their headings in: the fleet's
-                            // frame now starts 13pt over its name rather than 7pt into it.
-                            .offset(y: -(AlertsBlock.height + 46 - Self.menuBar / 2))
+                            // `frameGap` over the fleet's frame, measured.
+                            .offset(y: -(AlertsBlock.height + 36 - Self.menuBar / 2))
                     }
                 }
             if controller.hub.isConfigured {
-                gap(Self.innerWeight)
+                Spacer(minLength: 0).frame(width: Self.innerGap)
                 // The agent block takes what its cards need and no more, half the column at
                 // the most; the list has the rest. Five agents under a block sized for fifteen
                 // was a third of the column of blue paper.
