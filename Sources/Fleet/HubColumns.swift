@@ -505,7 +505,6 @@ struct TodoColumn: View {
     var body: some View {
         HubColumn(title: "TODO",
                   count: hub.todos.count,
-                  note: nil,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
                   fill: BlockTint.todo.darkened(0.44),
@@ -684,8 +683,6 @@ struct HubColumn<Content: View>: View {
     /// many and a column with none says nothing — and on for MAIL, where the empty line that
     /// used to say so is gone and the nought is all that is left to say it.
     var showsZero = false
-    /// A word about why the list may not be current — "offline", usually. Nil when it is.
-    var note: String?
     /// The + on the heading, for a column you can write into. Nil on one that only reports.
     var onAdd: (() -> Void)?
     /// The colour of the chip behind the name — see `BlockTint`.
@@ -697,15 +694,6 @@ struct HubColumn<Content: View>: View {
     /// What goes top right in place of the count, when a number of rows is not the figure worth
     /// having there.
     var badge: String?
-    /// Whether the note is bad news rather than a footnote. Red, because a session that has
-    /// quietly expired otherwise looks exactly like a calm week.
-    var noteIsAlarm = false
-    /// A blinking red light beside the name. On when the block cannot see what it is meant to
-    /// report — the one thing on this panel that asks to be noticed from across the room.
-    var alarm = false
-    /// How round the frame's corners are. A one-line block wears the same 12pt as a column of
-    /// cards as a capsule; the short ones ask for less.
-    var radius: CGFloat = 12
     /// How many rows of room the column keeps whether or not it has them to show. An empty
     /// MAIL that collapses to a line, and grows back the moment something lands, moves every
     /// block under it — the left column would rearrange itself all morning.
@@ -740,57 +728,29 @@ struct HubColumn<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3.2)
-                    .foregroundStyle(alarm ? SessionState.running.tint : .white.opacity(0.92))
-                    .blinking(alarm)
-                    .titleGround()
-                if let note {
-                    Text(note)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(noteIsAlarm ? SessionState.running.tint
-                                                    : .white.opacity(0.3))
-                        .lineLimit(1)
-                        .titleGround()
-                        // The chip behind the name bleeds 7pt past the text on either side,
-                        // which ate the gap the HStack was leaving here.
-                        .padding(.leading, 15)
-                }
-                Spacer(minLength: 4)
-                // The + and the figure are one control on a column you can write into: two
-                // chips a few points apart, one of them clickable and the other not, is a
-                // target you have to aim at. Together they are the size of a button.
-                if let onAdd {
-                    AddButton(action: onAdd, count: cornerLabel)
-                } else {
-                    corner
-                }
+        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset) {
+            if let healthy {
+                Image(systemName: healthy ? "checkmark" : "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
             }
-            // Four: the chips' ground hangs 7pt past the words, so the pane shows 10pt round
-            // them on every side — MEMORY's numbers.
-            .padding(.horizontal, 4)
-            .overlay {
-                if let healthy {
-                    Image(systemName: healthy ? "checkmark" : "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
-                }
+        } trailing: {
+            // The + and the figure are one control on a column you can write into: two chips
+            // a few points apart, one of them clickable and the other not, is a target you
+            // have to aim at. Together they are the size of a button.
+            if let onAdd {
+                AddButton(action: onAdd, count: cornerLabel)
+            } else {
+                corner
             }
-
-            // Matches the room the fleet leaves under its own heading, so the first mail, the
-            // first tile and the first todo all start on the same line.
+        } content: {
             if !collapsed {
                 VStack(spacing: 8) { content }
                     .frame(minHeight: MailCard.room(forRows: minRows),
                            maxHeight: fills ? .infinity : nil, alignment: .top)
-                    .padding(.top, topInset)
                     .transition(.opacity)
             }
         }
-        .blockFrame(tint, fill: fill, radius: radius)
     }
 }
 
@@ -1592,10 +1552,6 @@ struct AlertsBlock: View {
     /// `board`.
     static let height: CGFloat = 45
 
-    /// How solid the two chips' near-black is, as on MEMORY — they float in the bar's own
-    /// colour, and letting a little of it through is what says they are in it.
-    private static let chipGround = 0.55
-
     /// What is broken, each source in its own words — which is also whether the bar is on the
     /// panel at all.
     ///
@@ -1660,55 +1616,32 @@ struct AlertsBlock: View {
     /// fleet's heading right under it. A sentence pinned to the left would sit under the name
     /// and read as part of it.
     var body: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                // On the block's own name rather than on the names it carries: what the mark
-                // says is that this block is a warning, which is true whatever is broken.
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                    Text("ALERT")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(3.2)
-                }
-                .foregroundStyle(SessionState.running.tint)
-                .titleGround(Self.chipGround)
-                Spacer(minLength: 3)
-            }
-
-            // Centred on the bar rather than pushed to one end, like the fleet's own state
-            // legend right under it: the names are what the bar is for, and the word ALERT
-            // is only what it is called.
-            // 22 rather than 8: a chip's ground hangs 7pt past its words either side, so the
-            // gap you see is the spacing less fourteen.
+        // The mark on the block's own name: what it says is that this block is a warning,
+        // whatever is broken.
+        Block(title: "ALERT", icon: "exclamationmark.triangle.fill",
+              titleColor: SessionState.running.tint,
+              tint: SessionState.running.tint,
+              fill: SessionState.running.tint.darkened(0.58)) {
+            // One chip per thing that is broken, centred on the bar like the fleet's key under
+            // it: the names are what the bar is for. 22 rather than 8: a chip's ground hangs
+            // 7pt past its words either side.
             HStack(spacing: 22) {
-                // One chip per thing that is broken, not one sentence listing them: the names
-                // are a list, and a list on this panel is drawn as pills everywhere else.
                 ForEach(Self.alerts(hub, crons: crons), id: \.self) { name in
                     Text(name)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(SessionState.running.tint)
                         .lineLimit(1)
-                        .titleGround(Self.chipGround)
+                        .titleGround()
                 }
             }
+        } trailing: {
+            EmptyView()
+        } content: {
+            EmptyView()
         }
-        // Four, not two: the chips' ground hangs 7pt past their words, so two would leave them
-        // 7pt off the pane where the top and bottom leave 9 — the memory bar's own numbers.
-        .padding(.horizontal, 4)
-        // Built like MEMORY rather than like a block with a heading: the pane goes *over* the
-        // line the chips sit on, the same 13pt on all four sides, so the names are centred in
-        // it and the bar is exactly as tall as the memory bar beside it.
-        .background {
-            let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
-            corner
-                .fill(SessionState.running.tint.darkened(0.58).opacity(0.78))
-                .overlay(corner.strokeBorder(SessionState.running.tint, lineWidth: 1))
-                .padding(-13)
-        }
-        // The whole bar, frame and names included — not the name alone as on a block that is
-        // merely stale. This one has nothing else to say, so the pulse is all of it — except
-        // when the wifi is what is wrong, which is not something to be called over.
+        // The whole bar, frame and names included. It has nothing else to say, so the pulse
+        // is all of it — except when the wifi is what is wrong, which is not something to be
+        // called over.
         .blinking(!Self.alerts(hub, crons: crons).allSatisfy(Self.networkLines.contains))
     }
 }
@@ -1737,30 +1670,20 @@ struct ReelBlock: View {
 
     var body: some View {
         let listing = (open || hub.contextReelID != nil) && !hub.readReels.isEmpty
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                Text("REELS")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3.2)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .titleGround()
-                Spacer(minLength: 3)
-                Text("\(hub.reelsReadToday)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .titleGround()
+        Block(title: "REELS", tint: Self.tint, fill: Self.tint.darkened(0.58)) {
+            if hub.checkingReel != nil || hub.reinterpreting {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.mini)
+                    // `.tint` is ignored by the macOS spinner; its light grey multiplied is pink.
+                    .colorMultiply(Self.tint)
             }
-            .padding(.horizontal, 4)
-            .frame(height: 14)
-            .overlay {
-                if hub.checkingReel != nil || hub.reinterpreting {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .controlSize(.mini)
-                        // `.tint` is ignored by the macOS spinner; its light grey multiplied is pink.
-                        .colorMultiply(Self.tint)
-                }
-            }
+        } trailing: {
+            Text("\(hub.reelsReadToday)")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.45))
+                .titleGround()
+        } content: {
             if listing {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
@@ -1791,13 +1714,6 @@ struct ReelBlock: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
-        .background {
-            let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
-            corner
-                .fill(Self.tint.darkened(0.58).opacity(0.78))
-                .overlay(corner.strokeBorder(Self.tint, lineWidth: 1))
-                .padding(-13)
-        }
         // In a transaction, so the blocks under it give way in the same movement.
         .onHover { inside in withAnimation(OverlayView.fold) { open = inside } }
     }

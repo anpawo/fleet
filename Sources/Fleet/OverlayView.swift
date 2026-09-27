@@ -341,13 +341,19 @@ struct OverlayView: View {
     /// sessions the screen bottom is half a metre of empty black away from anything you are
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // MEMORY's 10pt from the frame, which reaches 26pt past the grid rather than 13;
-            // and the key in the middle is taller than a name and pushed it down. Both measured
-            // on a render.
-            fleetHeading
-                .padding(.horizontal, 15 - Self.fleetSpread)
-                .offset(y: -1.5)
+        // Tighter tracking than the side headings, which are one short word each: at theirs
+        // this one runs into the key beside it.
+        Block(title: "CLAUDE CODE FLEET", tracking: 2.6, tint: BlockTint.fleet,
+              fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13) {
+            legendKey
+        } trailing: {
+            if !controller.sessions.isEmpty {
+                Text("\(controller.sessions.count)")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .titleGround()
+            }
+        } content: {
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
             if scrolling {
@@ -390,7 +396,6 @@ struct OverlayView: View {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -405,56 +410,33 @@ struct OverlayView: View {
     /// The states go in the middle of the rule rather than beside the name, because they
     /// describe the tiles below rather than the heading itself — and centred on the line they
     /// belong to nothing in particular, which is right: they are a key, not a count.
-    private var fleetHeading: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                Text("CLAUDE CODE FLEET")
-                    .font(.system(size: 11, weight: .semibold))
-                    // Tighter than the two side headings, which are one short word each. At
-                    // their tracking this one runs into the legend beside it.
-                    .tracking(2.6)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .titleGround()
-                Spacer(minLength: 3)
-                if !controller.sessions.isEmpty {
-                    Text("\(controller.sessions.count)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .titleGround()
-                }
-            }
-
-            // On a ground of its own, like everything else on the panel that is a thing rather
-            // than a label. Four dots floating on the scrim read as specks; the same four on a
-            // card read as a key. Kept as small as the dots allow — it is furniture, not a
-            // control, and it sits on a line with a name and a count either side of it.
-            HStack(spacing: 9) {
-                legend(.ready)
-                // Where the spectrum puts it — the key runs green, blue, violet, red, amber,
-                // yellow, and teal sits between the first two. A colour parked on the end
-                // reads as an afterthought rather than as one of the set.
-                legend(GroupTile.tint)
-                legend(.awaitingAnswer)
-                legend(.delegated)
-                legend(.running)
-                legend(.apiError)
-                legend(.paused)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    // White, where every other card on the panel is outlined at 0.07: the key
-                    // sits on the fleet's own line, and the fleet's line is black now.
-                    .strokeBorder(.white.opacity(0.75), lineWidth: 1)
-            )
+    private var legendKey: some View {
+        // On a ground of its own, like everything else on the panel that is a thing rather
+        // than a label. Four dots floating on the scrim read as specks; the same four on a
+        // card read as a key. Kept as small as the dots allow — it is furniture, not a
+        // control, and it sits on a line with a name and a count either side of it.
+        HStack(spacing: 9) {
+            legend(.ready)
+            // Where the spectrum puts it — the key runs green, blue, violet, red, amber,
+            // yellow, and teal sits between the first two. A colour parked on the end
+            // reads as an afterthought rather than as one of the set.
+            legend(GroupTile.tint)
+            legend(.awaitingAnswer)
+            legend(.delegated)
+            legend(.running)
+            legend(.apiError)
+            legend(.paused)
         }
-        .padding(.horizontal, 2)
-        // The room the scroll view below needs to start clear of the heading rather than under
-        // it: the tiles are clipped at this line instead of riding over the name.
-        .padding(.bottom, 9)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                // White, where every other card on the panel is outlined at 0.07: the key
+                // sits on the fleet's own line, and the fleet's line is black now.
+                .strokeBorder(.white.opacity(0.75), lineWidth: 1)
+        )
     }
 
     /// The sessions gathered by the directory they are working in, in the order the sessions
@@ -1428,10 +1410,6 @@ struct MemoryStrip: View {
     /// How much of the RAM has to be on disk before swap is worth a pill of its own.
     private static let swapWorthSaying = 0.10
 
-    /// How solid the two chips' near-black is. Not 1: they float in the wave, and the water
-    /// running behind the words is what says they are in it.
-    private static let chipGround = 0.55
-
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
@@ -1441,42 +1419,36 @@ struct MemoryStrip: View {
         let hasBody = (tight && commandHeld && hovered)
             || share(reaper.footprint.swap) >= Self.swapWorthSaying
 
-        let stack = VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("MEMORY")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3.2)
-                    .foregroundStyle(tight ? tint : .white.opacity(0.92))
-                    .titleGround(Self.chipGround)
-                Spacer(minLength: 3)
-                // Under strain the verdict is a pulsing triangle halfway between the name
-                // and the readout: a sentence under the heading said nothing the colour
-                // did not, and took a line to say it.
-                if tight {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(amber)
-                        .opacity(flash ? 1 : 0.2)
-                        .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true),
-                                   value: flash)
-                        .onAppear { flash = true }
-                    Spacer(minLength: 3)
-                }
-                // The whole readout, where every other block puts its count. A heading over a
-                // single line of figures is a heading over nothing: the block is one line at
-                // rest, and it only grows when there is something to say underneath.
-                // The share in the block's own colour — the same verdict the frame is painted
-                // in, said twice on the one line where it can be read as a figure.
-                (Text("RAM \u{00B7} ").foregroundColor(.white.opacity(0.9))
-                    + Text(percentLabel).foregroundColor(ramTint)
-                    + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .titleGround(Self.chipGround)
+        // The one block that is a reading rather than a list, so the only one drawn as a
+        // gauge: a dark pane filled from the left to the share of the RAM in use. Every other
+        // block is a flat tint because every other block is a count of things; this is a level.
+        return Block(title: "MEMORY",
+                     titleColor: tight ? tint : .white.opacity(0.92),
+                     tint: ramTint.opacity(0.45),
+                     fill: .black.opacity(0.41),
+                     level: BlockLevel(share: share(reaper.footprint.used), tint: ramTint.opacity(0.42)),
+                     bodyGap: 6) {
+            // Under strain the verdict is a pulsing triangle halfway between the name and the
+            // readout: a sentence under the heading said nothing the colour did not.
+            if tight {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(amber)
+                    .opacity(flash ? 1 : 0.2)
+                    .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true),
+                               value: flash)
+                    .onAppear { flash = true }
             }
-            // Four, not two: the chip's own ground hangs 7pt past the words, so two left them
-            // 7pt off the pane where the top and bottom leave 9.
-            .padding(.horizontal, 4)
-
+        } trailing: {
+            // The whole readout, where every other block puts its count. The share in the
+            // block's own colour — the same verdict the frame is painted in, said twice on
+            // the one line where it can be read as a figure.
+            (Text("RAM \u{00B7} ").foregroundColor(.white.opacity(0.9))
+                + Text(percentLabel).foregroundColor(ramTint)
+                + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .titleGround()
+        } content: {
             // Two of the four. Cached is never a problem and compressed is a leading
             // indicator; neither is something you act on. What is worth a glance is how full
             // the RAM is and whether the machine has started paying disk latency for it —
@@ -1523,39 +1495,7 @@ struct MemoryStrip: View {
             .padding(.horizontal, 4)
             }
         }
-
-        // The one block that is a reading rather than a list, so the only one drawn as a
-        // gauge: a dark pane you can see the desktop through, filled from the left to the
-        // share of the RAM in use. Every other block is a flat tint because every other block
-        // is a count of things; this one is a level.
-        return stack
-            .onHover { hovered = $0 }
-            .background(alignment: .top) {
-                let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
-                corner
-                    .fill(.black.opacity(0.32))
-                    .overlay(alignment: .leading) {
-                        let used = share(reaper.footprint.used)
-                        GeometryReader { box in
-                            ramTint.opacity(0.42)
-                                .frame(width: box.size.width * used)
-                                // Named here rather than inherited, so the refusal below can
-                                // keep the bar from being drawn in on open and this still
-                                // carries it from one reading to the next: a gauge that jumps
-                                // is read as a glitch, one that slides is read as a level.
-                                .animation(.easeOut(duration: 0.5), value: used)
-                        }
-                    }
-                    .clipShape(corner)
-                    .overlay(corner.strokeBorder(ramTint.opacity(0.45), lineWidth: 1))
-                    // The pane inherits whatever animation is in flight when the panel opens,
-                    // and a gauge whose width is being animated in is a gauge you watch fill
-                    // up. It is a reading: it is right the instant it is on screen.
-                    .transaction { $0.animation = nil }
-                    // The same spread on all four sides as every block's frame, so the
-                    // words sit centred in the water.
-                    .padding(-13)
-            }
+        .onHover { hovered = $0 }
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -1656,9 +1596,10 @@ extension View {
     /// s'ajoutent au débord et le noir descend deux fois plus bas sur le bas que sur les côtés.
     func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
                     bottomSpread: CGFloat? = nil, topSpread: CGFloat = 13,
-                    radius: CGFloat = 12) -> some View {
+                    level: BlockLevel? = nil) -> some View {
         background(alignment: .top) {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
+            let corner = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            corner
                 // The same colour as the line, laid over the panel's black scrim — which
                 // is what darkens it. A block is tinted, not coloured: the cards inside are
                 // opaque and keep their own near-black, so this only ever shows in the margins.
@@ -1666,10 +1607,25 @@ extension View {
                 // so it stays its own colour. The sliver of transparency on top only lets
                 // the desktop show through the margins.
                 .fill((fill ?? tint.darkened(0.48)).opacity(0.78))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(tint, lineWidth: 1)
-                )
+                .overlay(alignment: .leading) {
+                    if let level {
+                        GeometryReader { box in
+                            level.tint
+                                .frame(width: box.size.width * level.share)
+                                // Named here rather than inherited, so the refusal below keeps
+                                // the gauge from being drawn in on open and this still carries
+                                // it from one reading to the next: a gauge that jumps is read
+                                // as a glitch, one that slides as a level.
+                                .animation(.easeOut(duration: 0.5), value: level.share)
+                        }
+                    }
+                }
+                .clipShape(corner)
+                .overlay(corner.strokeBorder(tint, lineWidth: 1))
+                // A gauge inherits whatever animation is in flight when the panel opens, and
+                // one being animated in is one you watch fill up. It is a reading: it is right
+                // the instant it is on screen. Other blocks keep theirs, to fold smoothly.
+                .transaction { if level != nil { $0.animation = nil } }
                 .padding(.top, -topSpread)
                 .padding(.horizontal, -spread)
                 .padding(.bottom, -(bottomSpread ?? spread))
