@@ -1702,15 +1702,17 @@ struct ReelBlock: View {
             HStack(spacing: 10) {
                 ProgressView()
                     .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .tint(Self.tint)
+                    .controlSize(.mini)
+                    // `.tint` is ignored by the macOS spinner; its light grey multiplied is pink.
+                    .colorMultiply(Self.tint)
                 Text("Analyzing a reel\u{2026}")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Self.tint)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .frame(height: AlertsBlock.height - 26)
+            // The ALERT bar's drawn height, 40pt, less its 13pt of pane over and under.
+            .frame(height: 14)
             .padding(.horizontal, 4)
             .background {
                 let corner = RoundedRectangle(cornerRadius: 10, style: .continuous)
