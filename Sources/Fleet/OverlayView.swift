@@ -102,8 +102,8 @@ struct OverlayView: View {
     static let frameGap: CGFloat = 25
 
     /// Between a side column and the fleet: the side frame reaches 13pt past its column, the
-    /// fleet's 9pt past its grid.
-    private static let innerGap: CGFloat = frameGap + 13 + 9
+    /// fleet's 26pt past its grid.
+    private static let innerGap: CGFloat = frameGap + 13 + 26
 
     /// The one space between two blocks of a side column. A frame reaches 13pt past its
     /// content at the bottom and at the top of the next.
@@ -261,7 +261,7 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     ReelBlock(hub: controller.hub)
                         .frame(height: 120, alignment: .bottom)
-                        .offset(y: -(120 + AlertsBlock.height + 22 - Self.menuBar / 2))
+                        .offset(y: -(120 + AlertsBlock.height + 22.5 - Self.menuBar / 2))
                 }
                 Spacer(minLength: 0).frame(width: Self.innerGap)
             }
@@ -284,7 +284,7 @@ struct OverlayView: View {
                             // room above the fleet starts under the menu bar, not at the top
                             // of the glass — centred on the glass the bar ran under it.
                             // `frameGap` over the fleet's frame, measured.
-                            .offset(y: -(AlertsBlock.height + 36 - Self.menuBar / 2))
+                            .offset(y: -(AlertsBlock.height + 36.5 - Self.menuBar / 2))
                     }
                 }
             if controller.hub.isConfigured {
@@ -333,11 +333,11 @@ struct OverlayView: View {
     /// looking at, and a control down there reads as unrelated to the panel above it.
     private func fleet(scrolling: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // MEMORY's 10pt from the frame, which reaches 9pt past the grid rather than 13;
+            // MEMORY's 10pt from the frame, which reaches 26pt past the grid rather than 13;
             // and the key in the middle is taller than a name and pushed it down. Both measured
             // on a render.
             fleetHeading
-                .padding(.horizontal, 6)
+                .padding(.horizontal, -11)
                 .offset(y: -1.5)
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
@@ -381,10 +381,9 @@ struct OverlayView: View {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
-        // 10pt either side of the tiles, the gap the title keeps from the frame (asked for on
-        // 2026-09-27). A tile's hover glow reaches 22pt past the grid, so it now spills over
-        // the frame on the outer columns.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 9, bottomSpread: 13)
+        // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
+        // inside that is a line the cards wipe over every time the pointer crosses one.
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 26, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
@@ -1706,10 +1705,10 @@ enum BlockTint {
     /// Gris, comme SOCIAL MEDIA : ces deux blocs constatent, ils ne demandent rien. Seule la
     /// jauge de RAM garde une couleur, et elle la tient de son propre taux.
     static let memory = Color(white: 0.24)
-    /// Black, alone among the five. The fleet is the thing this panel is for and the only
-    /// block whose contents already carry colour — six session states, on every tile. A green
-    /// frame around them put a seventh in the running.
-    static let fleet = Color(white: 0.14)
+    /// Grey, the outline alone: the fill stays black (see `fleet`), because the fleet is the
+    /// only block whose contents already carry colour — six session states, on every tile. The
+    /// outline is drawn in the tint like every other block's, light enough to be seen.
+    static let fleet = Color(white: 0.5)
     static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
     /// The two networks' own colours, dimmed to the panel's level: Instagram's pink and
     /// YouTube's red. Quiet, because neither block has anything to say most days — but their
