@@ -1410,12 +1410,13 @@ struct EpitechColumn: View {
             LedgerHeading(title: "TO DO", credits: plan.pending,
                           note: plan.missing > 0 ? "\(plan.missing) short of \(plan.target)" : nil)
             LazyVGrid(columns: Self.pair, spacing: 8) {
-                moduleCards(snapshot)
-                // What the school counts and my.epitech never lists: the internship, the
-                // hackathons, sport. Registered modules already have their card above.
+                // First, what has no module card: the internship, the hackathons, sport, and
+                // a module over but not yet graded. They are what closes the gap, and under
+                // twelve modules they sat below the fold of the scroll.
                 ForEach(plan.todo.filter { line in
                     !snapshot.modules.contains { $0.code == line.id }
                 }) { CreditCard(line: $0, banked: false) }
+                moduleCards(snapshot)
             }
         } else if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
             LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot) }
@@ -1504,7 +1505,7 @@ struct CreditCard: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(SessionState.ready.tint)
                 } else {
-                    Text("not on my.epitech")
+                    Text(line.awaitingGrade ? "grading" : "planned")
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.28))
                 }

@@ -52,6 +52,9 @@ enum Epitech {
         var id: String
         var name: String
         var credits: Int
+        /// A module whose term is over and whose grade has not come in: done on your side,
+        /// not yet on the intra's. Nil for the extras, which no page tracks at all.
+        var awaitingGrade = false
     }
 
     /// The two years' worth of credits, split into what is banked and what is still to earn.
@@ -292,7 +295,8 @@ enum Epitech {
                 guard let credits = registration.credits, credits > 0,
                       seen.insert(registration.code).inserted else { return nil }
                 return CreditLine(id: registration.code, name: shortenModule(registration.name),
-                                  credits: credits)
+                                  credits: credits,
+                                  awaitingGrade: (date(registration.end) ?? now) <= now)
             }
             todo += extras.filter { $0.done != true }
                 .map { CreditLine(id: $0.name, name: $0.name, credits: $0.credits) }
