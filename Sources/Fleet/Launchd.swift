@@ -34,12 +34,12 @@ enum Launchd {
         /// twenty-three hours and is perfectly alive. A plist sitting in the folder that
         /// launchd has never been told about is the one that is off, and that is what shows.
         var enabled: Bool
-        /// The last run exited on an error of its own. The one thing here worth a colour: a
-        /// routine that has been failing since Tuesday looks exactly like one that works.
+        /// The last run did not exit 0. The one thing here worth a colour: a routine that has
+        /// been failing since Tuesday looks exactly like one that works.
         ///
-        /// A *negative* status is not one of those — launchctl reports a job killed by a
-        /// signal as minus the signal, and `install.sh` ends Fleet with a SIGTERM on every
-        /// single run. Counting those, this block's own row was red for ever.
+        /// A kill counts too — launchctl reports one as minus the signal, and a watchdog that
+        /// had to kill a routine is a routine that failed. The one job killed on purpose,
+        /// Fleet's own on every `install.sh`, is not listed (see `hidden`).
         var failing: Bool
         /// Runs on its own — a clock, a calendar, a watched file. The other kind is an
         /// application launchd has been told to keep up. This is what `ok` is judged against,
@@ -91,7 +91,7 @@ enum Launchd {
             let trigger = schedule(plist)
             let port = state?.pid.flatMap { ports[$0] }
             let enabled = state != nil
-            let failing = (state?.exit ?? 0) > 0
+            let failing = (state?.exit ?? 0) != 0
             return Job(id: label,
                        name: shorten(label),
                        schedule: trigger ?? resting(plist),
