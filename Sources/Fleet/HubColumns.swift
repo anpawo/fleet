@@ -1406,35 +1406,25 @@ struct EpitechColumn: View {
 
     @ViewBuilder private var rows: some View {
         if let snapshot = hub.epitech, let plan = snapshot.plan {
-            // Two piles, not one list: what is banked no longer asks anything of you, and
-            // mixed in with the term it reads as work.
-            LedgerHeading(title: "DONE", credits: plan.banked)
-            if plan.done.isEmpty {
-                HubEmptyLine(text: "Nothing signed off yet")
-            } else {
-                LazyVGrid(columns: Self.pair, spacing: 8) {
-                    ForEach(plan.done) { CreditCard(line: $0, banked: true) }
-                }
-            }
-            LedgerHeading(title: "TO DO", credits: plan.pending)
+            // One grid, in the order the heading adds up: under way, planned, the modules still
+            // to open, and last what is banked — it asks nothing more of you.
+            let loose = plan.todo.filter { line in !snapshot.modules.contains { $0.code == line.id } }
             LazyVGrid(columns: Self.pair, spacing: 8) {
-                // First, what has no module card: the internship, the hackathons, sport, and
-                // a module over but not yet graded. They are what closes the gap, and under
-                // twelve modules they sat below the fold of the scroll.
-                ForEach(plan.todo.filter { line in
-                    !snapshot.modules.contains { $0.code == line.id }
-                }) { CreditCard(line: $0, banked: false) }
-                moduleCards(snapshot)
+                ForEach(loose.filter(\.started)) { CreditCard(line: $0, banked: false) }
+                moduleCards(snapshot.modules.filter(\.started))
+                ForEach(loose.filter { !$0.started }) { CreditCard(line: $0, banked: false) }
+                moduleCards(snapshot.modules.filter { !$0.started })
+                ForEach(plan.done) { CreditCard(line: $0, banked: true) }
             }
         } else if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
-            LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot) }
+            LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot.modules) }
         } else {
             HubEmptyLine(text: hub.epitech == nil ? "No scan" : "No module open")
         }
     }
 
-    private func moduleCards(_ snapshot: Epitech.Snapshot) -> some View {
-        ForEach(snapshot.modules) { module in
+    private func moduleCards(_ modules: [Epitech.Module]) -> some View {
+        ForEach(modules) { module in
             ModuleCard(module: module, lit: lit(module.id))
                 .epitechOpen(commandHeld: commandHeld, url: module.url,
                              onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
@@ -1447,9 +1437,8 @@ struct EpitechColumn: View {
         if inside { hovered = id } else if hovered == id { hovered = nil }
     }
 
-    /// `banked + under way + still to open + missing / target`, each figure in its pile's colour:
-    /// green banked, orange for the modules under way, the plain grey for what has not begun,
-    /// and a pale red for what doing all of it would still leave short.
+    /// `banked + under way + still to open = reachable / target`, each figure in its pile's
+    /// colour: green banked, orange under way, the plain grey for what has not begun.
     private var ledger: Text? {
         guard let plan = hub.epitech?.plan else { return nil }
         let grey = Color.white.opacity(0.45)
@@ -1457,10 +1446,10 @@ struct EpitechColumn: View {
         var text = Text("\(plan.banked)").foregroundColor(LedgerTint.banked)
             + plus + Text("\(plan.ongoing)").foregroundColor(LedgerTint.ongoing)
             + plus + Text("\(plan.upcoming)").foregroundColor(grey)
-        if plan.missing > 0 {
-            text = text + plus
-                + Text("\(plan.missing)").foregroundColor(LedgerTint.missing)
-        }
+        // The total in red while it falls short of the target: that is the one thing to see.
+        text = text + Text(" = ").foregroundColor(grey)
+            + Text("\(plan.reachable)")
+                .foregroundColor(plan.missing > 0 ? LedgerTint.missing : .white.opacity(0.85))
         return text + Text(" / \(plan.target)").foregroundColor(grey)
     }
 
@@ -1476,33 +1465,6 @@ struct EpitechColumn: View {
         return "\(credits)+\(max(0, Epitech.creditsPerYear - credits))/\(Epitech.creditsPerYear)"
     }
 
-}
-
-/// The line over each pile of the EPITECH block: its name, what it adds up to, and — on the
-/// to-do pile — how short of the target doing all of it still leaves you.
-struct LedgerHeading: View {
-    let title: String
-    let credits: Int
-    var note: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.system(size: 9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(.white.opacity(0.45))
-            Text("\(credits) CR")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.6))
-            Spacer(minLength: 4)
-            if let note {
-                Text(note)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(SessionState.running.tint)
-            }
-        }
-        .padding(.horizontal, 2)
-    }
 }
 
 /// A line of the ledger that is not a module under way: one the intra signed off, or a credit
