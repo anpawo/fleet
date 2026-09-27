@@ -248,13 +248,15 @@ struct OverlayView: View {
                 // content either side — see `blockFrame` — and its heading chip stands proud
                 // of the top, which a box drawn at the content's own bounds shaved off.
                 .padding(.horizontal, Self.blockSpread)
-                .padding(.top, Self.blockSpread)
+                // Well over the top: the memory's pane reaches exactly `blockSpread` up, and a
+                // clip whose rounded corner sat right there shaved its top corners.
+                .padding(.top, 40)
                 // Rounded, not squared off: what the cut lands on is a card, and a card
                 // sliced on a straight line reads as a drawing error rather than a list
                 // carrying on past the edge.
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, -Self.blockSpread)
-                .padding(.top, -Self.blockSpread)
+                .padding(.top, -40)
                 // On the alert's line, and hung the same way — see the fleet's overlay below.
                 // Held by its bottom edge, level with the alert's, so a second line grows
                 // up into the room over the panel rather than down onto the memory.
@@ -275,9 +277,10 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.jobs).isEmpty {
                         AlertsBlock(hub: controller.hub, crons: controller.launchd.jobs)
-                            // As wide as the block it hangs over, and clear of its heading
-                            // line: its own height, and the gap a block leaves under one.
-                            .frame(width: centerWidth)
+                            // Two thirds of the fleet's frame, centred over it: the frame is
+                            // 26pt wider than the grid either side, the bar's pane 13pt wider
+                            // than its content.
+                            .frame(width: (centerWidth + 52) * 2 / 3 - 26)
                             // Measured on an offscreen render: what the panel leaves over the
                             // fleet, less the bar, half over and half under it. Half the menu
                             // bar back down, because the window is the whole screen and the
