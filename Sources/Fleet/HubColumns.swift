@@ -710,6 +710,9 @@ struct HubColumn<Content: View>: View {
     /// A verdict in the middle of the heading, for a block folded shut: a green check when
     /// all is well, a red cross when not. Nil draws nothing.
     var healthy: Bool?
+    /// A warning in words, halfway between the name and the corner figure — EPITECH's credits
+    /// still missing. Red: it is only there when something is short.
+    var alarm: String?
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -728,8 +731,15 @@ struct HubColumn<Content: View>: View {
     }
 
     var body: some View {
-        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset) {
-            if let healthy {
+        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset,
+              middleBetween: alarm != nil) {
+            if let alarm {
+                Text(alarm)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(SessionState.running.tint)
+                    .lineLimit(1)
+                    .fixedSize()
+            } else if let healthy {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
@@ -1368,7 +1378,8 @@ struct EpitechColumn: View {
                   badge: credits,
                   minRows: 3,
                   fills: true,
-                  collapsed: hub.schoolEmpty) {
+                  collapsed: hub.schoolEmpty,
+                  alarm: hub.epitech?.plan.flatMap { $0.missing > 0 ? "\($0.missing) missing" : nil }) {
             // The todo column's block, down to the scroll: a term of modules and a fortnight
             // of mail is longer than any screen, and the block is as tall as what is left of
             // the left column either way.
@@ -1407,8 +1418,7 @@ struct EpitechColumn: View {
                     ForEach(plan.done) { CreditCard(line: $0, banked: true) }
                 }
             }
-            LedgerHeading(title: "TO DO", credits: plan.pending,
-                          note: plan.missing > 0 ? "\(plan.missing) short of \(plan.target)" : nil)
+            LedgerHeading(title: "TO DO", credits: plan.pending)
             LazyVGrid(columns: Self.pair, spacing: 8) {
                 // First, what has no module card: the internship, the hackathons, sport, and
                 // a module over but not yet graded. They are what closes the gap, and under
@@ -1439,12 +1449,13 @@ struct EpitechColumn: View {
         if inside { hovered = id } else if hovered == id { hovered = nil }
     }
 
-    /// What doing everything you are in would bring, out of the target — and how far short that
-    /// still falls. Without a plan, banked and what is left of the year's sixty.
+    /// Banked apart from still to earn, both out of the target; what doing all of it still
+    /// leaves short is the heading's alarm. Without a plan, banked and what is left of the
+    /// year's sixty.
     private var credits: String? {
         if let plan = hub.epitech?.plan {
-            return plan.missing > 0 ? "\(plan.reachable)/\(plan.target) −\(plan.missing)"
-                : "\(plan.reachable)/\(plan.target)"
+            // The target is left out: "2 missing" beside the name already says how it stands.
+            return "\(plan.banked) ✓ · \(plan.pending) left"
         }
         guard let credits = hub.epitech?.credits else { return nil }
         return "\(credits)+\(max(0, Epitech.creditsPerYear - credits))/\(Epitech.creditsPerYear)"
