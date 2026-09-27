@@ -740,6 +740,7 @@ struct HubColumn<Content: View>: View {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
+                    .titleGround()
             }
         } trailing: {
             // The + and the figure are one control on a column you can write into: two chips
