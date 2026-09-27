@@ -1407,17 +1407,14 @@ struct MemoryStrip: View {
     @State private var flash = false
     private var amber: Color { Color(red: 1.00, green: 0.62, blue: 0.15) }
 
-    /// How much of the RAM has to be on disk before swap is worth a pill of its own.
-    private static let swapWorthSaying = 0.10
-
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
         let tint = tight ? amber : Color.white
         // "One line at rest" was written and never enforced: with nothing to put under the
         // heading the frame still ran 13pt past it, so an idle machine got a bar of empty
         // amber with a chip sitting on it. A block with nothing to say is the heading alone.
-        let hasBody = (tight && commandHeld && hovered)
-            || share(reaper.footprint.swap) >= Self.swapWorthSaying
+        // Swap is never shown: asked on 2026-09-27.
+        let hasBody = tight && commandHeld && hovered
 
         // The one block that is a reading rather than a list, so the only one drawn as a
         // gauge: a dark pane filled from the left to the share of the RAM in use. Every other
@@ -1449,47 +1446,19 @@ struct MemoryStrip: View {
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .titleGround()
         } content: {
-            // Two of the four. Cached is never a problem and compressed is a leading
-            // indicator; neither is something you act on. What is worth a glance is how full
-            // the RAM is and whether the machine has started paying disk latency for it —
-            // and the amber state below, which is the kernel's own verdict, covers the rest.
-            //
             // Left out rather than left empty: a row of no height still takes the stack's 6pt
             // of spacing, which is six points of water under the words and none over them.
             if hasBody {
-            WeightedRow(weights: [2, 1], spacing: 4) {
-                if tight {
-                    // Under pressure the pills are the processes holding the memory, which is
-                    // the only thing to do about it.
-                    VStack(alignment: .leading, spacing: 5) {
-                        if commandHeld && hovered {
-                            // One after the other, each easing down out of the bar, so the eye
-                            // follows the list as it forms rather than finding it there. Gone at
-                            // once when ⌘ comes up: there is nothing to watch on the way out.
-                            ForEach(Array(reaper.hogs.enumerated()), id: \.element.id) { index, hog in
-                                HogPill(hog: hog, tint: amber)
-                                    .transition(.asymmetric(
-                                        insertion: .opacity.combined(with: .offset(y: -8))
-                                            .animation(.easeOut(duration: 0.4).delay(Double(index) * 0.09)),
-                                        removal: .opacity.animation(.easeIn(duration: 0.12))))
-                            }
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.4), value: commandHeld && hovered)
-                } else {
-                    let ram = reaper.footprint
-                    // Not "when there is any". Swap used never comes back down — a page that
-                    // has been written to disk stays counted until the machine reboots — so
-                    // "> 0" meant "from the first time it ever paged until you restart", which
-                    // is to say always. A Mac pages a few hundred megabytes in ordinary work
-                    // and feels perfectly fine doing it; what is worth a pill is swap deep
-                    // enough to be somewhere you are living, hence a share of the RAM rather
-                    // than a byte count that means something different on every machine.
-                    if share(ram.swap) >= Self.swapWorthSaying {
-                        Reading("SWAP", byteLabel(ram.swap),
-                                accent: share(ram.swap) < 0.25 ? SessionState.apiError.tint
-                                                               : SessionState.running.tint)
-                    }
+            // The processes holding the memory, which is the only thing to do about it. One
+            // after the other, each easing down out of the bar, so the eye follows the list as
+            // it forms. Gone at once when ⌘ comes up: there is nothing to watch on the way out.
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(reaper.hogs.enumerated()), id: \.element.id) { index, hog in
+                    HogPill(hog: hog, tint: amber)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: -8))
+                                .animation(.easeOut(duration: 0.4).delay(Double(index) * 0.09)),
+                            removal: .opacity.animation(.easeIn(duration: 0.12))))
                 }
             }
             .padding(.horizontal, 4)
@@ -1678,91 +1647,6 @@ enum BlockTint {
     /// own, because a block is told apart by its colour everywhere else on this panel.
     static let reels = Color(red: 0.47, green: 0.12, blue: 0.31)
     static let youtube = Color(red: 0.47, green: 0.09, blue: 0.09)
-}
-
-/// One number and what it is, on the quiet strip.
-/// A row whose children split the width by weight — the RAM pill two thirds, the swap pill
-/// one — where an `HStack` hands any two flexible views half each. A lone child takes it all.
-private struct WeightedRow: Layout {
-    var weights: [CGFloat]
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
-        return CGSize(width: proposal.width ?? 0, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
-                       cache: inout ()) {
-        let total = weights.prefix(subviews.count).reduce(0, +)
-        let free = bounds.width - spacing * CGFloat(max(subviews.count - 1, 0))
-        var x = bounds.minX
-        for (i, view) in subviews.enumerated() {
-            let width = free * weights[i] / total
-            view.place(at: CGPoint(x: x, y: bounds.minY),
-                       proposal: ProposedViewSize(width: width, height: bounds.height))
-            x += width + spacing
-        }
-    }
-}
-
-private struct Reading: View {
-    let label: String
-    let value: String
-    /// A second, dimmer figure after the value — the share of the total, where there is one.
-    var trailing: String?
-    /// What the whole pill is worth saying in colour — the number and the ground under it.
-    /// Nil on everything but the RAM share, which is the only one with a scale to be on.
-    var accent: Color?
-    /// Without its capsule. The RAM reading wears none: the whole memory block is its ground
-    /// now, and it is the block that changes colour with the share.
-    var bare = false
-    init(_ label: String, _ value: String, trailing: String? = nil, accent: Color? = nil,
-         bare: Bool = false) {
-        self.label = label
-        self.value = value
-        self.trailing = trailing
-        self.accent = accent
-        self.bare = bare
-    }
-
-    var body: some View {
-        // Space between, not around: the name sits on the left edge and the total on the
-        // right, with the slack split between them. The figure lands in the middle because
-        // the two gaps either side of it are the same, not because anything centres it.
-        HStack(spacing: 0) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(accent ?? .white.opacity(0.95))
-            if let trailing {
-                Spacer(minLength: 8)
-                Text(trailing)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.45))
-            }
-        }
-        .padding(.horizontal, bare ? 2 : 10)
-        // The same capsule the hog pills wear, for the same reason: on the panel's black these
-        // numbers were text floating in a void, and a ground is what makes them a readout.
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background {
-            if !bare {
-                // Opaque, on the same near-black the mail and todo rows sit on. A translucent
-                // pill over the scrim lets the desktop through, and a wallpaper is not a
-                // background you can read a number off.
-                Capsule().fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                    .overlay(Capsule().fill(accent?.opacity(0.22) ?? .white.opacity(0.05)))
-                    .overlay(Capsule().stroke(accent?.opacity(0.55) ?? .white.opacity(0.14),
-                                              lineWidth: 1))
-            }
-        }
-    }
 }
 
 private struct HogPill: View {
