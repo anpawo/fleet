@@ -56,4 +56,26 @@ case_is "un run sain ne dit rien" \
   "$NOW" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
   "none"
 
+# Le grand livre des crédits : un module signé sur l'intra passe dans « done » et sort de
+# « to do » même s'il y est inscrit ; les extras du plan comptent comme atteignables ; une année
+# hors de `years` ne compte pas.
+rm -f "$DIR/sources.json"
+FUTURE=$(date -u -v+30d +%Y-%m-%dT%H:%M:%SZ)
+cat > "$DIR/state.json" <<EOF
+{"generatedAt":"$NOW","sessionOk":true,"errors":[],"deadlines":[],
+ "registrations":[
+  {"code":"G-AAA-900","instance":"PAR-1","name":"G5 - Alpha","start":"$OLD","end":"$FUTURE","credits":7},
+  {"code":"G-BBB-900","instance":"PAR-1","name":"G5 - Beta","start":"$OLD","end":"$FUTURE","credits":10}],
+ "intra":{"ok":true,"credits":38,"acquired":[
+  {"code":"G-INT-800","title":"G8 - International","credits":38,"year":2025},
+  {"code":"G-BBB-900","title":"G5 - Beta","credits":10,"year":2026},
+  {"code":"B-OLD-100","title":"B1 - Old","credits":60,"year":2022}]}}
+EOF
+echo '{"target":120,"years":[2025,2026],"extras":[{"name":"Internship","credits":30},{"name":"Sport","credits":1,"done":true}]}' \
+  > "$DIR/credit-plan.json"
+got=$("$BIN" --epitech "$DIR/state.json" 2>/dev/null | sed -n 's/^credits: //p')
+want="done 49 · to do 37 · reachable 86/120 · missing 34"
+if [ "$got" = "$want" ]; then printf '  ok    le grand livre sépare fait et à faire\n'
+else printf '  FAIL  le grand livre\n        attendu: %s\n        obtenu : %s\n' "$want" "$got"; fail=1; fi
+
 [ $fail -eq 0 ] && echo "all good" || { echo "des cas cassés"; exit 1; }
