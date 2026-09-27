@@ -242,7 +242,7 @@ struct CronColumn: View {
             Text(family == "app" ? "APPS" : family.uppercased())
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.1)
-                .foregroundStyle((family == "app" ? CronCard.appTint : Self.tint).lightened(0.65))
+                .foregroundStyle(Self.tint.lightened(0.65))
                 .fixedSize()
                 .padding(.leading, 7)
                 .padding(.trailing, 2)
@@ -371,19 +371,16 @@ struct CronCard: View {
             .truncationMode(.tail)
             .padding(.vertical, 4)
             .padding(.horizontal, 6)
-            // The ground tells the three kinds apart: the panel's near-black for a routine, a
-            // shade of the block's blue for a resident, violet for an app — something you use,
-            // like Fleet or the screenshot tool, rather than something that runs for you.
-            .background(job.id.hasPrefix("app.") ? Color(red: 0.17, green: 0.11, blue: 0.25)
-                        : job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
-                                        : Color(red: 0.10, green: 0.12, blue: 0.18))
+            // A shade of the block's blue for a resident, the panel's near-black for a
+            // routine: the two kinds share the block, and the ground is what tells them apart.
+            .background(job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
+                                      : Color(red: 0.10, green: 0.12, blue: 0.18))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                 .strokeBorder(border, lineWidth: 1))
     }
 
     static let tint = SessionState.awaitingAnswer.tint
-    static let appTint = SessionState.delegated.tint
 }
 
 
