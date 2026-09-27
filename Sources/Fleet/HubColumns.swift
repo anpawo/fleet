@@ -758,7 +758,9 @@ struct HubColumn<Content: View>: View {
                     corner
                 }
             }
-            .padding(.horizontal, 2)
+            // Four: the chips' ground hangs 7pt past the words, so the pane shows 10pt round
+            // them on every side — MEMORY's numbers.
+            .padding(.horizontal, 4)
 
             // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.

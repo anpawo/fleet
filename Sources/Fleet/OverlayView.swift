@@ -100,10 +100,9 @@ struct OverlayView: View {
     private static let edgeWeight = 2
     private static let innerWeight = 3
 
-    /// The one space between two blocks of a side column. A frame reaches 13pt below its
-    /// content and its own line sits 7pt down from the top of the next, so what the eye sees
-    /// is twenty-six of this.
-    private static let blockGap: CGFloat = 32
+    /// The one space between two blocks of a side column. A frame reaches 13pt past its
+    /// content at the bottom and at the top of the next, so what the eye sees is twenty-six.
+    private static let blockGap: CGFloat = 52
 
     /// How far the hover glow reaches past a tile: a 16pt shadow, and the 1.5% scale on a
     /// 310pt card.
@@ -261,7 +260,7 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     ReelBlock(hub: controller.hub)
                         .frame(height: 120, alignment: .bottom)
-                        .offset(y: -(120 + AlertsBlock.height + 12 - Self.menuBar / 2))
+                        .offset(y: -(120 + AlertsBlock.height + 32 - Self.menuBar / 2))
                 }
                 gap(Self.innerWeight)
             }
@@ -283,7 +282,9 @@ struct OverlayView: View {
                             // bar back down, because the window is the whole screen and the
                             // room above the fleet starts under the menu bar, not at the top
                             // of the glass — centred on the glass the bar ran under it.
-                            .offset(y: -(AlertsBlock.height + 26 - Self.menuBar / 2))
+                            // Twenty more since the blocks took their headings in: the fleet's
+                            // frame now starts 13pt over its name rather than 7pt into it.
+                            .offset(y: -(AlertsBlock.height + 46 - Self.menuBar / 2))
                     }
                 }
             if controller.hub.isConfigured {
@@ -1539,18 +1540,10 @@ struct MemoryStrip: View {
                     // and a gauge whose width is being animated in is a gauge you watch fill
                     // up. It is a reading: it is right the instant it is on screen.
                     .transaction { $0.animation = nil }
-                    // Not the other blocks' geometry: their frame's top edge runs through the
-                    // middle of the heading line, which would cut this one's wave in half. The
-                    // pane goes over the heading instead, and the chips keep their dark ground
-                    // so the words stay readable on top of the water. The same spread on all
-                    // four sides — so the words sit centred in the water, and the block still
-                    // reaches as far down into the gap as every other one does.
+                    // The same spread on all four sides as every block's frame, so the
+                    // words sit centred in the water.
                     .padding(-13)
             }
-            // Measured on an offscreen render against the fleet block's own top edge: the
-            // pane reaches past its content where every other block's frame starts *inside*
-            // the heading line, so it sat 20pt high. The block drops by exactly that.
-            .padding(.top, 20)
     }
 
     /// What colour the block is: the share of the RAM in use, on the scale the figure itself
@@ -1639,14 +1632,10 @@ extension View {
     /// Not a material: macOS's blur has a fixed radius, and the panel already turned frosted
     /// glass down for that reason. The negative padding puts the chip outside the text's own
     /// bounds, so nothing on the heading line moves.
-    /// The outline around a whole block, in the block's own colour, with its top edge running
-    /// through the middle of the heading line.
-    ///
-    /// Nothing is cut out of the line: what breaks it is the heading's own chips, which are
-    /// opaque and sit on top — the title at the left, the count at the right. That is why every
-    /// item on that line wears a ground, and why the rule that used to sit *under* the heading
-    /// is gone. One line through the name is a frame with a legend; two lines a few points apart
-    /// is a mistake.
+    /// The outline around a whole block, in the block's own colour, with the heading inside it
+    /// like MEMORY's: 13pt of pane over the name, as on the other three sides. It used to run
+    /// through the middle of the heading line, broken by the chips; asked on 2026-09-27 to take
+    /// the names in, like MEMORY and REELS.
     ///
     /// Drawn outside the block's own bounds rather than padded into them, so hanging a frame on
     /// a column moves nothing inside it: the cards keep the width they had.
@@ -1654,7 +1643,7 @@ extension View {
     /// laisse 20pt sous la dernière rangée pour le halo au survol. Sans lui, ces 20pt
     /// s'ajoutent au débord et le noir descend deux fois plus bas sur le bas que sur les côtés.
     func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
-                    bottomSpread: CGFloat? = nil, headingCentre: CGFloat = 7,
+                    bottomSpread: CGFloat? = nil, topSpread: CGFloat = 13,
                     radius: CGFloat = 12) -> some View {
         background(alignment: .top) {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -1669,7 +1658,7 @@ extension View {
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(tint, lineWidth: 1)
                 )
-                .padding(.top, headingCentre)
+                .padding(.top, -topSpread)
                 .padding(.horizontal, -spread)
                 .padding(.bottom, -(bottomSpread ?? spread))
         }
@@ -1678,10 +1667,10 @@ extension View {
     /// Grey and half there, whatever the block: the colour is the block's own background now,
     /// and a chip in that same colour laid on top of it was a second statement of it. What a
     /// chip has to do is break the outline and stay readable, which a wash and an edge do.
-    /// `ground` thins the near-black behind the words. Opaque everywhere but the memory block,
-    /// whose chips sit *in* the water rather than on the line above it: there a solid chip is a
-    /// hole punched in the wave, and letting some of it through is the point.
-    func titleGround(_ ground: Double = 1) -> some View {
+    /// `ground` thins the near-black behind the words. Every chip sits *in* its block now, and
+    /// a solid one is a hole punched in the block's colour: letting some of it through is what
+    /// says the chip is in it.
+    func titleGround(_ ground: Double = 0.55) -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
