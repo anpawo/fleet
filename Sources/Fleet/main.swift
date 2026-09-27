@@ -751,6 +751,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--strain") {
             controller.reaper.simulateStrain()
         }
+        // `--no-mail` draws the left column the day the inbox is empty: MAIL folded, EPITECH
+        // grown into its room.
+        if CommandLine.arguments.contains("--no-mail") {
+            controller.hub.mail = []
+        }
         // `--reel` draws the pink block a Reel being analyzed hangs over the memory.
         if CommandLine.arguments.contains("--reel") {
             controller.hub.checkingReel = "demo"
@@ -886,7 +891,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
-    "--launch", "--memory", "--new-desktop", "--parse", "--reap", "--reel", "--reel-digest", "--reels",
+    "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",

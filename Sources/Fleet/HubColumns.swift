@@ -38,7 +38,8 @@ struct MailColumn: View {
                   tint: BlockTint.mail,
                   fill: BlockTint.mail.darkened(0.36),
                   minRows: 3,
-                  fills: true) {
+                  fills: true,
+                  collapsed: hub.mailEmpty) {
             // The block is a third of the column now, whatever it holds, so what does not fit
             // scrolls rather than running down over the school underneath it.
             if scrolling {
@@ -136,7 +137,8 @@ struct CronColumn: View {
                   fill: Self.tint.darkened(0.48),
                   minRows: 0,
                   fills: false,
-                  topInset: 5) {
+                  topInset: 5,
+                  collapsed: all.isEmpty) {
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 5) { rows(all) }
@@ -504,7 +506,8 @@ struct TodoColumn: View {
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
                   fill: BlockTint.todo.darkened(0.44),
-                  fills: true) {
+                  fills: true,
+                  collapsed: hub.todoEmpty) {
             // The list scrolls, the heading does not, and the rest of the panel does not
             // move at all — the fleet either side has its own scroll for the same reason.
             // The horizontal padding is the room a lifted card's shadow needs, taken inside
@@ -711,6 +714,8 @@ struct HubColumn<Content: View>: View {
     /// The room under the heading. The agent blocks take less: their pills are shorter than a
     /// card, and the same gap over them read as empty.
     var topInset: CGFloat = 9
+    /// Nothing to list: the heading line alone, count and all — see `HubStore.mailEmpty`.
+    var collapsed = false
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -764,10 +769,13 @@ struct HubColumn<Content: View>: View {
 
             // Matches the room the fleet leaves under its own heading, so the first mail, the
             // first tile and the first todo all start on the same line.
-            VStack(spacing: 8) { content }
-                .frame(minHeight: MailCard.room(forRows: minRows),
-                       maxHeight: fills ? .infinity : nil, alignment: .top)
-                .padding(.top, topInset)
+            if !collapsed {
+                VStack(spacing: 8) { content }
+                    .frame(minHeight: MailCard.room(forRows: minRows),
+                           maxHeight: fills ? .infinity : nil, alignment: .top)
+                    .padding(.top, topInset)
+                    .transition(.opacity)
+            }
         }
         .blockFrame(tint, fill: fill, radius: radius)
     }
@@ -1386,7 +1394,8 @@ struct EpitechColumn: View {
                   fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
                   minRows: 3,
-                  fills: true) {
+                  fills: true,
+                  collapsed: hub.schoolEmpty) {
             // The todo column's block, down to the scroll: a term of modules and a fortnight
             // of mail is longer than any screen, and the block is as tall as what is left of
             // the left column either way.

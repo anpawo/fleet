@@ -241,7 +241,7 @@ struct Todo: Identifiable {
 /// ends, which is the whole reason it can be this small.
 @MainActor
 final class HubStore: ObservableObject {
-    @Published private(set) var mail: [Mail] = []
+    @Published var mail: [Mail] = []
     /// Whether the mail on show is the Seen pile rather than the new one — which is to say,
     /// whether the inbox is empty.
     @Published private(set) var showingSeen = false
@@ -770,6 +770,13 @@ final class HubStore: ObservableObject {
     /// How many todos are due today or already overdue — what the menu bar shows so a day
     /// with something on it is visible without opening the panel.
     var dueToday: Int { todos.filter { $0.bucket == .today }.count }
+
+    /// A block with nothing in it folds to its heading line, like MEMORY, and gives its room to
+    /// the prioritized block under it (EPITECH, TODO). Only once loaded: a column that has not
+    /// answered yet is not an empty one.
+    var mailEmpty: Bool { loaded && mail.isEmpty }
+    var schoolEmpty: Bool { loaded && (epitech?.modules.isEmpty ?? true) }
+    var todoEmpty: Bool { loaded && todos.isEmpty && !composing }
 
     func refresh() {
         guard isConfigured else { return }

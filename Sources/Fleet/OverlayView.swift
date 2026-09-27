@@ -94,6 +94,10 @@ struct OverlayView: View {
     /// they earn a glance each, and anything wider starts competing with the fleet.
     private let sideWidth: CGFloat = 288
 
+    /// A block folding to its heading, or growing into the room one left: slow enough to see
+    /// where the room went.
+    static let fold: Animation = .easeInOut(duration: 0.35)
+
     /// The leftover width goes to the two edges, equally.
     private static let edgeWeight = 2
 
@@ -103,7 +107,13 @@ struct OverlayView: View {
 
     /// Between a side column and the fleet: the side frame reaches 13pt past its column, the
     /// fleet's 26pt past its grid.
-    private static let innerGap: CGFloat = frameGap + 13 + 26
+    private static let innerGap: CGFloat = frameGap + 13 + fleetSpread
+
+    /// How far the fleet's frame reaches past its grid either side: a tile's hover glow
+    /// reaches 22pt, and a frame inside that is a line the cards wipe over.
+    static let fleetSpread: CGFloat = 26
+    /// The fleet's frame, outline to outline — which the ALERT bar over it matches.
+    private var fleetFrameWidth: CGFloat { centerWidth + 2 * Self.fleetSpread }
 
     /// The one space between two blocks of a side column. A frame reaches 13pt past its
     /// content at the bottom and at the top of the next.
@@ -219,23 +229,26 @@ struct OverlayView: View {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
                     // What is left of the column once the memory has had its line, three
-                    // sevenths to the mail and four to the school. The school lost its mail lines — it
-                    // is twelve module cards now, and they are shorter — while the mail is the
-                    // list you actually work. Both scroll inside their share, so neither can
-                    // push the other off the bottom of the panel.
+                    // sevenths to the mail and the rest to the school, which is prioritized:
+                    // an empty MAIL folds to its heading and the school takes its room. Both
+                    // scroll inside their share, so neither can push the other off the bottom.
                     GeometryReader { space in
                         let free = space.size.height - Self.blockGap
+                        let hub = controller.hub
                         VStack(alignment: .leading, spacing: Self.blockGap) {
-                            MailColumn(hub: controller.hub,
+                            MailColumn(hub: hub,
                                        commandHeld: controller.commandHeld,
                                        scrolling: !eagerLayout)
-                                .frame(height: max(0, free * 3 / 7))
-                            EpitechColumn(hub: controller.hub,
+                                .frame(height: hub.mailEmpty ? nil : max(0, free * 3 / 7))
+                            EpitechColumn(hub: hub,
                                           commandHeld: controller.commandHeld,
                                           onDismiss: { controller.hidePanel() },
                                           scrolling: !eagerLayout)
-                                .frame(height: max(0, free * 4 / 7))
+                                .frame(maxHeight: hub.schoolEmpty ? nil : .infinity, alignment: .top)
                         }
+                        .frame(height: space.size.height, alignment: .top)
+                        .animation(Self.fold, value: hub.mailEmpty)
+                        .animation(Self.fold, value: hub.schoolEmpty)
                     }
                 }
                 .frame(height: Self.blockHeight, alignment: .top)
@@ -277,10 +290,9 @@ struct OverlayView: View {
                 .overlay(alignment: .top) {
                     if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.jobs).isEmpty {
                         AlertsBlock(hub: controller.hub, crons: controller.launchd.jobs)
-                            // Two thirds of the fleet's frame, centred over it: the frame is
-                            // 26pt wider than the grid either side, the bar's pane 13pt wider
-                            // than its content.
-                            .frame(width: (centerWidth + 52) * 2 / 3 - 26)
+                            // As wide as the fleet's frame: the bar's pane reaches 13pt past
+                            // its content either side.
+                            .frame(width: fleetFrameWidth - 26)
                             // Measured on an offscreen render: what the panel leaves over the
                             // fleet, less the bar, half over and half under it. Half the menu
                             // bar back down, because the window is the whole screen and the
@@ -309,8 +321,10 @@ struct OverlayView: View {
                                    commandHeld: controller.commandHeld,
                                    onDismiss: { controller.hidePanel() },
                                    scrolling: !eagerLayout)
-                            .frame(maxHeight: .infinity)
+                            .frame(maxHeight: controller.hub.todoEmpty ? nil : .infinity)
                     }
+                    .animation(Self.fold, value: controller.hub.todoEmpty)
+                    .animation(Self.fold, value: controller.launchd.jobs.isEmpty)
                     // Pinned to the top of the column. The agent block takes only what its
                     // cards need, so the stack is shorter than the space it is given — and a
                     // stack left to sit in the middle of that space starts the agents below
@@ -340,7 +354,7 @@ struct OverlayView: View {
             // and the key in the middle is taller than a name and pushed it down. Both measured
             // on a render.
             fleetHeading
-                .padding(.horizontal, -11)
+                .padding(.horizontal, 15 - Self.fleetSpread)
                 .offset(y: -1.5)
             // The same gap the side columns leave under their own rule, plus the room the
             // top row's hover glow needs — it reaches 16pt up, and the rule is right there.
@@ -384,9 +398,7 @@ struct OverlayView: View {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
         }
-        // Wider than a column's: a tile's hover glow reaches 22pt past the grid, and a frame
-        // inside that is a line the cards wipe over every time the pointer crosses one.
-        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: 26, bottomSpread: 13)
+        .blockFrame(BlockTint.fleet, fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13)
     }
 
     /// The fleet's own column heading, built like the two either side of it: a name, a rule the
