@@ -37,6 +37,8 @@ struct Reel: Identifiable {
     var digestedAt: Date?
     /// What Marius added from the panel, to set the reading straight — see `HubStore.reinterpret`.
     var context: String
+    /// What the background read did with it, in a few words — "note in ai · fleet · todo".
+    var outcome: String
 
     init(_ doc: Firestore.Document) {
         id = doc.id
@@ -59,6 +61,7 @@ struct Reel: Identifiable {
         reminder = doc.string("reminder")
         digestedAt = doc.date("digestedAt")
         context = doc.string("context")
+        outcome = doc.string("outcome")
     }
 
     /// The shelves a filed Reel goes on, in the order the card pages through them. The names

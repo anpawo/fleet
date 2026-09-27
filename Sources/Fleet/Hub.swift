@@ -584,9 +584,10 @@ final class HubStore: ObservableObject {
     }
     private static let checkingFile = (Hooks.home as NSString).appendingPathComponent("reel-checking")
 
-    /// The Reel read most recently, which the pink block shows when nothing is being read.
-    @Published private(set) var lastReel: Reel?
-    /// What is being written under it, to set its reading straight.
+    /// The Reels read so far, newest first: what REELS lists under the pointer.
+    @Published private(set) var readReels: [Reel] = []
+    /// The one whose context field is open, and what is being written in it.
+    @Published var contextReelID: String?
     @Published var reelContext = ""
     /// Whether that field holds the caret — see `composerFocused`.
     @Published var reelContextFocused = false
@@ -632,7 +633,8 @@ final class HubStore: ObservableObject {
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
-            lastReel = all.filter { $0.digestedAt != nil }.max { $0.digestedAt! < $1.digestedAt! }
+            readReels = Array(all.filter { $0.digestedAt != nil }
+                .sorted { $0.digestedAt! > $1.digestedAt! }.prefix(30))
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
             // Both kinds of failure, because they are two different things gone wrong: the
             // phone's own pipeline giving up on a Reel, and this Mac failing to check one.
@@ -683,7 +685,14 @@ final class HubStore: ObservableObject {
             let digest = try await Claude.digest(reel, themes: ReelDigest.themes(),
                                                  projects: ReelDigest.projects(), sessions: sessions)
             await Task.detached { ReelDigest.apply(digest, reel, sessions: sessions) }.value
-            var fields: [String: Any] = ["digestedAt": Firestore.timestamp(Date())]
+            var done: [String] = []
+            if digest.note != nil { done.append("note in \(digest.theme)") }
+            done += digest.projects.map(\.0)
+            if digest.todo != nil { done.append("todo") }
+            var fields: [String: Any] = [
+                "digestedAt": Firestore.timestamp(Date()),
+                "outcome": ["stringValue": done.isEmpty ? "nothing kept" : done.joined(separator: " · ")],
+            ]
             // The note is the line the REELS block shows. Not over one the sparkle wrote, except
             // on a second reading, which is Marius correcting it.
             if let note = digest.note, reel.reminder.isEmpty || !tell {
@@ -702,11 +711,14 @@ final class HubStore: ObservableObject {
         }
     }
 
-    /// Return in the context field under the last Reel.
+    /// Return in a Reel's context field.
     func commitReelContext() -> Bool {
-        guard reelContextFocused, let reel = lastReel else { return false }
+        guard reelContextFocused, let reel = readReels.first(where: { $0.id == contextReelID })
+        else { return false }
         let text = reelContext.trimmingCharacters(in: .whitespacesAndNewlines)
         reelContext = ""
+        contextReelID = nil
+        reelContextFocused = false
         guard !text.isEmpty, !reinterpreting else { return true }
         reinterpreting = true
         Task {

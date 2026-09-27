@@ -115,6 +115,9 @@ struct OverlayView: View {
     /// The fleet's frame, outline to outline — which the ALERT bar over it matches.
     private var fleetFrameWidth: CGFloat { centerWidth + 2 * Self.fleetSpread }
 
+    /// How far over the fleet's top ALERT sits: one heading line and one block's gap.
+    static let overLine: CGFloat = 14 + blockGap
+
     /// The one space between two blocks of a side column. A frame reaches 13pt past its
     /// content at the bottom and at the top of the next.
     private static let blockGap: CGFloat = frameGap + 26
@@ -228,6 +231,8 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
+                    ReelBlock(hub: controller.hub, commandHeld: controller.commandHeld,
+                              limit: Self.columnHeight / 3)
                     // What is left of the column once the memory has had its line, three
                     // sevenths to the mail and the rest to the school, which is prioritized:
                     // an empty MAIL folds to its heading and the school takes its room. Both
@@ -270,14 +275,6 @@ struct OverlayView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, -Self.blockSpread)
                 .padding(.top, -40)
-                // On the alert's line, and hung the same way — see the fleet's overlay below.
-                // Held by its bottom edge, level with the alert's, so a second line grows
-                // up into the room over the panel rather than down onto the memory.
-                .overlay(alignment: .top) {
-                    ReelBlock(hub: controller.hub)
-                        .frame(height: 120, alignment: .bottom)
-                        .offset(y: -(120 + AlertsBlock.height + 22.5 - Self.menuBar / 2))
-                }
                 Spacer(minLength: 0).frame(width: Self.innerGap)
             }
             fleet(scrolling: scrolling)
@@ -293,13 +290,8 @@ struct OverlayView: View {
                             // As wide as the fleet's frame: the bar's pane reaches 13pt past
                             // its content either side.
                             .frame(width: fleetFrameWidth - 26)
-                            // Measured on an offscreen render: what the panel leaves over the
-                            // fleet, less the bar, half over and half under it. Half the menu
-                            // bar back down, because the window is the whole screen and the
-                            // room above the fleet starts under the menu bar, not at the top
-                            // of the glass — centred on the glass the bar ran under it.
-                            // `frameGap` over the fleet's frame, measured.
-                            .offset(y: -(AlertsBlock.height + 36.5 - Self.menuBar / 2))
+                            // A heading line and a block's gap over the fleet.
+                            .offset(y: -Self.overLine)
                     }
                 }
             if controller.hub.isConfigured {

@@ -891,7 +891,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--demo",
     "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
-    "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels",
+    "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
