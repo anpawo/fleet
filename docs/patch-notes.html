@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>17</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>18</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">212146f</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">98c405b</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,42 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.repair · s14 routine.sh</span>
+        <span class="chip chip-sha">98c405b · s14 11a2ccf</span>
+      </div>
+      <h3>s14.recon-v3 rouge pour un passage qui avait eu lieu</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          ALERT affiche <code>s14.recon-v3</code> à 9h45, et rien ne la relance avant l'heure
+          suivante.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le passage de 9h05, retenu par la coupure réseau, est parti à 9h38 en même temps qu'un
+          <code>/v3</code> lancé à la main&nbsp;: <code>NOT_RUN lock held</code>, aucun rapport,
+          code 1. Et Fleet ne faisait que constater un échec, jamais le rejouer.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>routine.sh</code> sort en 0 quand un autre V3 tient le verrou. Fleet relance une
+          fois, par <code>launchctl kickstart</code>, toute routine dont le dernier passage a
+          échoué, et ALERT attend ce passage-là (<code>cronRetries</code>, gardé entre deux
+          lancements). Ni <code>s14.mirror-check</code> (il écrit sur Matrix) ni
+          <code>s14.mounts</code> (toutes les minutes) ne sont relancés.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>routine.sh, python factice : verrou tenu → 0 · plantage → 1 · montage absent → 1
+install 09:50:18 : « s14.recon-v3 failed its last run, started again »
+recon-v3.log 09:50:19 : NR et QRT swap=OK cash=OK, exit 0     launchctl : last exit code = 0</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
