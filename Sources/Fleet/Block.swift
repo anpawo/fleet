@@ -22,6 +22,8 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
     /// From the frame to the chips, on top and either side. The fleet's is its tiles' own
     /// margin, so the name starts on the line the cards start on.
     var titleInset: CGFloat = 10
+    /// The same, on top alone, when it is not `titleInset`.
+    var titleTop: CGFloat?
     /// A gauge filled from the left instead of a flat wash — MEMORY's RAM.
     var level: BlockLevel?
     /// Between the title bar and the body.
@@ -58,7 +60,7 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
             .padding(.horizontal, titleInset + 7 - spread)
             .overlay { if !middleBetween { middle() } }
             // The frame starts 13pt over the block and the ground hangs 3pt over the words.
-            .padding(.top, titleInset - 10)
+            .padding(.top, (titleTop ?? titleInset) - 10)
             content()
         }
         .blockFrame(tint, fill: fill, spread: spread, bottomSpread: bottomSpread, level: level)
