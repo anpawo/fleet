@@ -1165,8 +1165,12 @@ struct SessionTile: View {
                     HStack(alignment: .top, spacing: 7) {
                         folder
                         Spacer(minLength: 6)
-                        subagentPill
-                        statePill
+                        // Served first and at full size. The folder's frame measures at its
+                        // text but lays out at its 110pt cap, so this line passed the fit and
+                        // then squeezed the pills: BACKGROUND-TASK shrunk to 70% (28-09).
+                        Group { subagentPill; statePill }
+                            .fixedSize()
+                            .layoutPriority(1)
                     }
                     HStack(alignment: .top, spacing: 7) {
                         folder

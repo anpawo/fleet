@@ -39,7 +39,8 @@ enum DemoFleet {
                 ])
 
             // Every third one has delegated, so the orange line is on screen too.
-            if i % 3 == 1 {
+            // And the delegated one too: its two pills side by side are the widest header.
+            if i % 3 == 1 || state == .delegated {
                 info.pendingTaskIDs = ["task-\(i)"]
                 info.pendingToolNames = ["Task"]
                 info.subagents = [SubagentRun(id: "a\(i)", kind: "Explore",
