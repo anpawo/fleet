@@ -145,6 +145,12 @@ enum Launchd {
                    allowance: allowance(plist))
     }
 
+    /// The label of every plist in the folder, whether or not it parses.
+    static func labels() -> Set<String> {
+        Set(((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+            .filter { $0.hasSuffix(".plist") }.map { String($0.dropLast(6)) })
+    }
+
     /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `s14.recon-v3`…), so a
     /// card says its label. One reads better as two drive letters than as a word.
     private static let names = [
@@ -496,7 +502,7 @@ final class LaunchdStore: ObservableObject {
     /// Most failures are the run, not the routine: the network gone at the hour, two runs on
     /// one lock (recon-v3, 28-09 at 09:38), a request that hung. Started again once, a routine
     /// is only named in ALERT when that run failed too.
-    func repair(_ jobs: [Launchd.Job], now: Date) -> [Launchd.Job] {
+    func repair(_ jobs: [Launchd.Job], now: Date, files: Set<String> = Launchd.labels()) -> [Launchd.Job] {
         var retried = UserDefaults.standard.dictionary(forKey: Self.retriesKey) as? [String: Double] ?? [:]
         var deferred = UserDefaults.standard.dictionary(forKey: Self.deferredKey) as? [String: Double] ?? [:]
         let out = jobs.map { job -> Launchd.Job in
@@ -533,11 +539,17 @@ final class LaunchdStore: ObservableObject {
             job.repairing = true
             return job
         }
-        // Every plist in the folder, loaded or not: only a routine that is gone — removed, or
-        // renamed to a new label — loses its entry.
-        let labels = Set(jobs.map(\.id))
-        UserDefaults.standard.set(retried.filter { labels.contains($0.key) }, forKey: Self.retriesKey)
-        UserDefaults.standard.set(deferred.filter { labels.contains($0.key) }, forKey: Self.deferredKey)
+        // Every plist in the folder, loaded or not, parsed or not: only a routine that is gone —
+        // removed, or renamed to a new label — loses its entry. One an install is halfway
+        // through writing has no job this scan, and must not lose its retry for it.
+        let labels = Set(jobs.map(\.id)).union(files)
+        for (key, entries) in [(Self.retriesKey, retried), (Self.deferredKey, deferred)] {
+            let kept = entries.filter { labels.contains($0.key) }
+            // Only on a change: this runs every ten seconds.
+            if kept != UserDefaults.standard.dictionary(forKey: key) as? [String: Double] {
+                UserDefaults.standard.set(kept, forKey: key)
+            }
+        }
         return out
     }
 

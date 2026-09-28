@@ -177,6 +177,17 @@ enum SelfCheck {
         _ = store.repair([job("selftest.c", failing: true)], now: now)
         _ = store.repair([job("selftest.d")], now: now)
         expect(remembers("selftest.c"), false, "a routine gone from the folder is forgotten")
+        _ = store.repair([job("selftest.h", failing: true)], now: now)
+        _ = store.repair([], now: now, files: ["selftest.h"])
+        expect(remembers("selftest.h"), true, "a plist that does not parse keeps its retry")
+        var writes = 0
+        let watch = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                                           object: nil, queue: nil) { _ in writes += 1 }
+        _ = store.repair([job("selftest.h", failing: true)], now: now + 1)
+        expect(writes == 0, true, "nothing changed, nothing written (\(writes) writes)")
+        _ = store.repair([job("selftest.h")], now: now + 2)
+        NotificationCenter.default.removeObserver(watch)
+        expect(writes > 0, true, "a change is written (\(writes) writes)")
 
         out = store.repair([job("selftest.f", deferred: true)], now: now)
         expect(out[0].deferredFor == nil && remembers("selftest.f", deferredKey), true,
