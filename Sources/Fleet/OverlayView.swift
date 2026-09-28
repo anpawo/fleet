@@ -1431,7 +1431,9 @@ struct MemoryStrip: View {
                      tint: ramTint.opacity(0.45),
                      fill: .black.opacity(0.41),
                      level: BlockLevel(share: share(reaper.footprint.used), tint: ramTint.opacity(0.42)),
-                     bodyGap: 6, middleBetween: true) {
+                     // 10pt of pane between the chips' ground and the first process, as round
+                     // the chips: at 6 the list sat 3pt under them (asked 2026-09-28).
+                     bodyGap: 13, middleBetween: true) {
             // Under strain the verdict is a pulsing triangle halfway between the name and the
             // readout: a sentence under the heading said nothing the colour did not.
             if tight {
@@ -1453,8 +1455,8 @@ struct MemoryStrip: View {
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .titleGround()
         } content: {
-            // Left out rather than left empty: a row of no height still takes the stack's 6pt
-            // of spacing, which is six points of water under the words and none over them.
+            // Left out rather than left empty: a row of no height still takes the stack's
+            // spacing, which is water under the words and none over them.
             if hasBody {
             // The processes holding the memory, which is the only thing to do about it. One
             // after the other, each easing down out of the bar, so the eye follows the list as
