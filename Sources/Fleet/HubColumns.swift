@@ -1617,16 +1617,22 @@ struct AlertsBlock: View {
             out.append(contentsOf: failure.components(separatedBy: ", "))
         }
         out.append(contentsOf: hub.failedRuns)
-        // A routine whose last run ended badly, by name. The CRONS block says so too, in a
-        // red card among fifteen; this is the line you read without looking for it. Only the
-        // routines: a resident's last exit is history, not health — see `Job.ok`.
-        // Not while Fleet's own retry of it is running: most failed runs pass the second time.
-        // A hung run is named whatever its last exit said: that exit is the run before.
+        out.append(contentsOf: cronAlerts(crons))
+        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
+        return out
+    }
+
+    /// A routine whose last run ended badly, by name. The CRONS block says so too, in a
+    /// red card among fifteen; this is the line you read without looking for it. Only the
+    /// routines: a resident's last exit is history, not health — see `Job.ok`.
+    /// Not while Fleet's own retry of it is running: most failed runs pass the second time.
+    /// A hung run is named whatever its last exit said: that exit is the run before.
+    static func cronAlerts(_ crons: [Launchd.Job]) -> [String] {
+        var out: [String] = []
         for job in crons where job.triggered {
             if let hung = job.hung { out.append("\(job.name) hung \(Launchd.span(hung))") }
             else if job.failing && !job.repairing { out.append(job.name) }
         }
-        if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }
 

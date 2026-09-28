@@ -105,25 +105,34 @@ enum Launchd {
                   let plist = try? PropertyListSerialization.propertyList(
                       from: data, format: nil) as? [String: Any] else { return nil }
             let state = live[label]
-            let trigger = schedule(plist)
-            let port = state?.pid.flatMap { ports[$0] }
-            let enabled = state != nil
-            let exit = state?.exit ?? 0
-            let failing = exit != 0 && exit != tempfail
-            let hung = trigger == nil ? nil : Launchd.hung(state?.pid.flatMap { ages[$0] }, plist)
-            return Job(id: label,
-                       name: shorten(label),
-                       schedule: trigger ?? resting(plist),
-                       enabled: enabled,
-                       failing: failing,
-                       triggered: trigger != nil,
-                       ok: trigger != nil ? (enabled && !failing && hung == nil) : state?.pid != nil,
-                       note: notes[label] ?? fallbackNote(plist),
-                       address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" },
-                       busy: state?.pid != nil,
-                       deferred: exit == tempfail,
-                       hung: hung)
+            var job = judge(label, plist, state, age: state?.pid.flatMap { ages[$0] })
+            job.address = state?.pid.flatMap { ports[$0] }
+                .map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" }
+            return job
         }.sorted { $0.name < $1.name }
+    }
+
+    /// What launchd's word on one agent means — the plist, and `launchctl list`'s pid and last
+    /// exit (nil when it does not list the agent) — with nothing spawned, so `--selftest` can
+    /// replay it. The address is left to `jobs`, which has to ask the port.
+    static func judge(_ label: String, _ plist: [String: Any], _ state: (pid: Int?, exit: Int)?,
+                      age: TimeInterval?) -> Job {
+        let trigger = schedule(plist)
+        let enabled = state != nil
+        let exit = state?.exit ?? 0
+        let failing = exit != 0 && exit != tempfail
+        let hung = trigger == nil ? nil : Launchd.hung(age, plist)
+        return Job(id: label,
+                   name: shorten(label),
+                   schedule: trigger ?? resting(plist),
+                   enabled: enabled,
+                   failing: failing,
+                   triggered: trigger != nil,
+                   ok: trigger != nil ? (enabled && !failing && hung == nil) : state?.pid != nil,
+                   note: notes[label] ?? fallbackNote(plist),
+                   busy: state?.pid != nil,
+                   deferred: exit == tempfail,
+                   hung: hung)
     }
 
     /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `s14.recon-v3`…), so a
@@ -436,6 +445,15 @@ final class LaunchdStore: ObservableObject {
     /// a 95-minute Claude run.
     private static let retriesKey = "cronRetries"
 
+    /// Starts a routine now. A property so `--selftest` can count the kicks instead of sending them.
+    var kick: (String) -> Bool = { label in
+        let kick = Process()
+        kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        // No -k: a run that started meanwhile is left alone.
+        kick.arguments = ["kickstart", "gui/\(getuid())/\(label)"]
+        return (try? kick.run()) != nil
+    }
+
     /// Most failures are the run, not the routine: the network gone at the hour, two runs on
     /// one lock (recon-v3, 28-09 at 09:38), a request that hung. Started again once, a routine
     /// is only named in ALERT when that run failed too.
@@ -457,12 +475,7 @@ final class LaunchdStore: ObservableObject {
                 job.repairing = job.hung == nil && (job.busy || now.timeIntervalSince1970 - at < 60)
                 return job
             }
-            guard repairs, !job.busy, !Self.noRetry.contains(job.id) else { return job }
-            let kick = Process()
-            kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            // No -k: a run that started meanwhile is left alone.
-            kick.arguments = ["kickstart", "gui/\(getuid())/\(job.id)"]
-            guard (try? kick.run()) != nil else { return job }
+            guard repairs, !job.busy, !Self.noRetry.contains(job.id), kick(job.id) else { return job }
             NSLog("Fleet: \(job.id) failed its last run, started again")
             retried[job.id] = now.timeIntervalSince1970
             job.repairing = true

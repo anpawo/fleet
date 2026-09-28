@@ -20,6 +20,7 @@ enum SelfCheck {
         ports(expect)
         reels(expect)
         crons(expect)
+        judging(expect)
         repairs(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
@@ -84,14 +85,40 @@ enum SelfCheck {
         expect(Launchd.hung(nil, v3), nil, "a routine between two runs is not hung")
     }
 
-    /// The retry state machine, on labels launchd does not have: the kickstart it sends fails
-    /// harmlessly, and what is checked is what Fleet remembers and what ALERT waits for.
+    /// What a plist and one `launchctl list` line make of a card and of ALERT.
+    private static func judging(_ expect: (Bool, Bool, String) -> Void) {
+        let hourly: [String: Any] = ["StartCalendarInterval": ["Minute": 5]]
+        let resident: [String: Any] = ["KeepAlive": true]
+        let late = Launchd.judge("s14.x", hourly, (nil, 75), age: nil)
+        expect(late.deferred && !late.failing && late.ok, true, "exit 75: deferred, not failing, still ok")
+        let failed = Launchd.judge("s14.x", hourly, (nil, 1), age: nil)
+        expect(failed.failing && !failed.ok && !failed.deferred, true, "exit 1: failing, not ok")
+        expect(Launchd.judge("s14.x", hourly, (nil, -15), age: nil).failing, true, "a kill is a failure")
+        expect(Launchd.judge("s14.x", hourly, nil, age: nil).ok, false, "a routine launchd does not list is not ok")
+        let stuck = Launchd.judge("s14.x", hourly, (42, 0), age: 7800)
+        expect(stuck.hung == 7800 && !stuck.ok && stuck.busy, true, "running 2h10 on an hourly slot: hung, not ok")
+        let up = Launchd.judge("s14.web", resident, (42, 78), age: 3 * 86400)
+        expect(up.ok && up.hung == nil, true, "a resident up for days with an old 78 is ok, never hung")
+        expect(Launchd.judge("s14.web", resident, (nil, 0), age: nil).ok, false, "a resident with no pid is not ok")
+
+        var retrying = failed
+        retrying.repairing = true
+        let lines = AlertsBlock.cronAlerts([stuck, failed, retrying, late, up,
+                                            Launchd.judge("s14.web", resident, (nil, 1), age: nil)])
+        expect(lines == ["s14.x hung 2h", "s14.x"], true,
+               "ALERT: the hung one with its age, the failed one by name, nothing else (got \(lines))")
+    }
+
+    /// The retry state machine, on labels launchd does not have, with the kickstart counted
+    /// rather than sent: what is checked is what Fleet remembers and what ALERT waits for.
     private static func repairs(_ expect: (Bool, Bool, String) -> Void) {
         let key = "cronRetries"
         let saved = UserDefaults.standard.object(forKey: key)
         defer { UserDefaults.standard.set(saved, forKey: key) }
         let store = LaunchdStore()
         store.repairs = true
+        var kicked: [String] = []
+        store.kick = { kicked.append($0); return true }
         func job(_ id: String, enabled: Bool = true, failing: Bool = false, busy: Bool = false,
                  deferred: Bool = false, hung: TimeInterval? = nil) -> Launchd.Job {
             Launchd.Job(id: id, name: id, schedule: "", enabled: enabled, failing: failing,
