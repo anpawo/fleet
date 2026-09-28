@@ -20,6 +20,7 @@ enum SelfCheck {
         ports(expect)
         reels(expect)
         crons(expect)
+        repairs(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
@@ -81,6 +82,39 @@ enum SelfCheck {
         expect(Launchd.hung(Launchd.parseElapsed("04:00"), ["StartInterval": 60]), nil,
                "the mounts running 4 min are slow, not hung")
         expect(Launchd.hung(nil, v3), nil, "a routine between two runs is not hung")
+    }
+
+    /// The retry state machine, on labels launchd does not have: the kickstart it sends fails
+    /// harmlessly, and what is checked is what Fleet remembers and what ALERT waits for.
+    private static func repairs(_ expect: (Bool, Bool, String) -> Void) {
+        let key = "cronRetries"
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+        let store = LaunchdStore()
+        store.repairs = true
+        func job(_ id: String, enabled: Bool = true, failing: Bool = false, busy: Bool = false,
+                 deferred: Bool = false, hung: TimeInterval? = nil) -> Launchd.Job {
+            Launchd.Job(id: id, name: id, schedule: "", enabled: enabled, failing: failing,
+                        triggered: true, ok: !failing, note: "", busy: busy, deferred: deferred, hung: hung)
+        }
+        func remembers(_ id: String) -> Bool { UserDefaults.standard.dictionary(forKey: key)?[id] != nil }
+        let now = Date()
+        var out = store.repair([job("selftest.a", failing: true), job("selftest.b", deferred: true)], now: now)
+        expect(out[0].repairing && remembers("selftest.a"), true, "a failed routine is started again, and ALERT waits")
+        expect(remembers("selftest.b"), false, "a deferred one is not started again")
+        _ = store.repair([job("selftest.a", enabled: false)], now: now)
+        expect(remembers("selftest.a"), true, "launchd listing nothing does not forget the retry")
+        out = store.repair([job("selftest.a", failing: true)], now: now + 120)
+        expect(out[0].repairing, false, "the retry failed too: not started a third time, ALERT names it")
+        out = store.repair([job("selftest.a", failing: true, busy: true, hung: 7200)], now: now + 120)
+        expect(out[0].repairing, false, "a retry that hangs is not waited for")
+        _ = store.repair([job("selftest.e", failing: true, busy: true, hung: 7200)], now: now)
+        expect(remembers("selftest.e"), false, "a hung run is never started again")
+        _ = store.repair([job("selftest.a")], now: now + 180)
+        expect(remembers("selftest.a"), false, "a clean run forgets the retry")
+        _ = store.repair([job("selftest.c", failing: true)], now: now)
+        _ = store.repair([job("selftest.d")], now: now)
+        expect(remembers("selftest.c"), false, "a routine gone from the folder is forgotten")
     }
 
     // MARK: - Listening ports

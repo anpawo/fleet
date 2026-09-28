@@ -416,8 +416,11 @@ final class LaunchdStore: ObservableObject {
 
     /// The first read is synchronous, once, at launch — the panel can open before the first
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
+    /// Through `repair`, with `repairs` still off: a routine Fleet was retrying when it was
+    /// restarted is still `repairing`, not in ALERT until the first scan.
     init() {
-        jobs = Launchd.jobs().filter(\.running)
+        jobs = []
+        jobs = repair(Launchd.jobs(), now: Date()).filter(\.running)
     }
 
     /// Routines that are not started again. mirror-check says on a shared Matrix room that
@@ -436,13 +439,16 @@ final class LaunchdStore: ObservableObject {
     /// Most failures are the run, not the routine: the network gone at the hour, two runs on
     /// one lock (recon-v3, 28-09 at 09:38), a request that hung. Started again once, a routine
     /// is only named in ALERT when that run failed too.
-    private func repair(_ jobs: [Launchd.Job], now: Date) -> [Launchd.Job] {
+    func repair(_ jobs: [Launchd.Job], now: Date) -> [Launchd.Job] {
         var retried = UserDefaults.standard.dictionary(forKey: Self.retriesKey) as? [String: Double] ?? [:]
         let out = jobs.map { job -> Launchd.Job in
             var job = job
             guard job.triggered else { return job }
             guard job.failing else {
-                retried[job.id] = nil
+                // Only on launchd's word. A job it does not list — booted out for a reinstall,
+                // or every job when `launchctl list` itself failed — has not passed, and
+                // forgetting its retry would start it a second time once it is back.
+                if job.enabled { retried[job.id] = nil }
                 return job
             }
             if let at = retried[job.id] {
@@ -462,6 +468,8 @@ final class LaunchdStore: ObservableObject {
             job.repairing = true
             return job
         }
+        // Every plist in the folder, loaded or not: only a routine that is gone — removed, or
+        // renamed to a new label — loses its entry.
         let labels = Set(jobs.map(\.id))
         UserDefaults.standard.set(retried.filter { labels.contains($0.key) }, forKey: Self.retriesKey)
         return out
@@ -485,9 +493,9 @@ final class LaunchdStore: ObservableObject {
         scanning = true
         lastScan = now
         Task.detached(priority: .utility) {
-            let scanned = Launchd.jobs(probing: true).filter(\.running)
+            let scanned = Launchd.jobs(probing: true)
             await MainActor.run {
-                self.jobs = self.repair(scanned, now: Date())
+                self.jobs = self.repair(scanned, now: Date()).filter(\.running)
                 self.scanning = false
             }
         }
