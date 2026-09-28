@@ -638,6 +638,61 @@ struct TodoColumn: View {
     }
 }
 
+/// JARVIS, over CRONS: a heading line and nothing under it — whether he is listening, and the
+/// last session he spoke up for. The second comes from his log, not from `Jarvis`, which keeps
+/// its state to itself.
+struct JarvisBlock: View {
+    let on: Bool
+    let muted: Bool
+
+    static let tint = Color(red: 0.36, green: 0.22, blue: 0.58)
+
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    private static let day: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "d MMM"
+        return f
+    }()
+
+    var body: some View {
+        HubColumn(title: "JARVIS", count: 0, tint: Self.tint, fill: Self.tint.darkened(0.48),
+                  badgeText: line, collapsed: true) { EmptyView() }
+    }
+
+    private var line: Text {
+        let state = !on ? Text("off").foregroundColor(.white.opacity(0.45))
+            : muted ? Text("muted").foregroundColor(LedgerTint.ongoing)
+            : Text("on").foregroundColor(SessionState.ready.tint)
+        guard let last = Self.lastAsk() else { return state }
+        let when = Calendar.current.isDateInToday(last.at)
+            ? Self.clock.string(from: last.at) : Self.day.string(from: last.at)
+        return state + Text(" · last \(last.project) \(when)").foregroundColor(.white.opacity(0.45))
+    }
+
+    /// The last line of `jarvis-log.jsonl`, read from its last 4 KB: one line per ask, and the
+    /// log is never trimmed.
+    static func lastAsk() -> (project: String, at: Date)? {
+        let path = (Hooks.home as NSString).appendingPathComponent("jarvis-log.jsonl")
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: end > 4096 ? end - 4096 : 0)
+        guard let data = try? handle.readToEnd(),
+              let line = String(decoding: data, as: UTF8.self)
+                  .split(separator: "\n").last,
+              let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let project = entry["project"] as? String,
+              let stamp = entry["at"] as? String,
+              let at = ISO8601DateFormatter().date(from: stamp) else { return nil }
+        return (project, at)
+    }
+}
+
 /// What both columns have in common: a label, how many there are in total, and the rows.
 ///
 /// The count is of everything, not of what is drawn — a column showing six of eleven should
