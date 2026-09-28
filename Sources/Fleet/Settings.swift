@@ -94,6 +94,13 @@ enum Settings {
         }
     }
 
+    /// A mute with no end: the panel never opens on its own until this is turned back on. The
+    /// panel chord, the menu bar and `fleet` still open it.
+    static var popupsOff: Bool {
+        get { UserDefaults.standard.bool(forKey: "popupsOff") }
+        set { UserDefaults.standard.set(newValue, forKey: "popupsOff") }
+    }
+
     /// Offered mute lengths, in seconds.
     static let muteDurationChoices: [TimeInterval] = [10 * 60, 30 * 60, 3600, 2 * 3600, 4 * 3600]
 

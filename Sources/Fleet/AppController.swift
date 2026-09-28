@@ -19,7 +19,7 @@ final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
         didSet {
-            statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
+            statusItem?.update(ram: reaper.footprint, muted: muted)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
             electHeads()
             nameOutsiders()
@@ -216,6 +216,17 @@ final class AppController: ObservableObject {
     /// it away.
     @Published private(set) var mutedUntil: Date?
 
+    /// See `Settings.popupsOff`. Here so the settings window and the menu bar follow it.
+    @Published var popupsOff = Settings.popupsOff {
+        didSet {
+            Settings.popupsOff = popupsOff
+            statusItem?.update(ram: reaper.footprint, muted: muted)
+        }
+    }
+
+    /// Whether the panel may open on its own right now: neither turned off nor muted.
+    var muted: Bool { popupsOff || muteRemaining != nil }
+
     /// A `didSet` does not run for the value a property is declared with, and `--render` never
     /// calls `start()`: the names kept from the last run reach the tiles here or not at all.
     init() { Session.labels = Self.names(in: labels) }
@@ -324,13 +335,16 @@ final class AppController: ObservableObject {
     /// because Fleet is in your way, and "in your way" usually means it is on screen right now.
     /// Pressed again while muted, it unmutes: the same key gets you out of it.
     func toggleMute() {
+        // Turned off is only undone where it was done, in the settings window: a chord that
+        // sits on Esc is too easy to press on the way to closing the panel.
+        guard !popupsOff else { return }
         if muteRemaining != nil {
             mutedUntil = nil
         } else {
             mutedUntil = Date().addingTimeInterval(Settings.muteDuration)
             if isPanelVisible { hidePanel() }
         }
-        statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
+        statusItem?.update(ram: reaper.footprint, muted: muted)
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
@@ -396,7 +410,7 @@ final class AppController: ObservableObject {
         EmptyTerminals.sweepIfDue()
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
-        statusItem?.update(ram: reaper.footprint, muted: muteRemaining != nil)
+        statusItem?.update(ram: reaper.footprint, muted: muted)
 
         if isPanelVisible {
             refreshVisible()
@@ -429,7 +443,7 @@ final class AppController: ObservableObject {
 
         // Checked here rather than earlier so the refresh above still runs while muted: the
         // panel you then open by hand has to be current.
-        guard muteRemaining == nil else { return }
+        guard !muted else { return }
 
         // Idle because you are watching something, not because you are done. Left armed on
         // purpose: when the video ends and the machine goes quiet for real, the next tick

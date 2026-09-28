@@ -158,24 +158,35 @@ struct ControlCenterView: View {
     /// The mute row states its own end time rather than counting down: a countdown needs a
     /// timer redrawing this window once a second for a number nobody watches.
     private var mute: some View {
-        HStack(spacing: 12) {
+        let off = controller.popupsOff
+        return HStack(spacing: 12) {
             Circle()
-                .fill(controller.mutedUntil == nil ? SessionState.ready.tint
-                                                   : SessionState.apiError.tint)
+                .fill(controller.muted ? SessionState.apiError.tint : SessionState.ready.tint)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text(controller.muteRemaining == nil ? "Fleet may show itself"
-                                                     : "Muted until \(muteEndTime)")
+                Text(off ? "Fleet never shows itself"
+                     : controller.muteRemaining == nil ? "Fleet may show itself"
+                     : "Muted until \(muteEndTime)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                Text("\(muteChord.label) mutes it for \(Self.muteLabel(muteDuration)). "
-                     + "It still opens when you ask.")
+                Text(off ? "\(panelChord.label) still opens it."
+                     : "\(muteChord.label) mutes it for \(Self.muteLabel(muteDuration)). "
+                       + "It still opens when you ask.")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            wideButton(controller.muteRemaining == nil ? "Mute" : "Unmute", width: 76) {
-                controller.toggleMute()
+            VStack(spacing: 6) {
+                wideButton(controller.muteRemaining == nil ? "Mute" : "Unmute", width: 76) {
+                    controller.toggleMute()
+                }
+                .disabled(off)
+                .opacity(off ? 0.35 : 1)
+                wideButton(off ? "Turn on" : "Turn off", width: 76) {
+                    controller.popupsOff.toggle()
+                    if controller.popupsOff, controller.isPanelVisible { controller.hidePanel() }
+                }
             }
         }
         .padding(14)
@@ -259,15 +270,17 @@ struct ControlCenterView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
                     .fixedSize(horizontal: false, vertical: true)
-                Button(Hooks.isOutdated ? "Update Hooks…" : "Install Hooks…") { installHooks() }
+                wideButton(Hooks.isOutdated ? "Update Hooks…" : "Install Hooks…") { installHooks() }
             }
         }
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
+        // No spacing of its own: two control widths and two gaps came to 12pt more than the
+        // column, and the right button stood past the edge the popups end on.
+        HStack(spacing: 0) {
             wideButton("Show Panel") { controller.forceShow() }
-            Spacer(minLength: 4)
+            Spacer(minLength: 0)
             // "until login" is not hedging: the LaunchAgent has KeepAlive set, so a plain
             // terminate would have launchd start us again a second later.
             wideButton("Quit until next login") { quit() }
@@ -292,6 +305,16 @@ struct ControlCenterView: View {
     /// four different right edges down one short column.
     static let controlWidth: CGFloat = 178
 
+    /// And this tall: the line of the label beside it. The system push button and the popups
+    /// each stood taller than their row, at two different heights (asked 2026-09-28).
+    static let controlHeight: CGFloat = 20
+
+    /// The ground every control wears, popups and buttons alike.
+    fileprivate static func controlGround(pressed: Bool = false) -> some View {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(.white.opacity(pressed ? 0.18 : 0.10))
+    }
+
     /// A popup that is the width you tell it.
     ///
     /// `Picker` is not: it measures its longest title, draws that wide, and centres itself in
@@ -308,19 +331,18 @@ struct ControlCenterView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(label(selection.wrappedValue))
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.white.opacity(0.10)))
+            .frame(height: Self.controlHeight)
+            .background(Self.controlGround())
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -337,6 +359,7 @@ struct ControlCenterView: View {
         Button(action: action) {
             Text(title).frame(maxWidth: .infinity)
         }
+        .buttonStyle(LineButton())
         .frame(width: width)
     }
 
@@ -392,6 +415,19 @@ struct ControlCenterView: View {
                 ?? error.localizedDescription
         }
         done.runModal()
+    }
+
+    /// A push button in the popups' chrome and at their height.
+    private struct LineButton: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                .frame(height: ControlCenterView.controlHeight)
+                .background(ControlCenterView.controlGround(pressed: configuration.isPressed))
+                .contentShape(Rectangle())
+        }
     }
 
     private func quit() {

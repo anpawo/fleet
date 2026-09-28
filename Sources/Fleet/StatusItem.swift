@@ -21,7 +21,7 @@ final class StatusItemController {
     /// What colour the dot currently is. The refresh tick fires every few seconds and the
     /// colour almost never changes, so this avoids redrawing the menu bar for nothing.
     private var shown: NSColor?
-    /// Same idea for the muted look, which swaps the whole glyph.
+    /// Same idea for the muted look, which takes the dot away.
     private var shownMuted: Bool?
     /// And for the count of todos due today, which sits beside the plane.
     private var shownDue: Int?
@@ -31,7 +31,7 @@ final class StatusItemController {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = item.button {
-            button.image = Self.planeImage(filled: true)
+            button.image = Self.planeImage()
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(clicked)
@@ -75,11 +75,12 @@ final class StatusItemController {
     // MARK: - Appearance
 
     func update(ram: MemoryPressure.Footprint, muted: Bool = false) {
-        // A hollow plane while muted: the chord is pressed with nothing on screen, so the menu
-        // bar is the only place that can acknowledge it.
+        // No dot while muted: the chord is pressed with nothing on screen, so the menu bar is
+        // the only place that can acknowledge it. The dot rather than the plane — a hollow
+        // plane read as a different logo (asked 2026-09-28).
         if shownMuted != muted {
             shownMuted = muted
-            item.button?.image = Self.planeImage(filled: !muted)
+            dot.isHidden = muted
         }
         // A number beside the plane while something is due today or overdue, nothing at all
         // otherwise: the bar is the one place that can say "there is something to do" on a
@@ -102,9 +103,9 @@ final class StatusItemController {
     /// `paperplane.fill` rather than anything boat-shaped: at 15pt a hull and mast collapse into
     /// a smudge, while the plane stays a clean silhouette. Template mode hands the menu bar
     /// control of its colour, so it inverts correctly in light and dark.
-    private static func planeImage(filled: Bool) -> NSImage? {
+    private static func planeImage() -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        let image = NSImage(systemSymbolName: filled ? "paperplane.fill" : "paperplane",
+        let image = NSImage(systemSymbolName: "paperplane.fill",
                             accessibilityDescription: "Fleet")?
             .withSymbolConfiguration(config)
         image?.isTemplate = true
