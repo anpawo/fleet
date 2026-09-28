@@ -12,6 +12,8 @@ struct JarvisAsk: Decodable {
     var at: Double?
     /// What to say instead of "<project> is done, sir.", for a composed line or a demo.
     var line: String?
+    /// Shown without a voice, at once: to look at the panel.
+    var silent: Bool?
 }
 
 struct JarvisOption: Equatable {
@@ -244,6 +246,11 @@ final class Jarvis {
 
         if let mic = MicWatcher.recording() {
             voiceResult = "mic: \(mic)"
+            voiceEndedAt = Date()
+            m.orb.set(.waiting)
+            reveal()
+        } else if item.ask.silent == true {
+            voiceResult = "silent"
             voiceEndedAt = Date()
             m.orb.set(.waiting)
             reveal()
