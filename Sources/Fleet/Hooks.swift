@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 12
+    static let version = 13
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -323,8 +323,9 @@ enum Hooks {
                     "command": "sh \"$HOME/.claude/fleet/session-state.sh\" \(argument)",
                     // PreToolUse is where a paused session waits for the machine, so it gets
                     // longer than the hold the script allows itself; a timeout would only let
-                    // the tool through early.
-                    "timeout": event == "PreToolUse" ? 900 : 5,
+                    // the tool through early. Stop is where Jarvis waits for an answer, 590 s
+                    // at most; 600 is the most Claude Code's schema is known to accept.
+                    "timeout": event == "PreToolUse" ? 900 : event == "Stop" ? 600 : 5,
                 ]],
             ])
             hooks[event] = groups
@@ -434,7 +435,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 12
+    # fleet-hook-version: 13
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -451,7 +452,7 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg" "$dir/$sid.ask" "$dir/$sid.answer"
         exit 0
     fi
 
@@ -661,6 +662,57 @@ enum Hooks {
     tmp="$dir/$sid.json.$$"
     printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
         "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
+
+    # Jarvis: at the end of a turn, Fleet asks out loud what this session should do next, and
+    # the answer comes back as the reason of a Stop block, which Claude Code hands the session
+    # as its next instruction. Only while Fleet keeps `jarvis.on` fresh, so a Fleet that died
+    # never leaves a turn hanging; never twice in one turn; and only for a session someone sits
+    # at: a tty rules out `claude -p`, Fleet's own calls and launchd routines. FLEET_TEST_TTY
+    # stands in for that tty and is set by test-stop-hook.sh only, which has no terminal.
+    # Esc in the terminal kills this hook: the trap takes the question back.
+    jarvis_on() {
+        [ -f "$dir/jarvis.on" ] &&
+            /usr/bin/perl -e 'exit(time - (stat $ARGV[0])[9] < 10 ? 0 : 1)' "$dir/jarvis.on"
+    }
+    if [ "${1:-}" = "ready" ] && jarvis_on; then
+        tty=${FLEET_TEST_TTY:-$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d ' ')}
+        case "$tty" in '' | '??' ) ;; * )
+            ask="$dir/$sid.ask"; ans="$dir/$sid.answer"
+            rm -f "$ans"
+            trap 'rm -f "$ask" "$ask.$$"; exit 0' HUP INT TERM
+            if printf '%s' "$input" | /usr/bin/perl -MJSON::PP -e '
+                my ($ask, $hook, $claude, $sid) = @ARGV;
+                my $in = eval { decode_json(join "", <STDIN>) } or exit 1;
+                exit 1 if $in->{stop_hook_active};
+                my $json = encode_json({ sid => $sid, hook_pid => $hook + 0,
+                    claude_pid => $claude + 0, cwd => $in->{cwd} // "",
+                    transcript => $in->{transcript_path} // "",
+                    last_message => $in->{last_assistant_message} // "", at => time });
+                open(my $f, ">", "$ask.$hook") or exit 1;
+                print $f $json;
+                close($f) && rename("$ask.$hook", $ask) or exit 1;
+            ' "$ask" "$$" "$PPID" "$sid"; then
+                since=$(date +%s); n=0
+                while [ ! -f "$ans" ]; do
+                    sleep 0.25; n=$((n + 1))
+                    [ $((n % 4)) -eq 0 ] || continue
+                    jarvis_on && [ $(($(date +%s) - since)) -lt 590 ] || break
+                done
+                rm -f "$ask"
+                block=
+                [ -f "$ans" ] && block=$(/usr/bin/perl -MJSON::PP -e '
+                    local $/; my $s = <STDIN> // ""; utf8::decode($s); $s =~ s/\\s+$//;
+                    print JSON::PP->new->utf8->canonical->encode(
+                        { decision => "block", reason => $s }) if length $s;
+                ' < "$ans")
+                rm -f "$ans"
+                # The turn goes on, so there is nothing to relaunch.
+                [ -n "$block" ] && { printf '%s\\n' "$block"; exit 0; }
+            fi
+            trap - HUP INT TERM ;;
+        esac
+    fi
+
     [ "$state" = "ready" ] && relaunch
     exit 0
 
