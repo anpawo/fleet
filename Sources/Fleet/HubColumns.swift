@@ -767,7 +767,10 @@ struct HubColumn<Content: View>: View {
     }
 
     var body: some View {
-        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset) {
+        // The verdict halfway between the name and the count, not on the bar's centre, which
+        // the name's chip pulls it toward.
+        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset,
+              middleBetween: healthy != nil) {
             if let healthy {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
@@ -1397,7 +1400,8 @@ struct EpitechColumn: View {
 
     /// The card under the pointer, which is the one ⌘ would open. On the column rather than
     /// the card, for the same reason the todo column keeps it here: a card is rebuilt every tick.
-    @State private var hovered: String?
+    /// Seeded from `FLEET_HOVER`, like CRONS', so a render can show one card's details.
+    @State private var hovered: String? = ProcessInfo.processInfo.environment["FLEET_HOVER"]
 
     var body: some View {
         HubColumn(title: "EPITECH",
@@ -1442,11 +1446,11 @@ struct EpitechColumn: View {
             // to open, and last what is banked — it asks nothing more of you.
             let loose = plan.todo.filter { line in !snapshot.modules.contains { $0.code == line.id } }
             LazyVGrid(columns: Self.pair, spacing: 8) {
-                ForEach(loose.filter(\.started)) { CreditCard(line: $0, banked: false, detailed: commandHeld) }
+                ForEach(loose.filter(\.started)) { creditCard($0, banked: false) }
                 moduleCards(snapshot.modules.filter(\.started))
-                ForEach(loose.filter { !$0.started }) { CreditCard(line: $0, banked: false, detailed: commandHeld) }
+                ForEach(loose.filter { !$0.started }) { creditCard($0, banked: false) }
                 moduleCards(snapshot.modules.filter { !$0.started })
-                ForEach(plan.done) { CreditCard(line: $0, banked: true, detailed: commandHeld) }
+                ForEach(plan.done) { creditCard($0, banked: true) }
             }
         } else if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
             LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot.modules) }
@@ -1457,10 +1461,16 @@ struct EpitechColumn: View {
 
     private func moduleCards(_ modules: [Epitech.Module]) -> some View {
         ForEach(modules) { module in
-            ModuleCard(module: module, lit: lit(module.id), detailed: commandHeld)
+            ModuleCard(module: module, lit: lit(module.id), detailed: lit(module.id))
                 .epitechOpen(commandHeld: commandHeld, url: module.url,
                              onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
         }
+    }
+
+    /// The details of a card's name show on that card alone, ⌘ held and the pointer on it.
+    private func creditCard(_ line: Epitech.CreditLine, banked: Bool) -> some View {
+        CreditCard(line: line, banked: banked, detailed: lit(line.id))
+            .onHover { hover(line.id, $0) }
     }
 
     private func lit(_ id: String) -> Bool { commandHeld && hovered == id }
@@ -1533,8 +1543,8 @@ struct CreditCard: View {
 }
 
 /// A card's name in the EPITECH block. At rest only what comes before " - ", so "EIP Seminar"
-/// holds on its line; the rest ("Open Source…", "AWS") shows while ⌘ is held, wrapping if it
-/// must. A white dot before it says the module is under way.
+/// holds on its line; the rest ("Open Source…", "AWS") shows on the card under the pointer
+/// while ⌘ is held, wrapping if it must. A white dot before it says the module is under way.
 struct LedgerTitle: View {
     let name: String
     var ongoing = false
@@ -1638,7 +1648,7 @@ struct ModuleCard: View {
     let module: Epitech.Module
     /// ⌘ is down and the pointer is here: this is the card that would open.
     let lit: Bool
-    /// ⌘ is down: the whole name, not only what comes before " - ".
+    /// ⌘ is down and the pointer is here: the whole name, not only what comes before " - ".
     let detailed: Bool
 
     private static let day: DateFormatter = {
