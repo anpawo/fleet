@@ -96,7 +96,9 @@ enum Launchd {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let live = status()
         let ports = listening(live.values.compactMap(\.pid))
+        let now = Date(), wake = wakeTime()
         let ages = elapsed(live.filter { mine.contains(where: $0.key.hasPrefix) }.values.compactMap(\.pid))
+            .mapValues { awake($0, now: now, wake: wake) }
         return names.compactMap { file -> Job? in
             guard file.hasSuffix(".plist") else { return nil }
             let label = String(file.dropLast(6))
@@ -390,6 +392,22 @@ enum Launchd {
             out[pid] = age
         }
         return out
+    }
+
+    /// A run's age counted from the last wake at most. etime keeps counting while the lid is
+    /// shut, so a routine asleep mid-run all night woke up "hung" — and a run that really was
+    /// stuck before the sleep is only called so one allowance after the wake.
+    static func awake(_ etime: TimeInterval, now: Date, wake: Date?) -> TimeInterval {
+        guard let wake else { return etime }
+        return min(etime, now.timeIntervalSince(wake))
+    }
+
+    /// `kern.waketime`, or nil when the Mac has not slept since boot (it reads 0 then).
+    static func wakeTime() -> Date? {
+        var time = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.waketime", &time, &size, nil, 0) == 0, time.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1e6)
     }
 
     /// `ps`'s etime, `[[dd-]hh:]mm:ss`, in seconds.

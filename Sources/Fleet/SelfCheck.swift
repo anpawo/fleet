@@ -83,6 +83,15 @@ enum SelfCheck {
         expect(Launchd.hung(Launchd.parseElapsed("04:00"), ["StartInterval": 60]), nil,
                "the mounts running 4 min are slow, not hung")
         expect(Launchd.hung(nil, v3), nil, "a routine between two runs is not hung")
+
+        let now = Date()
+        expect(Launchd.awake(3 * 3600, now: now, wake: now - 600), 600,
+               "a run 3h old that slept through the night is 10 min awake")
+        expect(Launchd.hung(Launchd.awake(3 * 3600, now: now, wake: now - 600), v3), nil,
+               "and recon-v3 is not hung for it")
+        expect(Launchd.awake(1800, now: now, wake: now - 7200), 1800, "a run started after the wake keeps its etime")
+        expect(Launchd.awake(1800, now: now, wake: nil), 1800, "no wake since boot: etime as is")
+        expect(Launchd.wakeTime().map { $0 < now ? 1 : 0 } ?? 1, 1, "kern.waketime reads as a past date or nothing")
     }
 
     /// What a plist and one `launchctl list` line make of a card and of ALERT.
