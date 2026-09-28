@@ -459,7 +459,7 @@ final class Jarvis {
         if current?.key == item.key {
             entry["live"] = live
             entry["voice"] = voiceResult
-            entry["shown_s"] = (Date().timeIntervalSince(shownAt) * 10).rounded() / 10
+            entry["shown_ms"] = Int(Date().timeIntervalSince(shownAt) * 1000)
         }
         guard var data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]) else { return }
         data.append(0x0A)
