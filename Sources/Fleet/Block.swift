@@ -48,6 +48,8 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
                         .tracking(tracking)
                 }
                 .foregroundStyle(titleColor)
+                // Never squeezed: ALERT's chips take the rest of the line.
+                .fixedSize()
                 // Opaque on the line, which a translucent chip lets run through the words.
                 .titleGround(titleOnLine ? 1 : 0.55)
                 Spacer(minLength: 3)

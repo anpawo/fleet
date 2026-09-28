@@ -1680,20 +1680,19 @@ struct AlertsBlock: View {
     ].randomElement() ?? "epitech scan"
 
     /// Built like every other block on the panel: the name on its chip at the top left, the
-    /// frame the width of what it heads. What is wrong goes in the middle of the line, on a
-    /// ground of its own — the same place, and the same treatment, as the state legend on the
-    /// fleet's heading right under it. A sentence pinned to the left would sit under the name
-    /// and read as part of it.
+    /// frame the width of what it heads. What is wrong goes on the name's line, right after it,
+    /// each on a ground of its own. Not centred: a lone chip in the middle moved with every
+    /// chip added, and the eye had to look for it.
     var body: some View {
         // The mark on the block's own name: what it says is that this block is a warning,
         // whatever is broken.
         Block(title: "ALERT", icon: "exclamationmark.triangle.fill",
               titleColor: SessionState.running.tint,
               tint: SessionState.running.tint,
-              fill: SessionState.running.tint.darkened(0.58)) {
-            // One chip per thing that is broken, centred on the bar like the fleet's key under
-            // it: the names are what the bar is for. 22 rather than 8: a chip's ground hangs
-            // 7pt past its words either side.
+              fill: SessionState.running.tint.darkened(0.58),
+              middleBetween: true) {
+            // One chip per thing that is broken. 22 rather than 8: a chip's ground hangs 7pt past
+            // its words either side. The 3 makes the name's own gap to the first chip 22 too.
             HStack(spacing: 22) {
                 ForEach(Self.alerts(hub, crons: crons), id: \.self) { name in
                     Text(name)
@@ -1703,6 +1702,9 @@ struct AlertsBlock: View {
                         .titleGround()
                 }
             }
+            .padding(.leading, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
         } trailing: {
             EmptyView()
         } content: {
