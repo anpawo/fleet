@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>38</dd></div>
-    <div class="is-open"><dt>Ouverts</dt><dd>8</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>42</dd></div>
+    <div class="is-open"><dt>Ouverts</dt><dd>4</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">60f9a19</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">8c2cd08</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,138 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">main · --render</span>
+        <span class="chip chip-sha">8c2cd08</span>
+      </div>
+      <h3>Un rendu hors écran sur deux colonnes vides</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>fleet --render</code> écrit parfois une image où les deux colonnes disent encore
+          «&nbsp;Loading…&nbsp;», alors que le processus n'a vécu que 1,3&nbsp;s — bien moins que
+          les 8&nbsp;s que la boucle d'attente est censée tenir.
+        </dd>
+        <dt>Conséquence</dt>
+        <dd>
+          Aucune sur l'app&nbsp;: le panneau réel ne rend pas hors écran, il affiche
+          «&nbsp;Loading…&nbsp;» une seconde puis se remplit tout seul quand la réponse arrive.
+          Le drapeau <code>--render</code> est un outil de mise en page, et il ment une fois sur
+          cinq.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non reproductible sous instrumentation&nbsp;: avec des <code>NSLog</code> dans la
+          boucle, dix tirs d'affilée montrent <code>configured=true</code>, puis
+          <code>loaded=true / 11 todos</code> en 0,5&nbsp;s, et l'image est bonne. Les conditions
+          de sortie de boucle sont pourtant les seules qui existent. Hypothèse non vérifiée&nbsp;:
+          une course sur la lecture Keychain la toute première fois qu'un binaire fraîchement
+          lié la demande. Contournement&nbsp;: relancer la commande.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La cause était la seule sortie anticipée possible&nbsp;: un premier fetch Firestore en
+          échec (la course Keychain soupçonnée passe par là) posait <code>failure</code> et
+          terminait l'attente. L'attente réessaie désormais tant qu'aucun fetch n'est en vol, et
+          une colonne vide dit «&nbsp;Offline&nbsp;» après un échec au lieu de «&nbsp;Loading…&nbsp;»
+          — ce que l'app réelle affichait aussi jusqu'au rafraîchissement suivant.
+        </dd>
+        <dt>Mesure</dt>
+        <dd><pre>5 rendus d'affilée : 0 échec de fetch, colonnes remplies, MAIL à sa hauteur
+--selftest all ok · test-stop-hook all good · test-epitech all good</pre></dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Clos</span>
+        <span class="chip chip-where">TCC · Fleet</span>
+      </div>
+      <h3>Les titres de fenêtres remplacés par le nom de l'app</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>fleet --windows</code> affiche <code>Terminal</code>, <code>Firefox</code>,
+          <code>Code</code> au lieu des vrais titres.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          macOS masque les titres de fenêtres aux processus sans autorisation d'enregistrement
+          d'écran. La base TCC de l'utilisateur ne contient aucune entrée
+          <code>kTCCServiceScreenCapture</code> pour <code>com.mr.fleet</code>.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Non corrigé, et sans effet sur les tuiles — leurs titres viennent des transcripts, pas
+          des fenêtres. Seul le débogage en souffre. Correctif connu&nbsp;: accorder
+          «&nbsp;Enregistrement de l'écran&nbsp;» à Fleet.
+        </dd>
+        <dt>Clôture</dt>
+        <dd>
+          Mesuré le 28-09&nbsp;: <code>fleet --windows com.mitchellh.ghostty</code> rend les vrais
+          titres («&nbsp;◐ Fleet title padding&nbsp;», «&nbsp;✳ Epitech à faire&nbsp;»…) par
+          l'Accessibility API, que Fleet a. L'enregistrement de l'écran n'est plus nécessaire.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Clos</span>
+        <span class="chip chip-where">Spaces · route « vrai Space »</span>
+      </div>
+      <h3>Des bureaux vides laissés derrière</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Un Space créé par le <code>+</code> de Mission Control survit à tout&nbsp;: si le
+          terminal n'arrive pas, le bureau vide reste. Mes essais en ont laissé plusieurs.
+        </dd>
+        <dt>État</dt>
+        <dd>
+          Inhérent à cette route, qui n'est plus celle du bouton — elle ne subsiste que sous
+          <code>--new-desktop --spaces-bar</code>. Le <code>+</code> actuel passe par le plein
+          écran, dont le bureau meurt avec la fenêtre&nbsp;: rien à ramasser.
+        </dd>
+        <dt>Clôture</dt>
+        <dd>
+          Pas un défaut&nbsp;: cette route est celle des raccourcis «&nbsp;New desktop&nbsp;» et
+          de retrait de bureau, et un bureau vide est ce que le premier demande. Le second le
+          retire. Les bureaux restés étaient ceux des essais.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Clos</span>
+        <span class="chip chip-where">Terminal.app</span>
+      </div>
+      <h3>Six instances de Terminal tournent en parallèle</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Six processus <code>Terminal.app</code> distincts, dont plusieurs sans aucune fenêtre.
+        </dd>
+        <dt>Conséquence</dt>
+        <dd>
+          Fleet s'en sort — il parcourt toutes les instances plutôt que la première. Mais
+          <code>tell process "Terminal"</code> de System Events tombe sur une instance sans
+          fenêtre, ce qui donne un faux négatif convaincant et m'a fait diagnostiquer une panne
+          générale d'Accessibility qui n'en était pas une.
+        </dd>
+        <dt>État</dt>
+        <dd>Origine non établie. Rien à corriger dans Fleet tant que la cause est dehors.</dd>
+        <dt>Clôture</dt>
+        <dd>
+          Mesuré le 28-09&nbsp;: <code>pgrep -x Terminal</code> → 0. Les sessions tournent dans
+          Ghostty&nbsp;; Terminal.app n'est plus dans le chemin de Fleet.
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
@@ -1700,37 +1832,6 @@ AXRaise(AXWindows[0])  → <b>err=0</b>   la fenêtre traverse le bureau</pre>
       <p class="section-note">Constatés, non résolus. Certains ne sont pas dans Fleet.</p>
     </div>
 
-    <article class="entry">
-      <div class="entry-head">
-        <span class="chip chip-open">Ouvert</span>
-        <span class="chip chip-where">main · --render</span>
-      </div>
-      <h3>Un rendu hors écran sur deux colonnes vides</h3>
-      <dl class="facts">
-        <dt>Symptôme</dt>
-        <dd>
-          <code>fleet --render</code> écrit parfois une image où les deux colonnes disent encore
-          «&nbsp;Loading…&nbsp;», alors que le processus n'a vécu que 1,3&nbsp;s — bien moins que
-          les 8&nbsp;s que la boucle d'attente est censée tenir.
-        </dd>
-        <dt>Conséquence</dt>
-        <dd>
-          Aucune sur l'app&nbsp;: le panneau réel ne rend pas hors écran, il affiche
-          «&nbsp;Loading…&nbsp;» une seconde puis se remplit tout seul quand la réponse arrive.
-          Le drapeau <code>--render</code> est un outil de mise en page, et il ment une fois sur
-          cinq.
-        </dd>
-        <dt>État</dt>
-        <dd>
-          Non reproductible sous instrumentation&nbsp;: avec des <code>NSLog</code> dans la
-          boucle, dix tirs d'affilée montrent <code>configured=true</code>, puis
-          <code>loaded=true / 11 todos</code> en 0,5&nbsp;s, et l'image est bonne. Les conditions
-          de sortie de boucle sont pourtant les seules qui existent. Hypothèse non vérifiée&nbsp;:
-          une course sur la lecture Keychain la toute première fois qu'un binaire fraîchement
-          lié la demande. Contournement&nbsp;: relancer la commande.
-        </dd>
-      </dl>
-    </article>
 
     <article class="entry">
       <div class="entry-head">
@@ -1820,76 +1921,8 @@ TextEdit tout neuf      : <b>1 fenêtre selon TextEdit, 0 selon AX</b></pre>
       </dl>
     </article>
 
-    <article class="entry">
-      <div class="entry-head">
-        <span class="chip chip-open">Ouvert</span>
-        <span class="chip chip-where">TCC · Fleet</span>
-      </div>
-      <h3>Les titres de fenêtres remplacés par le nom de l'app</h3>
-      <dl class="facts">
-        <dt>Symptôme</dt>
-        <dd>
-          <code>fleet --windows</code> affiche <code>Terminal</code>, <code>Firefox</code>,
-          <code>Code</code> au lieu des vrais titres.
-        </dd>
-        <dt>Cause</dt>
-        <dd>
-          macOS masque les titres de fenêtres aux processus sans autorisation d'enregistrement
-          d'écran. La base TCC de l'utilisateur ne contient aucune entrée
-          <code>kTCCServiceScreenCapture</code> pour <code>com.mr.fleet</code>.
-        </dd>
-        <dt>État</dt>
-        <dd>
-          Non corrigé, et sans effet sur les tuiles — leurs titres viennent des transcripts, pas
-          des fenêtres. Seul le débogage en souffre. Correctif connu&nbsp;: accorder
-          «&nbsp;Enregistrement de l'écran&nbsp;» à Fleet.
-        </dd>
-      </dl>
-    </article>
 
-    <article class="entry">
-      <div class="entry-head">
-        <span class="chip chip-open">Ouvert</span>
-        <span class="chip chip-where">Spaces · route « vrai Space »</span>
-      </div>
-      <h3>Des bureaux vides laissés derrière</h3>
-      <dl class="facts">
-        <dt>Symptôme</dt>
-        <dd>
-          Un Space créé par le <code>+</code> de Mission Control survit à tout&nbsp;: si le
-          terminal n'arrive pas, le bureau vide reste. Mes essais en ont laissé plusieurs.
-        </dd>
-        <dt>État</dt>
-        <dd>
-          Inhérent à cette route, qui n'est plus celle du bouton — elle ne subsiste que sous
-          <code>--new-desktop --spaces-bar</code>. Le <code>+</code> actuel passe par le plein
-          écran, dont le bureau meurt avec la fenêtre&nbsp;: rien à ramasser.
-        </dd>
-      </dl>
-    </article>
 
-    <article class="entry">
-      <div class="entry-head">
-        <span class="chip chip-open">Ouvert</span>
-        <span class="chip chip-where">Terminal.app</span>
-      </div>
-      <h3>Six instances de Terminal tournent en parallèle</h3>
-      <dl class="facts">
-        <dt>Symptôme</dt>
-        <dd>
-          Six processus <code>Terminal.app</code> distincts, dont plusieurs sans aucune fenêtre.
-        </dd>
-        <dt>Conséquence</dt>
-        <dd>
-          Fleet s'en sort — il parcourt toutes les instances plutôt que la première. Mais
-          <code>tell process "Terminal"</code> de System Events tombe sur une instance sans
-          fenêtre, ce qui donne un faux négatif convaincant et m'a fait diagnostiquer une panne
-          générale d'Accessibility qui n'en était pas une.
-        </dd>
-        <dt>État</dt>
-        <dd>Origine non établie. Rien à corriger dans Fleet tant que la cause est dehors.</dd>
-      </dl>
-    </article>
 
     <article class="entry">
       <div class="entry-head">
