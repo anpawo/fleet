@@ -507,7 +507,9 @@ struct OverlayView: View {
     /// block at the top are two different places in the view tree, so the first was removed and
     /// the second inserted — the card blinked out of the grid and the block arrived from above.
     private var grid: some View {
-        let hovered = cells.firstIndex { $0.id == "pid:\(hoveredTile ?? -1)" }
+        // The reply waits for ⌘, like every other detail on the panel: a plain pass of the
+        // pointer over the grid must not shove its rows around.
+        let hovered = controller.commandHeld ? cells.firstIndex { $0.id == "pid:\(hoveredTile ?? -1)" } : nil
         let reply: CGFloat = hovered.map { i -> CGFloat in
             guard case let .session(session, _) = cells[i] else { return 0 }
             return SessionTile.replyHeight(session.lastReply)
@@ -533,7 +535,9 @@ struct OverlayView: View {
                                   },
                                   onActivate: { controller.activate($0) })
                     case let .session(session, heading):
-                        SessionTile(session: session, heading: heading, onHover: { on in
+                        SessionTile(session: session, heading: heading,
+                                    expanded: controller.commandHeld && hoveredTile == session.id,
+                                    onHover: { on in
                             withAnimation(.easeOut(duration: 0.18)) {
                                 if on { hoveredTile = session.id } else if hoveredTile == session.id { hoveredTile = nil }
                             }
@@ -1136,6 +1140,7 @@ struct SessionTile: View {
     /// corner, which leaves the pills the whole line.
     var grouped = false
     /// Tells the grid the pointer is on this card, so it can make room for the reply.
+    var expanded = false
     var onHover: (Bool) -> Void = { _ in }
     let onSelect: () -> Void
 
@@ -1221,7 +1226,7 @@ struct SessionTile: View {
                 .padding(11)
             }
             .frame(height: Self.height, alignment: .top)
-            if hovering, let reply = session.lastReply, !reply.isEmpty {
+            if expanded, let reply = session.lastReply, !reply.isEmpty {
                 ScrollView([.horizontal, .vertical]) {
                     Text(reply)
                         .font(.system(size: 10.5, design: .monospaced))
