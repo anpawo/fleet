@@ -233,9 +233,9 @@ struct OverlayView: View {
                                 commandHeld: controller.commandHeld)
                     ReelBlock(hub: controller.hub, commandHeld: controller.commandHeld,
                               limit: Self.columnHeight / 3)
-                    // What is left of the column once the memory has had its line, three
-                    // sevenths to the mail and the rest to the school, which is prioritized:
-                    // an empty MAIL folds to its heading and the school takes its room. Both
+                    // What is left of the column once the memory has had its line: the mail
+                    // as tall as its mails, three sevenths at most, and the rest to the school,
+                    // which is prioritized — a short or empty MAIL leaves it the room. Both
                     // scroll inside their share, so neither can push the other off the bottom.
                     GeometryReader { space in
                         let free = space.size.height - Self.blockGap
@@ -243,8 +243,8 @@ struct OverlayView: View {
                         VStack(alignment: .leading, spacing: Self.blockGap) {
                             MailColumn(hub: hub,
                                        commandHeld: controller.commandHeld,
-                                       scrolling: !eagerLayout)
-                                .frame(height: hub.mailEmpty ? nil : max(0, free * 3 / 7))
+                                       scrolling: !eagerLayout,
+                                       limit: max(0, free * 3 / 7))
                             EpitechColumn(hub: hub,
                                           commandHeld: controller.commandHeld,
                                           onDismiss: { controller.hidePanel() },
@@ -969,7 +969,7 @@ struct GroupTile: View {
                         // these sessions have in common, and a row of cards all saying
                         // "portfolio" is a row you cannot choose from.
                         SessionTile(session: session, heading: session.label ?? session.topic,
-                                    main: session.id == head?.id) {
+                                    main: session.id == head?.id, grouped: true) {
                             onActivate(session)
                         }
                         .frame(width: inner)
@@ -1116,6 +1116,9 @@ struct SessionTile: View {
     var heading: String?
     /// Whether this is the group's head, said over the name.
     var main = false
+    /// Inside an unfolded group, whose heading already names the directory: no folder in the
+    /// corner, which leaves the pills the whole line.
+    var grouped = false
     let onSelect: () -> Void
 
     /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
@@ -1161,11 +1164,12 @@ struct SessionTile: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 // Pills side by side while the row fits, stacked in the corner when it
-                // doesn't: a long workflow pill beside a sub-agent count used to shrink one
-                // and break the other over two lines, and eat the folder name.
+                // doesn't — never shrunk: every pill is the same size on every tile. A long
+                // workflow pill beside a sub-agent count used to shrink one and break the
+                // other over two lines, and eat the folder name.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 7) {
-                        folder
+                        if !grouped { folder }
                         Spacer(minLength: 6)
                         // Served first and at full size. The folder's frame measures at its
                         // text but lays out at its 110pt cap, so this line passed the fit and
@@ -1175,9 +1179,12 @@ struct SessionTile: View {
                             .layoutPriority(1)
                     }
                     HStack(alignment: .top, spacing: 7) {
-                        folder
+                        if !grouped { folder }
                         Spacer(minLength: 6)
+                        // First served here too: the folder's 110pt cap cut BACKGROUND-TASK
+                        // to "BACKGROU…SK" beside it (28-09). The folder truncates instead.
                         VStack(alignment: .trailing, spacing: 4) { subagentPill; statePill }
+                            .layoutPriority(1)
                     }
                 }
                 .padding(11)
@@ -1366,10 +1373,10 @@ struct SessionTile: View {
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a
-            // header short of room did to it. Nor wider than the card: a workflow's progress
-            // past the hour ran it past both edges, so it shrinks instead.
+            // header short of room did to it. Never shrunk either (asked 2026-09-28): a
+            // workflow's progress too long even alone on its line is cut, not scaled.
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .truncationMode(.middle)
             .foregroundStyle(session.state.tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)

@@ -23,6 +23,12 @@ struct MailColumn: View {
 
     /// What fits beside three rows of tiles now that a card is two lines rather than four.
     private static let maxItems = 10
+    /// The tallest the block may be: it is as tall as its mails, up to this, and scrolls past it.
+    var limit: CGFloat = .infinity
+    /// What the mails actually need, measured — see `CronColumn.natural`.
+    @State private var natural: CGFloat = 0
+    /// The heading line, the gap under it and the frame's padding — see `CronColumn.chrome`.
+    private static let chrome: CGFloat = 56
 
     var body: some View {
         // Named for what it holds, like TODO beside it — not for which pile of it you happen
@@ -34,27 +40,32 @@ struct MailColumn: View {
                   showsZero: true,
                   tint: BlockTint.mail,
                   fill: BlockTint.mail.darkened(0.36),
-                  minRows: 3,
-                  fills: true,
                   collapsed: hub.mailEmpty) {
-            // The block is a third of the column now, whatever it holds, so what does not fit
-            // scrolls rather than running down over the school underneath it.
+            // As tall as its mails (asked 2026-09-28: one mail sat on three rows of empty
+            // block), up to `limit`; past it the list scrolls rather than running down over
+            // the school underneath, which takes whatever the mail leaves.
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) { rows }
+                        .background(
+                            GeometryReader { inside in
+                                Color.clear.onAppear { natural = inside.size.height }
+                                    .onChange(of: inside.size.height) { _, height in
+                                        withAnimation(TodoColumn.unroll) { natural = height }
+                                    }
+                            }
+                        )
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(maxHeight: min(natural > 0 ? natural : .infinity,
+                                      max(40, limit - Self.chrome)), alignment: .top)
             } else {
-                // Same bound as the scroll, without the scroll. `maxHeight: .infinity` does not
-                // shrink a stack already taller than its slot, so the height has to be read and
-                // imposed: a list longer than its block drew straight over the one below.
-                GeometryReader { slot in
-                    VStack(spacing: 8) { rows }
-                        .frame(width: slot.size.width, height: slot.size.height, alignment: .top)
-                        .clipped()
-                }
+                // Same bound as the scroll, without the scroll: a list longer than its block
+                // drew straight over the one below.
+                VStack(spacing: 8) { rows }
+                    .frame(maxHeight: max(40, limit - Self.chrome), alignment: .top)
+                    .clipped()
             }
         }
         // ⌘ enfoncée alors que le pointeur est déjà sur une carte : le changement vient du
