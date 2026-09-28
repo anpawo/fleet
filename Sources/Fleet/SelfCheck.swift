@@ -149,7 +149,8 @@ enum SelfCheck {
         func remembers(_ id: String) -> Bool { UserDefaults.standard.dictionary(forKey: key)?[id] != nil }
         let now = Date()
         var out = store.repair([job("selftest.a", failing: true), job("selftest.b", deferred: true)], now: now)
-        expect(out[0].repairing && remembers("selftest.a"), true, "a failed routine is started again, and ALERT waits")
+        expect(out[0].repairing && remembers("selftest.a") && kicked == ["selftest.a"], true,
+               "a failed routine is started again, and ALERT waits")
         expect(remembers("selftest.b"), false, "a deferred one is not started again")
         _ = store.repair([job("selftest.a", enabled: false)], now: now)
         expect(remembers("selftest.a"), true, "launchd listing nothing does not forget the retry")
@@ -157,8 +158,13 @@ enum SelfCheck {
         expect(out[0].repairing, false, "the retry failed too: not started a third time, ALERT names it")
         out = store.repair([job("selftest.a", failing: true, busy: true, hung: 7200)], now: now + 120)
         expect(out[0].repairing, false, "a retry that hangs is not waited for")
-        _ = store.repair([job("selftest.e", failing: true, busy: true, hung: 7200)], now: now)
-        expect(remembers("selftest.e"), false, "a hung run is never started again")
+        _ = store.repair([job("selftest.e", busy: true, hung: 7200)], now: now)
+        expect(remembers("selftest.e"), true, "a hung run spends the retry")
+        _ = store.repair([job("selftest.e", busy: true, hung: 7210)], now: now + 10)
+        expect(remembers("selftest.e"), true, "and keeps it spent while it hangs on an exit 0")
+        out = store.repair([job("selftest.e", failing: true)], now: now + 20)
+        expect(!out[0].repairing && !kicked.contains("selftest.e"), true,
+               "killed by hand, it is named in ALERT, not started again")
         _ = store.repair([job("selftest.a")], now: now + 180)
         expect(remembers("selftest.a"), false, "a clean run forgets the retry")
         _ = store.repair([job("selftest.c", failing: true)], now: now)

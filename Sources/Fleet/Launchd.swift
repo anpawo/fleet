@@ -492,11 +492,15 @@ final class LaunchdStore: ObservableObject {
         let out = jobs.map { job -> Launchd.Job in
             var job = job
             guard job.triggered else { return job }
+            // A hung run spends the retry, a minute old so ALERT does not wait on it: killed by
+            // hand it ends on -15, and a retry would put it straight back on the dead mount it
+            // was stuck on.
+            if job.hung != nil, retried[job.id] == nil { retried[job.id] = now.timeIntervalSince1970 - 60 }
             guard job.failing else {
                 // Only on launchd's word. A job it does not list — booted out for a reinstall,
                 // or every job when `launchctl list` itself failed — has not passed, and
                 // forgetting its retry would start it a second time once it is back.
-                if job.enabled { retried[job.id] = nil }
+                if job.enabled && job.hung == nil { retried[job.id] = nil }
                 return job
             }
             if let at = retried[job.id] {
