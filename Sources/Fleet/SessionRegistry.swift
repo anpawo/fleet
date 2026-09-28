@@ -94,6 +94,15 @@ final class SessionRegistry {
         for p in procs { byDir[p.cwd, default: []].append(p) }
 
         for (cwd, group) in byDir {
+            // Nothing to resolve when every process is named by its hook or keeps a binding
+            // whose file is still there: listing and stat-ing the directory's every transcript
+            // (127 in ~) on each refresh was most of a tick (28-09 sample).
+            let dir = TranscriptStore.projectDirectory(for: cwd) + "/"
+            guard group.contains(where: { proc in
+                !told.contains(proc.pid) && !(bindings[proc.pid].map {
+                    $0.hasPrefix(dir) && FileManager.default.fileExists(atPath: $0)
+                } ?? false)
+            }) else { continue }
             let files = TranscriptStore.transcripts(for: cwd)
             guard !files.isEmpty else { continue }
 

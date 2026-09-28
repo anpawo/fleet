@@ -105,6 +105,21 @@ enum ProcessScanner {
         return false
     }
 
+    /// `devname` walks /dev for its answer, and it was a third of a refresh (28-09 sample,
+    /// every session, every tick). A device number names the same tty for as long as it exists.
+    private static let ttyLock = NSLock()
+    nonisolated(unsafe) private static var ttyNames: [UInt32: String] = [:]
+
+    private static func ttyName(_ dev: UInt32) -> String? {
+        ttyLock.lock()
+        defer { ttyLock.unlock() }
+        if let known = ttyNames[dev] { return known }
+        guard let d = devname(dev_t(dev), S_IFCHR) else { return nil }
+        let name = "/dev/" + String(cString: d)
+        ttyNames[dev] = name
+        return name
+    }
+
     static func scan() -> [ClaudeProcess] {
         var out: [ClaudeProcess] = []
         for pid in allPIDs() where pid > 0 {
@@ -119,9 +134,7 @@ enum ProcessScanner {
 
             // Required, not decorative: no terminal means this is not a session we can show
             // or raise. See `controllingTTY`.
-            guard bsd.e_tdev != UInt32.max,
-                  let d = devname(dev_t(bsd.e_tdev), S_IFCHR) else { continue }
-            let tty = "/dev/" + String(cString: d)
+            guard bsd.e_tdev != UInt32.max, let tty = ttyName(bsd.e_tdev) else { continue }
 
             out.append(ClaudeProcess(
                 pid: pid,

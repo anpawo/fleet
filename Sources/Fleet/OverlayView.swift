@@ -1088,6 +1088,23 @@ struct GroupTile: View {
     }
 }
 
+/// The head's name lit in the group's own colour. On that card only: at opacity 0 on every other
+/// one, the two shadows were still two offscreen passes per tile per frame (28-09: 18 of the
+/// panel's 26 shadows without a path, tick 33 ms).
+struct HeadGlow: ViewModifier {
+    let on: Bool
+
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .shadow(color: GroupTile.tint.opacity(0.55), radius: 10)
+                .shadow(color: GroupTile.tint.opacity(0.35), radius: 22)
+        } else {
+            content
+        }
+    }
+}
+
 /// One session, read at a glance: the name, the state border, and — only while it is
 /// working — the single step in flight. Everything else is a distraction at this size;
 /// `--scan` is there when you want the details.
@@ -1206,9 +1223,7 @@ struct SessionTile: View {
         Text(heading ?? session.displayName)
             .font(.system(size: heading == nil ? 31 : 22, weight: .semibold))
             .foregroundStyle(.white)
-            // The head's name lit in the group's own colour.
-            .shadow(color: GroupTile.tint.opacity(main ? 0.55 : 0), radius: 10)
-            .shadow(color: GroupTile.tint.opacity(main ? 0.35 : 0), radius: 22)
+            .modifier(HeadGlow(on: main))
             .lineLimit(heading == nil ? 1 : 2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.6)
