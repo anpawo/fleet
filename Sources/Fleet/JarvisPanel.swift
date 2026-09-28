@@ -23,16 +23,17 @@ final class JarvisModel: ObservableObject {
     // content 7.5 in, a 22 pt divider 10 pt after a group and 11.5 before the next, 8.5 pt after
     // the last item, 12 pt corners, 8 pt on an item, 15 pt text, 12 pt for the small print.
     static let barHeight: CGFloat = 53, closeX: CGFloat = 14.5, close: CGFloat = 17, firstX: CGFloat = 43.75
-    static let item: CGFloat = 36, itemGap: CGFloat = 6, inset: CGFloat = 7.5, badge: CGFloat = 17
+    static let item: CGFloat = 36, itemGap: CGFloat = 6, inset: CGFloat = 7.5, badge: CGFloat = 20
     static let divBefore: CGFloat = 10, divAfter: CGFloat = 11.5, trail: CGFloat = 8.5
     /// Clear space over the orb, and between it and the bar: the bar's own 24 pt off the screen
     /// edge and the 12 pt its hints float above it.
     static let top: CGFloat = 24, gap: CGFloat = 12, orb: CGFloat = 36
     static let labelFont = NSFont.systemFont(ofSize: 15)
     static let keywordFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    static let projectFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let failureFont = NSFont.systemFont(ofSize: 12)
     static let other = "Something else…"
+    /// Fleet's sessions panel wash (OverlayView.tintOpacity); the text is always drawn for dark.
+    static let fill = Color.black.opacity(0.8)
     private static let chrome = inset + badge + itemGap + inset
 
     private static func measure(_ s: String, _ font: NSFont) -> CGFloat {
@@ -52,13 +53,10 @@ final class JarvisModel: ObservableObject {
         return .infinity
     }
 
-    /// The failure takes two lines of the whole width; the project and the line one each.
-    var headerWidth: CGFloat {
-        if failure != nil { return 240 }
-        return min(max(Self.measure(project, Self.projectFont), Self.measure(line, Self.labelFont)), 240)
-    }
+    /// Only a failure takes a header, on two lines: the line itself is spoken, not shown.
+    static let headerWidth: CGFloat = 240
     private var chromeWidth: CGFloat {
-        Self.firstX + headerWidth + Self.divBefore + 1 + Self.divAfter + Self.trail
+        Self.firstX + (failure != nil ? Self.headerWidth + Self.divBefore + 1 + Self.divAfter : 0) + Self.trail
     }
     private func text(_ o: JarvisOption) -> CGFloat {
         max(Self.measure(o.label, Self.labelFont), Self.measure(o.keyword, Self.keywordFont))
@@ -178,6 +176,7 @@ final class JarvisPanel {
     private lazy var window: JarvisWindow = {
         let w = JarvisWindow()
         w.contentView = JarvisHost(rootView: JarvisView(model: model))
+        w.appearance = NSAppearance(named: .darkAqua)
         return w
     }()
     private var hiding: DispatchWorkItem?
@@ -245,8 +244,6 @@ final class JarvisPanel {
     // MARK: - Render
 
     /// `--render-jarvis <dir>`: every state as a PNG, drawn offscreen under a drawn notch.
-    /// A material cannot be captured offscreen — it samples what is behind the window — so
-    /// these draw the bar on the window background colour it stands in for.
     static func render(to dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let real = NSScreen.screens.lazy.map { notch(of: $0) }.first { $0.notched }
@@ -296,7 +293,7 @@ final class JarvisPanel {
                     }
                 }
                 .frame(height: bar)
-                JarvisView(model: m, solid: true)
+                JarvisView(model: m)
                 Spacer(minLength: 0)
             }
             .frame(width: size.width, height: size.height)
@@ -324,7 +321,6 @@ final class JarvisPanel {
 
 struct JarvisView: View {
     @ObservedObject var model: JarvisModel
-    var solid = false
 
     private static let enter = Animation.spring(response: 0.30, dampingFraction: 0.85)
     private static let leave = Animation.spring(response: 0.22, dampingFraction: 1)
@@ -334,7 +330,7 @@ struct JarvisView: View {
             OrbView(orb: model.orb, running: model.shown)
                 .overlay(alignment: .leading) {
                     if model.queued > 0 {
-                        QueueBadge(count: model.queued, solid: solid).fixedSize().offset(x: JarvisModel.orb + 8)
+                        QueueBadge(count: model.queued).fixedSize().offset(x: JarvisModel.orb + 8)
                     }
                 }
                 .scaleEffect(model.shown ? 1 : 0.5)
@@ -347,6 +343,7 @@ struct JarvisView: View {
         }
         .padding(.top, JarvisModel.top)
         .frame(width: model.width, height: model.height, alignment: .top)
+        .environment(\.colorScheme, .dark)
     }
 
     private var bar: some View {
@@ -361,12 +358,18 @@ struct JarvisView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, JarvisModel.closeX)
-            header
-                .frame(width: model.headerWidth, alignment: .leading)
-                .padding(.leading, JarvisModel.firstX - JarvisModel.closeX - JarvisModel.close)
-            Rectangle().fill(ink.opacity(0.18)).frame(width: 1, height: 22)
-                .padding(.leading, JarvisModel.divBefore)
-                .padding(.trailing, JarvisModel.divAfter)
+            .padding(.trailing, JarvisModel.firstX - JarvisModel.closeX - JarvisModel.close)
+            if let failure = model.failure {
+                Text(failure)
+                    .font(Font(JarvisModel.failureFont))
+                    .foregroundStyle(ink)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(width: JarvisModel.headerWidth, alignment: .leading)
+                Rectangle().fill(ink.opacity(0.18)).frame(width: 1, height: 22)
+                    .padding(.leading, JarvisModel.divBefore)
+                    .padding(.trailing, JarvisModel.divAfter)
+            }
             if model.typing {
                 TypingField(model: model)
             } else {
@@ -382,36 +385,13 @@ struct JarvisView: View {
         }
         .padding(.trailing, JarvisModel.trail)
         .frame(width: model.width, height: JarvisModel.barHeight)
-        .background {
-            if solid { Color(nsColor: .windowBackgroundColor) } else { EffectBackground(radius: 12) }
-        }
+        .background(JarvisModel.fill)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         // A click anywhere on the bar says his attention is here: the digits come back.
         .onTapGesture { model.act(.rearm) }
     }
 
-    private var header: some View {
-        let ink = Color(nsColor: .labelColor)
-        return VStack(alignment: .leading, spacing: 0) {
-            if let failure = model.failure {
-                Text(failure)
-                    .font(Font(JarvisModel.failureFont))
-                    .foregroundStyle(ink)
-                    .lineLimit(2)
-            } else {
-                Text(model.project)
-                    .font(Font(JarvisModel.projectFont))
-                    .foregroundStyle(ink.opacity(0.5))
-                    .lineLimit(1)
-                Text(model.line)
-                    .font(Font(JarvisModel.labelFont))
-                    .foregroundStyle(ink)
-                    .lineLimit(1)
-            }
-        }
-        .truncationMode(.tail)
-    }
 }
 
 /// The digit that answers, on a 17 pt disc like the bar's ✕.
@@ -422,7 +402,7 @@ private struct Badge: View {
 
     var body: some View {
         Text("\(digit)")
-            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .font(.system(size: 15, weight: .semibold).monospacedDigit())
             .foregroundStyle(ink)
             .frame(width: JarvisModel.badge, height: JarvisModel.badge)
             .background(Circle().fill(ink.opacity(0.15)))
@@ -503,7 +483,6 @@ private struct TypingField: View {
 
 private struct QueueBadge: View {
     let count: Int
-    let solid: Bool
 
     var body: some View {
         Text("+\(count)")
@@ -511,15 +490,13 @@ private struct QueueBadge: View {
             .foregroundStyle(Color(nsColor: .labelColor).opacity(0.6))
             .padding(.horizontal, 7)
             .frame(height: 22)
-            .background {
-                if solid { Color(nsColor: .windowBackgroundColor) } else { EffectBackground(radius: 11) }
-            }
+            .background(JarvisModel.fill)
             .clipShape(Capsule())
     }
 }
 
-/// Siri's orb, redrawn: soft colour blobs that swirl and morph inside a dark sphere, a halo
-/// that breathes, and both swell with the voice. Radial gradients rather than blurred shapes:
+/// Siri's orb, redrawn: soft colour blobs that swirl, morph and swell with the voice, with
+/// no sphere or halo around them. Radial gradients rather than blurred shapes:
 /// a blur is a filter, filters are the first thing an offscreen render drops, and a dozen
 /// gradient fills on a 60 pt canvas cost next to nothing at 60 fps.
 private struct OrbView: View {
@@ -557,13 +534,7 @@ private struct OrbView: View {
             .radialGradient(Gradient(colors: [color, color.opacity(0)]), center: o, startRadius: inner, endRadius: outer)
         }
 
-        let halo = tint((0.62, 0.3, 1), (0.2 + 0.4 * e) * (0.6 + 0.4 * breath))
-        ctx.fill(disc(c, r + Self.halo), with: glow(halo, at: c, from: r * 0.7, to: r + Self.halo))
-
         ctx.drawLayer { s in
-            s.clip(to: disc(c, r))
-            s.fill(disc(c, r), with: .radialGradient(Gradient(colors: [tint((0.16, 0.08, 0.32), 1), tint((0.03, 0.02, 0.1), 1)]),
-                                                     center: c, startRadius: 0, endRadius: r))
             s.blendMode = .plusLighter
             for (i, blob) in blobs.enumerated() {
                 let a = p.phase * blob.speed + blob.offset
@@ -578,35 +549,6 @@ private struct OrbView: View {
                 b.fill(disc(.zero, radius), with: glow(tint(blob.rgb, 0.55 + 0.45 * e), at: .zero, to: radius))
             }
             s.fill(disc(c, r * 0.55), with: glow(.white.opacity(0.4 * e), at: c, to: r * 0.55))
-            s.blendMode = .normal
-            s.fill(disc(c, r), with: .radialGradient(Gradient(stops: [.init(color: .white.opacity(0), location: 0.78),
-                                                                      .init(color: .white.opacity(0.2), location: 1)]),
-                                                     center: c, startRadius: 0, endRadius: r))
-            let shine = CGPoint(x: c.x - r * 0.35, y: c.y - r * 0.45)
-            s.fill(disc(shine, r * 0.45), with: glow(.white.opacity(0.22), at: shine, to: r * 0.45))
         }
     }
-}
-
-private struct EffectBackground: NSViewRepresentable {
-    let radius: CGFloat
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .popover
-        v.state = .active
-        v.blendingMode = .behindWindow
-        // An effect view ignores its layer's corner radius; its mask image is what rounds it.
-        let side = 2 * radius + 2
-        let mask = NSImage(size: CGSize(width: side, height: side), flipped: false) { r in
-            NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        mask.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        mask.resizingMode = .stretch
-        v.maskImage = mask
-        return v
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
