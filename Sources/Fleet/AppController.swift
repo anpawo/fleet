@@ -222,6 +222,7 @@ final class AppController: ObservableObject {
 
     func start() {
         hub.kicksJob = true
+        launchd.repairs = true
         // No `mayCheck` here on purpose: the resident app reads the collection for what the
         // panel shows and never starts a pipeline of its own. The download, the transcription
         // and the read belong to `fleet --reels-run`, on its own schedule — see `install.sh`.

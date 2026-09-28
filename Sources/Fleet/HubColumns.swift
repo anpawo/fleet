@@ -194,7 +194,9 @@ struct CronColumn: View {
         // The two halves are the whole point of the block, and a border colour alone made you
         // read every card to find where one ended. Drawn short of the edges: a rule that touches the block's sides reads as the end of the block.
         if !good.isEmpty && !bad.isEmpty { rule }
-        if !bad.isEmpty { half(bad) }
+        // One BROKEN line, whole names, rather than the families again: a failing agent that
+        // was alone in its half landed under a second OTHER (asked 2026-09-28).
+        if !bad.isEmpty { group(bad, family: Self.broken) }
     }
 
     private var rule: some View {
@@ -225,6 +227,7 @@ struct CronColumn: View {
 
     /// The group the cards with no family of their own go in.
     private static let other = "other"
+    private static let broken = "broken"
 
     private func groups(_ jobs: [Launchd.Job]) -> [(key: String, value: [Launchd.Job])] {
         let families = Dictionary(grouping: jobs, by: familyName)
@@ -248,7 +251,9 @@ struct CronColumn: View {
                 .padding(.trailing, 2)
                 // On the pills' own line, which sits under their padding.
                 .padding(.top, 5)
-            ForEach(jobs) { job in card(job, family: family == Self.other ? nil : family) }
+            ForEach(jobs) { job in
+                card(job, family: family == Self.other || family == Self.broken ? nil : family)
+            }
         }
         VStack(alignment: .leading, spacing: 5) {
             if scrolling {
@@ -371,10 +376,9 @@ struct CronCard: View {
             .truncationMode(.tail)
             .padding(.vertical, 4)
             .padding(.horizontal, 6)
-            // A shade of the block's blue for a resident, the panel's near-black for a
-            // routine: the two kinds share the block, and the ground is what tells them apart.
-            .background(job.triggered ? Color(red: 0.07, green: 0.07, blue: 0.09)
-                                      : Color(red: 0.10, green: 0.12, blue: 0.18))
+            // One ground for routines and residents alike: the kind is in the ⌘ box's schedule
+            // line, and two grounds in one block read as two meanings (asked 2026-09-28).
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                 .strokeBorder(border, lineWidth: 1))
@@ -1607,7 +1611,8 @@ struct AlertsBlock: View {
         // A routine whose last run ended badly, by name. The CRONS block says so too, in a
         // red card among fifteen; this is the line you read without looking for it. Only the
         // routines: a resident's last exit is history, not health — see `Job.ok`.
-        for job in crons where job.triggered && job.failing { out.append(job.name) }
+        // Not while Fleet's own retry of it is running: most failed runs pass the second time.
+        for job in crons where job.triggered && job.failing && !job.repairing { out.append(job.name) }
         if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }

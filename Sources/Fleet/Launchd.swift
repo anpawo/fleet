@@ -66,6 +66,12 @@ enum Launchd {
         /// moves to another port would otherwise keep advertising the old one.
         var address: String?
 
+        /// Has a process right now — for a routine, a run in progress.
+        var busy = false
+        /// Fleet has started it again after a failed run and that run has not ended yet: ALERT
+        /// waits for its answer — see `LaunchdStore.repair`.
+        var repairing = false
+
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
         /// seeing, so only the ones launchd has never been told about drop out. A resident
@@ -100,7 +106,8 @@ enum Launchd {
                        triggered: trigger != nil,
                        ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist),
-                       address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" })
+                       address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" },
+                       busy: state?.pid != nil)
         }.sorted { $0.name < $1.name }
     }
 
@@ -305,10 +312,57 @@ final class LaunchdStore: ObservableObject {
     private var lastScan = Date()
     private var scanning = false
 
+    /// On in the resident app only: a `--render` must not start anybody's routine.
+    var repairs = false
+
     /// The first read is synchronous, once, at launch — the panel can open before the first
     /// tick, and a block that is empty for ten seconds looks like a block with nothing in it.
     init() {
         jobs = Launchd.jobs().filter(\.running)
+    }
+
+    /// Routines that are not started again. mirror-check says on a shared Matrix room that
+    /// the mirror did not run, and a second run is a second message; the mounts run every
+    /// minute and are their own retry.
+    static let noRetry: Set<String> = ["s14.mirror-check", "s14.mounts"]
+
+    /// When each failing routine was started again, by label. One retry per failure: a run
+    /// that fails twice is broken, not unlucky, and a retry loop would hide it. Kept across
+    /// launches, or every `install.sh` would re-run every broken routine — the Epitech scan is
+    /// a 95-minute Claude run.
+    private static let retriesKey = "cronRetries"
+
+    /// Most failures are the run, not the routine: the network gone at the hour, two runs on
+    /// one lock (recon-v3, 28-09 at 09:38), a request that hung. Started again once, a routine
+    /// is only named in ALERT when that run failed too.
+    private func repair(_ jobs: [Launchd.Job], now: Date) -> [Launchd.Job] {
+        var retried = UserDefaults.standard.dictionary(forKey: Self.retriesKey) as? [String: Double] ?? [:]
+        let out = jobs.map { job -> Launchd.Job in
+            var job = job
+            guard job.triggered else { return job }
+            guard job.failing else {
+                retried[job.id] = nil
+                return job
+            }
+            if let at = retried[job.id] {
+                // Kicked a moment ago and not yet picked up, or still running.
+                job.repairing = job.busy || now.timeIntervalSince1970 - at < 60
+                return job
+            }
+            guard repairs, !job.busy, !Self.noRetry.contains(job.id) else { return job }
+            let kick = Process()
+            kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            // No -k: a run that started meanwhile is left alone.
+            kick.arguments = ["kickstart", "gui/\(getuid())/\(job.id)"]
+            guard (try? kick.run()) != nil else { return job }
+            NSLog("Fleet: \(job.id) failed its last run, started again")
+            retried[job.id] = now.timeIntervalSince1970
+            job.repairing = true
+            return job
+        }
+        let labels = Set(jobs.map(\.id))
+        UserDefaults.standard.set(retried.filter { labels.contains($0.key) }, forKey: Self.retriesKey)
+        return out
     }
 
     /// Called from `AppController.tick`, on the timer that is already running.
@@ -319,7 +373,7 @@ final class LaunchdStore: ObservableObject {
         Task.detached(priority: .utility) {
             let scanned = Launchd.jobs(probing: true).filter(\.running)
             await MainActor.run {
-                self.jobs = scanned
+                self.jobs = self.repair(scanned, now: Date())
                 self.scanning = false
             }
         }
