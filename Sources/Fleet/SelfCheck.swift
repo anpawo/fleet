@@ -134,19 +134,26 @@ enum SelfCheck {
     /// The retry state machine, on labels launchd does not have, with the kickstart counted
     /// rather than sent: what is checked is what Fleet remembers and what ALERT waits for.
     private static func repairs(_ expect: (Bool, Bool, String) -> Void) {
-        let key = "cronRetries"
+        let key = "cronRetries", deferredKey = "cronDeferred"
         let saved = UserDefaults.standard.object(forKey: key)
-        defer { UserDefaults.standard.set(saved, forKey: key) }
+        let savedDeferred = UserDefaults.standard.object(forKey: deferredKey)
+        defer {
+            UserDefaults.standard.set(saved, forKey: key)
+            UserDefaults.standard.set(savedDeferred, forKey: deferredKey)
+        }
         let store = LaunchdStore()
         store.repairs = true
         var kicked: [String] = []
         store.kick = { kicked.append($0); return true }
         func job(_ id: String, enabled: Bool = true, failing: Bool = false, busy: Bool = false,
-                 deferred: Bool = false, hung: TimeInterval? = nil) -> Launchd.Job {
+                 deferred: Bool = false, hung: TimeInterval? = nil, allowance: TimeInterval = 3600) -> Launchd.Job {
             Launchd.Job(id: id, name: id, schedule: "", enabled: enabled, failing: failing,
-                        triggered: true, ok: !failing, note: "", busy: busy, deferred: deferred, hung: hung)
+                        triggered: true, ok: !failing, note: "", busy: busy, deferred: deferred, hung: hung,
+                        allowance: allowance)
         }
-        func remembers(_ id: String) -> Bool { UserDefaults.standard.dictionary(forKey: key)?[id] != nil }
+        func remembers(_ id: String, _ key: String = key) -> Bool {
+            UserDefaults.standard.dictionary(forKey: key)?[id] != nil
+        }
         let now = Date()
         var out = store.repair([job("selftest.a", failing: true), job("selftest.b", deferred: true)], now: now)
         expect(out[0].repairing && remembers("selftest.a") && kicked == ["selftest.a"], true,
@@ -170,6 +177,24 @@ enum SelfCheck {
         _ = store.repair([job("selftest.c", failing: true)], now: now)
         _ = store.repair([job("selftest.d")], now: now)
         expect(remembers("selftest.c"), false, "a routine gone from the folder is forgotten")
+
+        out = store.repair([job("selftest.f", deferred: true)], now: now)
+        expect(out[0].deferredFor == nil && remembers("selftest.f", deferredKey), true,
+               "a first deferred run is remembered, not in ALERT")
+        out = store.repair([job("selftest.f", deferred: true)], now: now + 5 * 3600)
+        expect(out[0].deferredFor == nil, true, "deferred for 5h on an hourly slot: still a wifi outage")
+        out = store.repair([job("selftest.f", deferred: true)], now: now + 7 * 3600)
+        expect(AlertsBlock.cronAlerts(out) == ["selftest.f deferred 7h"], true,
+               "deferred for 7h: ALERT says so (got \(AlertsBlock.cronAlerts(out)))")
+        out = store.repair([job("selftest.f", deferred: true, allowance: 3 * 3600)], now: now + 7 * 3600)
+        expect(out[0].deferredFor == nil, true, "a 3h allowance waits for 9h")
+        _ = store.repair([job("selftest.f", enabled: false)], now: now + 7 * 3600)
+        expect(remembers("selftest.f", deferredKey), true, "launchd listing nothing does not reset it")
+        _ = store.repair([job("selftest.f", failing: true)], now: now + 8 * 3600)
+        expect(remembers("selftest.f", deferredKey), false, "any other exit does")
+        _ = store.repair([job("selftest.g", deferred: true)], now: now)
+        _ = store.repair([job("selftest.d")], now: now)
+        expect(remembers("selftest.g", deferredKey), false, "a deferred routine gone from the folder is forgotten")
     }
 
     // MARK: - Listening ports

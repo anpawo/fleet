@@ -1626,12 +1626,14 @@ struct AlertsBlock: View {
     /// red card among fifteen; this is the line you read without looking for it. Only the
     /// routines: a resident's last exit is history, not health — see `Job.ok`.
     /// Not while Fleet's own retry of it is running: most failed runs pass the second time.
-    /// A hung run is named whatever its last exit said: that exit is the run before.
+    /// A hung run is named whatever its last exit said: that exit is the run before. A deferred
+    /// one only once it has been deferred for longer than a wifi outage explains.
     static func cronAlerts(_ crons: [Launchd.Job]) -> [String] {
         var out: [String] = []
         for job in crons where job.triggered {
             if let hung = job.hung { out.append("\(job.name) hung \(Launchd.span(hung))") }
             else if job.failing && !job.repairing { out.append(job.name) }
+            else if let length = job.deferredFor { out.append("\(job.name) deferred \(Launchd.span(length))") }
         }
         return out
     }

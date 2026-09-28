@@ -81,6 +81,12 @@ enum Launchd {
         /// `launchctl list` keeps the previous exit, so a run stuck for hours on a dead sshfs
         /// read otherwise looks exactly like a healthy routine between two runs.
         var hung: TimeInterval?
+        /// How long a run may go before it is hung — see `Launchd.allowance`.
+        var allowance: TimeInterval = 0
+        /// How long it has been deferred run after run, once that is past what a wifi outage
+        /// explains — see `LaunchdStore.repair`. A VPN that blocks captive.apple.com defers
+        /// every run, and mcp-renew stayed amber for a day while its token ran out.
+        var deferredFor: TimeInterval?
 
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
@@ -135,7 +141,8 @@ enum Launchd {
                    busy: state?.pid != nil,
                    // A resident's last exit is history — see `ok`.
                    deferred: trigger != nil && exit == tempfail,
-                   hung: hung)
+                   hung: hung,
+                   allowance: allowance(plist))
     }
 
     /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `s14.recon-v3`…), so a
@@ -474,6 +481,8 @@ final class LaunchdStore: ObservableObject {
     /// launches, or every `install.sh` would re-run every broken routine — the Epitech scan is
     /// a 95-minute Claude run.
     private static let retriesKey = "cronRetries"
+    /// When each routine's first run in a row to exit 75 was seen, by label.
+    private static let deferredKey = "cronDeferred"
 
     /// Starts a routine now. A property so `--selftest` can count the kicks instead of sending them.
     var kick: (String) -> Bool = { label in
@@ -489,9 +498,18 @@ final class LaunchdStore: ObservableObject {
     /// is only named in ALERT when that run failed too.
     func repair(_ jobs: [Launchd.Job], now: Date) -> [Launchd.Job] {
         var retried = UserDefaults.standard.dictionary(forKey: Self.retriesKey) as? [String: Double] ?? [:]
+        var deferred = UserDefaults.standard.dictionary(forKey: Self.deferredKey) as? [String: Double] ?? [:]
         let out = jobs.map { job -> Launchd.Job in
             var job = job
             guard job.triggered else { return job }
+            if job.deferred {
+                let since = deferred[job.id] ?? now.timeIntervalSince1970
+                deferred[job.id] = since
+                let length = now.timeIntervalSince1970 - since
+                if length > max(Launchd.ceiling, 3 * job.allowance) { job.deferredFor = length }
+            } else if job.enabled {
+                deferred[job.id] = nil
+            }
             // A hung run spends the retry, a minute old so ALERT does not wait on it: killed by
             // hand it ends on -15, and a retry would put it straight back on the dead mount it
             // was stuck on.
@@ -519,6 +537,7 @@ final class LaunchdStore: ObservableObject {
         // renamed to a new label — loses its entry.
         let labels = Set(jobs.map(\.id))
         UserDefaults.standard.set(retried.filter { labels.contains($0.key) }, forKey: Self.retriesKey)
+        UserDefaults.standard.set(deferred.filter { labels.contains($0.key) }, forKey: Self.deferredKey)
         return out
     }
 
