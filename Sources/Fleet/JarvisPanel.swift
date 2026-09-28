@@ -1,4 +1,5 @@
 import AppKit
+import MetalKit
 import SwiftUI
 
 /// What the panel shows. Every size is worked out here rather than left to SwiftUI, so the
@@ -44,20 +45,19 @@ final class JarvisModel: ObservableObject {
     }
 }
 
-/// The orb's inputs, set by `Jarvis`, and the springs that carry the drawing toward them. Not
-/// published: the orb's own timeline reads it every frame, and nothing else draws from it.
+/// The orb's inputs, set by `Jarvis`, and the shader parameters gliding toward them. Not
+/// published: the orb's own Metal view reads it every frame, and nothing else draws from it.
 @MainActor
 final class OrbModel {
     enum Mode { case preparing, waiting, silent }
-    struct Pose { var t: Double, phase: Double, energy: Double, colour: Double }
     private var mode = Mode.waiting
     private var level = 0.0
     private var speaking = false
-    /// A fixed clock for the offscreen renders, with the springs at rest on their targets.
+    /// A fixed clock for the offscreen renders, with the parameters at rest on their targets.
     var frozen: Double?
-    private var phase = 0.0
+    private var phase: Float = 1.7
     private var last: Double?
-    private var energy = Spring(0.12), colour = Spring(1)
+    private var params = OrbShader.Params.idle
 
     func set(_ mode: Mode) {
         self.mode = mode
@@ -71,30 +71,17 @@ final class OrbModel {
         self.speaking = speaking
     }
 
-    func pose(at date: Date) -> Pose {
-        let e = mode == .silent ? 0.05 : speaking ? 0.3 + 0.7 * level : mode == .preparing ? 0.3 : 0.12
-        let c = mode == .silent ? 0.0 : 1.0
-        func speed(_ e: Double) -> Double { 0.35 + 1.8 * e }
-        if let frozen { return Pose(t: frozen, phase: frozen * speed(e), energy: e, colour: c) }
+    func uniforms(at date: Date, pixels: Float) -> [Float] {
+        let target: OrbShader.Params = mode == .silent ? .disabled : speaking ? .speaking : mode == .preparing ? .connecting : .idle
+        let level = Float(speaking ? self.level : 0)
+        if let frozen { return OrbShader.uniforms(target, level: level, phase: Float(frozen), pixels: pixels) }
         let now = date.timeIntervalSinceReferenceDate
-        // Capped: after a pause the first frame would otherwise jump, and the stiff spring blow up.
-        let dt = min(max(now - (last ?? now), 0), 1.0 / 30)
+        // Capped: after a pause the first frame would otherwise jump.
+        let dt = Float(min(max(now - (last ?? now), 0), 1.0 / 30))
         last = now
-        energy.step(to: e, response: 0.15, dt: dt)
-        colour.step(to: c, response: 0.5, dt: dt)
-        phase += dt * speed(energy.value)
-        return Pose(t: now, phase: phase, energy: energy.value, colour: min(max(colour.value, 0), 1))
-    }
-
-    /// Integrated from where it is, so a new target mid-flight bends the motion instead of restarting it.
-    private struct Spring {
-        var value: Double, velocity = 0.0
-        init(_ value: Double) { self.value = value }
-        mutating func step(to target: Double, response: Double, dt: Double) {
-            let k = pow(2 * .pi / response, 2)
-            velocity += (k * (target - value) - 2 * sqrt(k) * 0.85 * velocity) * dt
-            value += velocity * dt
-        }
+        params = params.approach(target, 1 - exp(-dt / 0.2))
+        phase += dt * params.speed * (1 + 0.7 * params.voice * level)
+        return OrbShader.uniforms(params, level: level, phase: phase, pixels: pixels)
     }
 }
 
@@ -393,60 +380,62 @@ private struct QueueBadge: View {
     }
 }
 
-/// Siri's orb, redrawn: soft colour blobs that swirl, morph and swell with the voice, with
-/// no sphere or halo around them. Radial gradients rather than blurred shapes:
-/// a blur is a filter, filters are the first thing an offscreen render drops, and a dozen
-/// gradient fills on a 60 pt canvas cost next to nothing at 60 fps.
+/// The shader's canvas: the ball is 80% of it at rest and swells to 88% with the voice, the
+/// rest is for its halo. Live it is a Metal view drawing at the display's rate while shown;
+/// frozen (offscreen renders) it is one frame read back as an image.
 private struct OrbView: View {
     let orb: OrbModel
     let running: Bool
-    private static let halo: CGFloat = 12
-    private static let blobs: [(rgb: (Double, Double, Double), speed: Double, offset: Double)] = [
-        ((1, 0.18, 0.62), 1, 0), ((0.62, 0.25, 1), -0.8, 1.6), ((0.12, 0.38, 1), 0.65, 3.2), ((0.15, 0.85, 1), -1.15, 4.7),
-    ]
+    static let canvas: CGFloat = 48
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !running)) { timeline in
-            let pose = orb.pose(at: timeline.date)
-            Canvas { ctx, size in Self.draw(pose, in: &ctx, size: size) }
+        Group {
+            if let frozen = orb.frozen, let image = OrbShader.image(orb.uniforms(at: Date(timeIntervalSinceReferenceDate: frozen), pixels: 144), pixels: 144) {
+                Image(decorative: image, scale: 3)
+            } else {
+                OrbMetal(orb: orb, running: running)
+            }
         }
-        .frame(width: JarvisModel.orb + 2 * Self.halo, height: JarvisModel.orb + 2 * Self.halo)
-        .padding(-Self.halo)
+        .frame(width: Self.canvas, height: Self.canvas)
+        .padding(-(Self.canvas - JarvisModel.orb) / 2)
+    }
+}
+
+private struct OrbMetal: NSViewRepresentable {
+    let orb: OrbModel
+    let running: Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator(orb: orb) }
+
+    func makeNSView(context: Context) -> MTKView {
+        let v = MTKView(frame: .zero, device: OrbShader.device)
+        v.colorPixelFormat = .bgra8Unorm
+        v.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        v.layer?.isOpaque = false
+        v.preferredFramesPerSecond = 60
+        v.delegate = context.coordinator
+        return v
     }
 
-    private static func draw(_ p: OrbModel.Pose, in ctx: inout GraphicsContext, size: CGSize) {
-        let c = CGPoint(x: size.width / 2, y: size.height / 2)
-        let e = p.energy
-        let breath = 0.5 + 0.5 * sin(p.t * 2 * .pi / 4)
-        let r = JarvisModel.orb / 2 * (0.9 + 0.04 * breath + 0.1 * e)
-        // Toward each colour's own luminance as the colour spring falls: "no voice" is the same orb, grey.
-        func tint(_ rgb: (Double, Double, Double), _ alpha: Double) -> Color {
-            let l = 0.3 * rgb.0 + 0.59 * rgb.1 + 0.11 * rgb.2
-            func mix(_ x: Double) -> Double { l + (x - l) * p.colour }
-            return Color(red: mix(rgb.0), green: mix(rgb.1), blue: mix(rgb.2), opacity: alpha)
-        }
-        func disc(_ o: CGPoint, _ radius: CGFloat) -> Path {
-            Path(ellipseIn: CGRect(x: o.x - radius, y: o.y - radius, width: 2 * radius, height: 2 * radius))
-        }
-        func glow(_ color: Color, at o: CGPoint, from inner: CGFloat = 0, to outer: CGFloat) -> GraphicsContext.Shading {
-            .radialGradient(Gradient(colors: [color, color.opacity(0)]), center: o, startRadius: inner, endRadius: outer)
-        }
+    func updateNSView(_ v: MTKView, context: Context) {
+        v.isPaused = !running
+    }
 
-        ctx.drawLayer { s in
-            s.blendMode = .plusLighter
-            for (i, blob) in blobs.enumerated() {
-                let a = p.phase * blob.speed + blob.offset
-                let reach = r * (0.3 + 0.25 * e)
-                let o = CGPoint(x: c.x + reach * cos(a), y: c.y + reach * sin(a * 1.3 + Double(i)))
-                let radius = r * (0.62 + 0.12 * sin(p.phase * 1.7 + Double(i) * 2) + 0.15 * e)
-                // Stretched along its own heading: a ribbon of colour rather than a ball.
-                var b = s
-                b.translateBy(x: o.x, y: o.y)
-                b.rotate(by: .radians(a + .pi / 2))
-                b.scaleBy(x: 1.35, y: 0.75)
-                b.fill(disc(.zero, radius), with: glow(tint(blob.rgb, 0.55 + 0.45 * e), at: .zero, to: radius))
-            }
-            s.fill(disc(c, r * 0.55), with: glow(.white.opacity(0.4 * e), at: c, to: r * 0.55))
+    final class Coordinator: NSObject, MTKViewDelegate {
+        let orb: OrbModel
+        private lazy var queue = OrbShader.device?.makeCommandQueue()
+        init(orb: OrbModel) { self.orb = orb }
+
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+        func draw(in view: MTKView) {
+            guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
+                  let buffer = queue?.makeCommandBuffer() else { return }
+            let pixels = Float(view.drawableSize.width)
+            let uniforms = MainActor.assumeIsolated { orb.uniforms(at: Date(), pixels: pixels) }
+            OrbShader.encode(uniforms, into: pass, buffer: buffer)
+            buffer.present(drawable)
+            buffer.commit()
         }
     }
 }
