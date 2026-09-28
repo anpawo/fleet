@@ -542,7 +542,7 @@ final class Jarvis {
         }
         let tau = levelTarget > level ? 0.04 : 0.15
         level += (levelTarget - level) * (1 - exp(-dt / tau))
-        panel.model.orb.frame(level: level, dt: dt, speaking: heardLevel)
+        panel.model.orb.frame(level: level, speaking: heardLevel)
     }
     private var levelTarget = 0.0
 
