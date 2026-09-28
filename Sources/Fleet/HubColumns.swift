@@ -1466,7 +1466,7 @@ struct CreditCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard(tint: banked ? LedgerTint.banked : line.started ? LedgerTint.ongoing : nil)
+        .panelCard(tint: banked ? LedgerTint.banked : nil, dashed: !banked && line.started)
     }
 }
 
@@ -1524,7 +1524,10 @@ extension View {
     /// The card every row of the EPITECH block sits on. `tint` washes it in the colour of the
     /// pile its credits are counted in on the heading — dark, so the heading's figure stays the
     /// bright one.
-    func panelCard(lit: Bool = false, tint: Color? = nil) -> some View {
+    /// `dashed`: under way. Said by the border alone, so an ongoing card keeps the plain ground
+    /// of the others (asked 2026-09-28); the stroke is brighter because a dotted line at the
+    /// plain border's 0.07 all but disappears.
+    func panelCard(lit: Bool = false, tint: Color? = nil, dashed: Bool = false) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
@@ -1533,7 +1536,8 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(.white.opacity(lit ? 0.2 : 0.07), lineWidth: 1)
+                    .strokeBorder(.white.opacity(lit ? 0.2 : dashed ? 0.3 : 0.07),
+                                  style: StrokeStyle(lineWidth: 1, dash: dashed ? [3, 3] : []))
             )
     }
 }
@@ -1584,7 +1588,7 @@ struct ModuleCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard(lit: lit, tint: module.started ? LedgerTint.ongoing : nil)
+        .panelCard(lit: lit, dashed: module.started)
     }
 }
 
