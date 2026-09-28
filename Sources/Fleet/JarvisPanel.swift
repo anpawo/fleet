@@ -18,71 +18,29 @@ final class JarvisModel: ObservableObject {
     let orb = OrbModel()
     var act: (JarvisPanel.Action) -> Void = { _ in }
 
-    // The screenshot app's ⌘⇧5 bar (my-lab/app/screenshot, Bar.swift), measured there: 53 pt
-    // tall, the ✕ 17 pt at 14.5, the first item at 43.75, 36 pt items on a 6 pt gap with their
-    // content 7.5 in, a 22 pt divider 10 pt after a group and 11.5 before the next, 8.5 pt after
-    // the last item, 12 pt corners, 8 pt on an item, 15 pt text, 12 pt for the small print.
-    static let barHeight: CGFloat = 53, closeX: CGFloat = 14.5, close: CGFloat = 17, firstX: CGFloat = 43.75
-    static let item: CGFloat = 36, itemGap: CGFloat = 6, inset: CGFloat = 7.5, badge: CGFloat = 20
-    static let divBefore: CGFloat = 10, divAfter: CGFloat = 11.5, trail: CGFloat = 8.5
-    /// Clear space over the orb, and between it and the bar: the bar's own 24 pt off the screen
-    /// edge and the 12 pt its hints float above it.
+    /// Each answer is its own black square holding only its digit; the label shows on hover.
+    static let square: CGFloat = 53, squareGap: CGFloat = 8, digitSize: CGFloat = 26, inset: CGFloat = 12
+    /// Clear space over the orb, and between it and the squares.
     static let top: CGFloat = 24, gap: CGFloat = 12, orb: CGFloat = 36
     static let labelFont = NSFont.systemFont(ofSize: 15)
-    static let keywordFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     static let failureFont = NSFont.systemFont(ofSize: 12)
     static let other = "Something else…"
     /// Fleet's sessions panel wash (OverlayView.tintOpacity); the text is always drawn for dark.
     static let fill = Color.black.opacity(0.8)
-    private static let chrome = inset + badge + itemGap + inset
-
-    private static func measure(_ s: String, _ font: NSFont) -> CGFloat {
-        // A point over AppKit's measure: SwiftUI lays the same string out a hair wider.
-        ceil((s as NSString).size(withAttributes: [.font: font]).width) + 1
-    }
-
-    /// The widest a text may be so all of `widths` fit in `room`: the short ones keep their
-    /// width, the long ones share what is left.
-    static func cap(_ widths: [CGFloat], within room: CGFloat) -> CGFloat {
-        var room = room, left = CGFloat(widths.count)
-        for w in widths.sorted() {
-            if w * left > room { return floor(room / left) }
-            room -= w
-            left -= 1
-        }
-        return .infinity
-    }
-
-    /// Only a failure takes a header, on two lines: the line itself is spoken, not shown.
+    /// Only a failure takes a text block, on two lines: the line itself is spoken, not shown.
     static let headerWidth: CGFloat = 240
-    private var chromeWidth: CGFloat {
-        Self.firstX + (failure != nil ? Self.headerWidth + Self.divBefore + 1 + Self.divAfter : 0) + Self.trail
-    }
-    private func text(_ o: JarvisOption) -> CGFloat {
-        max(Self.measure(o.label, Self.labelFont), Self.measure(o.keyword, Self.keywordFont))
-    }
-    /// Each item as wide as its text, until the bar would come within 24 pt of the screen's
-    /// sides: then the longest labels truncate, never the bar.
-    var itemWidths: [CGFloat] {
-        let zero = Self.measure(Self.other, Self.labelFont) + Self.chrome
-        let room = screenWidth - 2 * Self.top - chromeWidth - zero
-            - CGFloat(options.count) * (Self.chrome + Self.itemGap)
-        let cap = min(Self.cap(options.map(text), within: room), 280)
-        return options.map { min(text($0), cap) + Self.chrome } + [zero]
-    }
-    var itemsWidth: CGFloat { itemWidths.reduce(-Self.itemGap) { $0 + $1 + Self.itemGap } }
+
+    var itemsWidth: CGFloat { CGFloat(options.count + 1) * (Self.square + Self.squareGap) - Self.squareGap }
     var fieldWidth: CGFloat { max(itemsWidth, 360) }
-    var width: CGFloat { chromeWidth + (typing ? fieldWidth : itemsWidth) }
-    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.barHeight }
+    var width: CGFloat {
+        (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
+    }
+    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
-        expect(cap([100, 200, 300], within: 450), 175, "jarvis: long labels share what the short ones leave")
-        expect(cap([100, 200], within: 450), .infinity, "jarvis: labels that fit are not cut")
         let m = JarvisModel()
-        m.line = "Portfolio is done, sir."
-        m.options = Array(repeating: JarvisOption(label: String(repeating: "Re-render the thumbnails ", count: 4),
-                                                  keyword: "sips -Z 800"), count: JarvisOptions.limit)
-        expect(min(m.width, 1470 - 2 * top), m.width, "jarvis: six long options and 0 fit a 1470 pt screen")
+        m.options = Array(repeating: JarvisOption(label: "x", keyword: "y"), count: JarvisOptions.limit)
+        expect(m.width, 7 * square + 6 * squareGap, "jarvis: six options and 0 are seven squares")
     }
 }
 
@@ -347,137 +305,77 @@ struct JarvisView: View {
     }
 
     private var bar: some View {
-        let ink = Color(nsColor: .labelColor)
-        let widths = model.itemWidths
-        return HStack(spacing: 0) {
-            Button { model.act(.close) } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(ink.opacity(0.4))
-                    .frame(width: JarvisModel.close, height: JarvisModel.close)
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, JarvisModel.closeX)
-            .padding(.trailing, JarvisModel.firstX - JarvisModel.closeX - JarvisModel.close)
+        HStack(spacing: JarvisModel.squareGap) {
             if let failure = model.failure {
                 Text(failure)
                     .font(Font(JarvisModel.failureFont))
-                    .foregroundStyle(ink)
+                    .foregroundStyle(.white)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .frame(width: JarvisModel.headerWidth, alignment: .leading)
-                Rectangle().fill(ink.opacity(0.18)).frame(width: 1, height: 22)
-                    .padding(.leading, JarvisModel.divBefore)
-                    .padding(.trailing, JarvisModel.divAfter)
+                    .padding(.horizontal, JarvisModel.inset)
+                    .frame(height: JarvisModel.square)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
             }
             if model.typing {
                 TypingField(model: model)
             } else {
-                HStack(spacing: JarvisModel.itemGap) {
+                Group {
                     ForEach(Array(model.options.enumerated()), id: \.offset) { i, option in
-                        OptionItem(model: model, digit: i + 1, option: option).frame(width: widths[i])
+                        OptionSquare(model: model, digit: i + 1, option: option)
                     }
-                    OptionItem(model: model, digit: 0, option: nil).frame(width: widths[widths.count - 1])
+                    OptionSquare(model: model, digit: 0, option: nil)
                 }
                 .opacity(model.failure != nil ? 0.35 : 1)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.trailing, JarvisModel.trail)
-        .frame(width: model.width, height: JarvisModel.barHeight)
-        .background(JarvisModel.fill)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .frame(width: model.width, height: JarvisModel.square, alignment: .leading)
         .contentShape(Rectangle())
-        // A click anywhere on the bar says his attention is here: the digits come back.
+        // A click between the squares says his attention is here: the digits come back.
         .onTapGesture { model.act(.rearm) }
     }
-
 }
 
-/// The digit that answers, on a 17 pt disc like the bar's ✕.
-private struct Badge: View {
-    let digit: Int
-    let ink: Color
-    let lit: Bool
-
-    var body: some View {
-        Text("\(digit)")
-            .font(.system(size: 15, weight: .semibold).monospacedDigit())
-            .foregroundStyle(ink)
-            .frame(width: JarvisModel.badge, height: JarvisModel.badge)
-            .background(Circle().fill(ink.opacity(0.15)))
-            .opacity(lit ? 1 : 0.35)
-    }
-}
-
-/// One option: the digit, the label, what it touches under it. 1 sits on the accent like the
-/// bar's Capture button; the others on the bar's hover tint.
-private struct OptionItem: View {
+private struct OptionSquare: View {
     @ObservedObject var model: JarvisModel
     let digit: Int
     let option: JarvisOption?
     @State private var hover = false
 
     var body: some View {
-        let label = Color(nsColor: .labelColor)
-        let primary = digit == 1
-        let ink = primary ? Color.white : label
-        HStack(spacing: JarvisModel.itemGap) {
-            Badge(digit: digit, ink: ink, lit: model.live)
-            if let option {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(option.label)
-                        .font(Font(JarvisModel.labelFont))
-                        .foregroundStyle(ink)
-                    Text(option.keyword)
-                        .font(Font(JarvisModel.keywordFont))
-                        .foregroundStyle(ink.opacity(primary ? 0.75 : 0.5))
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
-            } else {
-                Text(JarvisModel.other)
-                    .font(Font(JarvisModel.labelFont))
-                    .foregroundStyle(label.opacity(0.6))
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, JarvisModel.inset)
-        .frame(height: JarvisModel.item)
-        .background(RoundedRectangle(cornerRadius: 8).fill(
-            primary ? Color(nsColor: .controlAccentColor) : hover ? label.opacity(0.1) : .clear))
-        .contentShape(Rectangle())
-        .help(option.map { "\($0.label)\n\($0.keyword)" } ?? JarvisModel.other)
-        .onHover { hover = $0 }
-        .onTapGesture { model.act(digit == 0 ? .type : .pick(digit)) }
+        Text("\(digit)")
+            .font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white.opacity(model.live ? 1 : 0.35))
+            .frame(width: JarvisModel.square, height: JarvisModel.square)
+            .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
+            .overlay(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(hover ? 0.1 : 0)))
+            .contentShape(Rectangle())
+            .help(option.map { "\($0.label)\n\($0.keyword)" } ?? JarvisModel.other)
+            .onHover { hover = $0 }
+            .onTapGesture { model.act(digit == 0 ? .type : .pick(digit)) }
     }
 }
 
-/// After 0 the field takes the items' place in the bar, so the answer is typed where the
-/// options were; the bar only widens when they were too few to leave it room.
+/// After 0 the field takes the squares' place, so the answer is typed where the options were.
 private struct TypingField: View {
     @ObservedObject var model: JarvisModel
     @FocusState private var focused: Bool
 
     var body: some View {
-        let label = Color(nsColor: .labelColor)
-        HStack(spacing: JarvisModel.itemGap) {
-            Badge(digit: 0, ink: label, lit: true)
+        HStack(spacing: JarvisModel.inset) {
+            Text("0")
+                .font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
             TextField("Tell \(model.project) what to do", text: $model.draft)
                 .textFieldStyle(.plain)
                 .font(Font(JarvisModel.labelFont))
                 .focused($focused)
                 .onSubmit { model.act(.submit(model.draft)) }
                 .onAppear { focused = true }
-            Text("⏎ send   esc back")
-                .font(.system(size: 12))
-                .foregroundStyle(label.opacity(0.4))
-                .fixedSize()
         }
         .padding(.horizontal, JarvisModel.inset)
-        .frame(width: model.fieldWidth, height: JarvisModel.item)
-        .background(RoundedRectangle(cornerRadius: 8).fill(label.opacity(0.1)))
+        .frame(width: model.fieldWidth, height: JarvisModel.square)
+        .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
     }
 }
 
