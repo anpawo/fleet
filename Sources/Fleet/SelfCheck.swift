@@ -100,6 +100,8 @@ enum SelfCheck {
         let up = Launchd.judge("s14.web", resident, (42, 78), age: 3 * 86400)
         expect(up.ok && up.hung == nil, true, "a resident up for days with an old 78 is ok, never hung")
         expect(Launchd.judge("s14.web", resident, (nil, 0), age: nil).ok, false, "a resident with no pid is not ok")
+        expect(Launchd.judge("s14.web", resident, (42, 75), age: nil).deferred, false,
+               "a resident whose last exit was 75 is not deferred")
 
         var retrying = failed
         retrying.repairing = true

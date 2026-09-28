@@ -131,7 +131,8 @@ enum Launchd {
                    ok: trigger != nil ? (enabled && !failing && hung == nil) : state?.pid != nil,
                    note: notes[label] ?? fallbackNote(plist),
                    busy: state?.pid != nil,
-                   deferred: exit == tempfail,
+                   // A resident's last exit is history — see `ok`.
+                   deferred: trigger != nil && exit == tempfail,
                    hung: hung)
     }
 
