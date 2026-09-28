@@ -7,8 +7,8 @@ import SwiftUI
 ///
 /// The title bar is the name on its chip at the left, `trailing` at the right (a count, a
 /// readout, a +), and `middle` centred over the line without taking any of its height (a
-/// verdict, a spinner, the fleet's key). The name sits `titleInset` from the frame on top and
-/// on the left whatever `spread` the block asks for.
+/// verdict, a spinner, the fleet's key). The name sits 10pt under the frame's top and
+/// `titleInset` from its left, whatever `spread` the block asks for.
 struct Block<Middle: View, Trailing: View, Content: View>: View {
     let title: String
     var icon: String?
@@ -19,11 +19,9 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
     var fill: Color?
     var spread: CGFloat = 13
     var bottomSpread: CGFloat?
-    /// From the frame to the chips, on top and either side. The fleet's is its tiles' own
-    /// margin, so the name starts on the line the cards start on.
+    /// From the frame to the chips, either side and never on top. The fleet's is its tiles'
+    /// own margin, so the name starts on the line the cards start on.
     var titleInset: CGFloat = 10
-    /// The same, on top alone, when it is not `titleInset`.
-    var titleTop: CGFloat?
     /// A gauge filled from the left instead of a flat wash — MEMORY's RAM.
     var level: BlockLevel?
     /// Between the title bar and the body.
@@ -55,12 +53,10 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
                 }
                 trailing()
             }
-            // The chips' ground hangs 7pt past the words: this leaves `titleInset` of pane round
-            // them, the frame reaching `spread` past the block.
+            // The chips' ground hangs 7pt past the words: this leaves `titleInset` of pane
+            // beside them, the frame reaching `spread` past the block.
             .padding(.horizontal, titleInset + 7 - spread)
             .overlay { if !middleBetween { middle() } }
-            // The frame starts 13pt over the block and the ground hangs 3pt over the words.
-            .padding(.top, (titleTop ?? titleInset) - 10)
             content()
         }
         .blockFrame(tint, fill: fill, spread: spread, bottomSpread: bottomSpread, level: level)
