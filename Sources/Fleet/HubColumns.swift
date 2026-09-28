@@ -113,6 +113,8 @@ struct CronColumn: View {
     /// away on the way: the clear waits a beat and looks at these before it goes through.
     @State private var overCard: String?
     @State private var overDetail = false
+    /// The families whose line runs on past the block's right edge from where it is scrolled.
+    @State private var runsOn: Set<String> = []
     /// The pointer is on the block. Folded to its heading otherwise: fifteen healthy routines
     /// are wallpaper, and the verdict on the heading says whether any of them is not.
     @State private var open = CommandLine.arguments.contains("--crons-open")
@@ -260,6 +262,22 @@ struct CronColumn: View {
                 ScrollView(.horizontal) { cards }
                     .scrollIndicators(.hidden)
                     .scrollBounceBehavior(.basedOnSize)
+                    // The card the edge cuts fades out rather than stopping mid-letter
+                    // ("mirror-cl"), which read as a clipped name, not as more to scroll to.
+                    .onScrollGeometryChange(for: Bool.self) {
+                        $0.contentOffset.x + $0.containerSize.width < $0.contentSize.width - 1
+                    } action: { _, more in
+                        if more { runsOn.insert(family) } else { runsOn.remove(family) }
+                    }
+                    .mask {
+                        HStack(spacing: 0) {
+                            Rectangle()
+                            if runsOn.contains(family) {
+                                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: 36)
+                            }
+                        }
+                    }
             } else {
                 // At their own widths, as the scroll view keeps them: a frame of no width
                 // reports none, and the line clips what spills past the block's edge.
