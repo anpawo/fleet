@@ -344,7 +344,8 @@ struct OverlayView: View {
         // Tighter tracking than the side headings, which are one short word each: at theirs
         // this one runs into the key beside it.
         Block(title: "CLAUDE CODE FLEET", tracking: 2.6, tint: BlockTint.fleet,
-              fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13) {
+              fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13,
+              titleInset: Self.fleetSpread, bodyGap: 11) {
             legendKey
         } trailing: {
             if !controller.sessions.isEmpty {
