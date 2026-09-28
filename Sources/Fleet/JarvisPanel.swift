@@ -22,7 +22,7 @@ final class JarvisModel: ObservableObject {
     static let square: CGFloat = 53, squareGap: CGFloat = 8, digitSize: CGFloat = 26, inset: CGFloat = 12
     /// The black tray the squares sit in, this far from its edge; ✕ on its left and Other on
     /// its right stand `apart` from the digits.
-    static let tray: CGFloat = 8, apart: CGFloat = 20, otherWidth: CGFloat = 84
+    static let tray: CGFloat = 8, apart: CGFloat = 32, otherWidth: CGFloat = 84
     /// Clear space over the orb, and between it and the squares.
     static let top: CGFloat = 12, gap: CGFloat = 12, orb: CGFloat = 36
     static let labelFont = NSFont.systemFont(ofSize: 15)
@@ -302,7 +302,7 @@ struct JarvisView: View {
             Square(width: JarvisModel.square, help: "Close (esc)", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
-            .padding(.trailing, JarvisModel.apart - JarvisModel.squareGap)
+            Dash()
             if let failure = model.failure {
                 Text(failure)
                     .font(Font(JarvisModel.failureFont))
@@ -323,11 +323,11 @@ struct JarvisView: View {
                             Text("\(i + 1)").font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
                         }
                     }
+                    Dash()
                     Square(width: JarvisModel.otherWidth, help: "\(JarvisModel.other) (0)",
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
                     }
-                    .padding(.leading, JarvisModel.apart - JarvisModel.squareGap)
                 }
             }
         }
@@ -337,6 +337,14 @@ struct JarvisView: View {
         .contentShape(Rectangle())
         // A click between the squares says his attention is here: the digits come back.
         .onTapGesture { model.act(.rearm) }
+    }
+}
+
+/// The short dash that sets ✕ and Other apart from the digits.
+private struct Dash: View {
+    var body: some View {
+        Capsule().fill(.white.opacity(0.35)).frame(width: 8, height: 2)
+            .frame(width: JarvisModel.apart - 2 * JarvisModel.squareGap)
     }
 }
 
