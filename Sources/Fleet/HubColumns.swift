@@ -289,6 +289,11 @@ struct CronColumn: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
+                if job.deferred {
+                    Text("deferred — no network")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(SessionState.apiError.tint)
+                }
                 if let address = job.address {
                     let link = address.hasPrefix("http://") ? URL(string: address) : nil
                     // Only a web address opens. A SOCKS port shows as itself, because a
@@ -367,7 +372,10 @@ struct CronCard: View {
     static let radius: CGFloat = 5
 
     var body: some View {
-        let border: Color = job.ok ? .white.opacity(0.07) : SessionState.running.tint.opacity(0.5)
+        // Amber for a run put off for want of network: the machine's colour for something
+        // going wrong that is not the routine's, and not a thing to go and fix.
+        let border: Color = !job.ok ? SessionState.running.tint.opacity(0.5)
+            : job.deferred ? SessionState.apiError.tint.opacity(0.5) : .white.opacity(0.07)
         // Set like the state pills on the session cards: small, and no wider than the name.
         Text(label)
             .font(.system(size: 10, weight: .semibold))

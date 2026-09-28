@@ -34,8 +34,9 @@ enum Launchd {
         /// twenty-three hours and is perfectly alive. A plist sitting in the folder that
         /// launchd has never been told about is the one that is off, and that is what shows.
         var enabled: Bool
-        /// The last run did not exit 0. The one thing here worth a colour: a routine that has
-        /// been failing since Tuesday looks exactly like one that works.
+        /// The last run did not exit 0, nor 75 — see `deferred`. The one thing here worth a
+        /// colour: a routine that has been failing since Tuesday looks exactly like one that
+        /// works.
         ///
         /// A kill counts too — launchctl reports one as minus the signal, and a watchdog that
         /// had to kill a routine is a routine that failed. The one job killed on purpose,
@@ -71,6 +72,10 @@ enum Launchd {
         /// Fleet has started it again after a failed run and that run has not ended yet: ALERT
         /// waits for its answer — see `LaunchdStore.repair`.
         var repairing = false
+        /// The last run exited 75, EX_TEMPFAIL: `online` gave up waiting for the network and
+        /// put the run off to the next slot. Not a failure — nothing is wrong with the routine,
+        /// and running it again while the wifi is still out would only defer it again.
+        var deferred = false
 
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
@@ -97,7 +102,8 @@ enum Launchd {
             let trigger = schedule(plist)
             let port = state?.pid.flatMap { ports[$0] }
             let enabled = state != nil
-            let failing = (state?.exit ?? 0) != 0
+            let exit = state?.exit ?? 0
+            let failing = exit != 0 && exit != tempfail
             return Job(id: label,
                        name: shorten(label),
                        schedule: trigger ?? resting(plist),
@@ -107,7 +113,8 @@ enum Launchd {
                        ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist),
                        address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" },
-                       busy: state?.pid != nil)
+                       busy: state?.pid != nil,
+                       deferred: exit == tempfail)
         }.sorted { $0.name < $1.name }
     }
 
@@ -296,6 +303,11 @@ enum Launchd {
         }
         return out
     }
+
+    /// EX_TEMPFAIL, what `online` exits with when it gave up waiting for the network. launchctl
+    /// reports it as a plain 75 — a signal would be negative (measured 28-09-2026 with a
+    /// throwaway `launchctl submit` of `exit 75`).
+    static let tempfail = 75
 }
 
 /// What the panel reads. Not the enum above straight from `body`: `launchctl list` is a
