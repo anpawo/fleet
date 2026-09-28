@@ -206,6 +206,8 @@ enum SelfCheck {
         _ = store.repair([job("selftest.g", deferred: true)], now: now)
         _ = store.repair([job("selftest.d")], now: now)
         expect(remembers("selftest.g", deferredKey), false, "a deferred routine gone from the folder is forgotten")
+        _ = store.repair([job("my-setup.sync", failing: true)], now: now)
+        expect(kicked.contains("my-setup.sync"), false, "my-setup.sync is not started again")
     }
 
     // MARK: - Listening ports
