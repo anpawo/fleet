@@ -307,7 +307,7 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>16</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>17</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
     <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">212146f</dd></div>
@@ -318,6 +318,53 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">~/.epitech · discord.mjs, run.sh</span>
+        <span class="chip chip-sha">hors dépôt</span>
+      </div>
+      <h3>L'alerte discord éteinte par une relance qui n'a pas lu Discord</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          La barre ALERT affiche <code>discord</code> après le passage de 8h, puis se tait à
+          9h37 sans que le Hub ait été lu&nbsp;: son dump date toujours de la veille, 16:02.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Deux choses. Une requête vers Discord est restée sans réponse&nbsp;: aucun délai dans
+          <code>discord.mjs</code>, donc les 300&nbsp;s d'undici, puis une exception qui fait
+          tomber toute la lecture du Hub en code 1. Et <code>run.sh</code> ne lisait Discord
+          que si l'heure était 8&nbsp;: la relance d'<code>online</code> à 9h37 l'a sauté et a
+          écrit <code>"discord":null</code>, ce qui éteint l'alerte. Sans elle, la prochaine
+          lecture était à 8h le lendemain.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Une requête muette est coupée à 20&nbsp;s et rejouée une fois — la requête, pas le
+          scan. Discord est lu par le premier passage du jour qui n'a pas encore sa lecture,
+          serveur par serveur (<code>discord/&lt;id&gt;/.read</code>)&nbsp;: une lecture ratée à 8h
+          est reprise à la relance, à 14h ou à 20h, et un serveur lu n'est pas relu.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>run.log 08:13 : HeadersTimeoutError: HTTP/2: "headers timeout after 300000" → discord=1
+run.log 09:37 : exits: … discord=skipped     index.md du Hub : 27/09 16:03
+bloc Discord de run.sh, HOME jetable et node factice, 5 cas :
+  rien lu → 2 lectures · relu le même jour → skipped, 0 · Hub seul non lu → 1 lecture
+  le Hub échoue → code 1, Paris daté, Hub non · passage suivant → 1 lecture, code 0
+discord.mjs scan du Hub, à la main : écrit, index.md 28/09 09:40     fleet --epitech : trouble: none</pre>
+        </dd>
+        <dt>Reste</dt>
+        <dd>
+          Le délai de 20&nbsp;s n'a pas été vu couper une vraie requête muette&nbsp;: la panne ne se
+          reproduit pas à la demande. Un code 3 (jeton Discord mort) reste une alerte
+          <code>discord login</code>, que seule une reconnexion dans Firefox éteint.
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">

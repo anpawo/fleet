@@ -175,7 +175,8 @@ enum Epitech {
         let scan: Int?
         let edsquare: Int?
         let outlook: Int?
-        /// Null on the runs where it does not go out: Discord is read once a day, at eight.
+        /// Null on the runs where it does not go out: Discord is read once a day, by the first
+        /// run that has not had its reading yet.
         let discord: Int?
         /// The probe of calendar access, not a reader: a green run that silently writes nothing
         /// was the failure that actually happened, five times in ten days.
