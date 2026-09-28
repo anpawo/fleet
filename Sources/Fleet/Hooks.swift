@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 11
+    static let version = 12
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -269,6 +269,10 @@ enum Hooks {
         ("Notification", "awaiting"),
         ("Stop", "ready"),
         ("SessionEnd", "end"),
+        // Not states: what the session's settings were at launch, and an edit of them since —
+        // see `relaunch` in the script.
+        ("SessionStart", "start"),
+        ("ConfigChange", "config"),
     ]
 
     enum InstallError: LocalizedError {
@@ -330,9 +334,52 @@ enum Hooks {
         let data = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)
+        installFishFunction()
         prune()
         return settingsPath
     }
+
+    static let fishFunctionPath = (NSHomeDirectory() as NSString)
+        .appendingPathComponent(".config/fish/functions/claude.fish")
+
+    /// The other half of the script's `relaunch`: the hook can end a session, only the shell
+    /// that started it can start it again in the same terminal. Written only where fish is set
+    /// up, and never over a `claude` function Fleet did not write.
+    private static func installFishFunction() {
+        let fm = FileManager.default
+        let dir = (fishFunctionPath as NSString).deletingLastPathComponent
+        guard fm.fileExists(atPath: (dir as NSString).deletingLastPathComponent) else { return }
+        if let existing = try? String(contentsOfFile: fishFunctionPath, encoding: .utf8),
+           !existing.hasPrefix(fishMarker) { return }
+        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try? fishFunction.write(toFile: fishFunctionPath, atomically: true, encoding: .utf8)
+    }
+
+    private static let fishMarker = "# Written by Fleet"
+
+    private static let fishFunction = """
+    # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
+    # Runs Claude Code, and brings a session back in this terminal, with its conversation, when
+    # Fleet's hook ended it to pick up settings a running session never rereads.
+    function claude --wraps claude
+        if contains -- -p $argv; or contains -- --print $argv
+            command claude $argv
+            return
+        end
+        set -l note ~/.claude/fleet/restart/$fish_pid
+        rm -f $note
+        env FLEET_SHELL=$fish_pid claude $argv
+        set -l code $status
+        while test -f $note
+            set -l again (cat $note)
+            rm -f $note
+            env FLEET_SHELL=$fish_pid claude --resume $again
+            set code $status
+        end
+        return $code
+    end
+
+    """
 
     /// One matcher group with Fleet's own command stripped out of it, or nil when that command
     /// was the only thing in it. Anything else in the group survives.
@@ -371,6 +418,9 @@ enum Hooks {
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try out.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)
         try? fm.removeItem(atPath: scriptPath)
+        if (try? String(contentsOfFile: fishFunctionPath, encoding: .utf8))?.hasPrefix(fishMarker) == true {
+            try? fm.removeItem(atPath: fishFunctionPath)
+        }
         return true
     }
 
@@ -384,11 +434,12 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 11
+    # fleet-hook-version: 12
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
-    # means: running, awaiting, ready, or end.
+    # means: running, awaiting, ready, or end — or start and config, which only feed the
+    # relaunch below.
     set -u
     state="${1:-}"
     dir="$HOME/.claude/fleet/state"
@@ -400,9 +451,49 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg"
         exit 0
     fi
+
+    # A session runs on the settings it read at launch: the model never changes under a live
+    # process, and `--resume` brings the old one back. What they were is recorded at start, so
+    # a later edit of settings.json can be told apart from the settings the session has.
+    settings="$HOME/.claude/settings.json"
+    cfg() {
+        for k in model modelSettings outputStyle; do
+            # xml1, not json: plutil refuses to print a bare string as JSON.
+            plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
+        done
+    }
+    [ "$state" = "start" ] && { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; exit 0; }
+    [ -f "$dir/$sid.cfg" ] || { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; }
+
+    # Those settings changed since: a session with nothing in flight is ended, and the `claude`
+    # function Fleet puts in fish resumes it in the same terminal on the new ones. Only that
+    # function's own child is ever ended — FLEET_SHELL names the fish that will bring it back —
+    # so a `claude -p` job, an IDE session or a nested claude keeps the settings it started on.
+    # The end comes a second later and only if the session is still idle by then, so a prompt
+    # typed in that second wins; a busy one is caught at the Stop that ends its turn.
+    relaunch() {
+        [ -n "${FLEET_SHELL:-}" ] || return 0
+        [ "$(cfg)" != "$(cat "$dir/$sid.cfg" 2>/dev/null)" ] || return 0
+        p=$PPID; up=; n=0
+        while [ $n -lt 4 ] && [ -n "$p" ]; do
+            up=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+            [ "$up" = "$FLEET_SHELL" ] && break
+            p=$up; n=$((n + 1))
+        done
+        [ "$up" = "$FLEET_SHELL" ] || return 0
+        model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
+        /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
+            grep -q "$1" "$2" || exit 0
+            mkdir -p "${3%/*}"
+            { echo "$4"; [ -z "$5" ] || { echo --model; echo "$5"; }; } > "$3"
+            kill -TERM "$6"' _ '"state":"ready"' "$dir/$sid.json" \\
+            "$HOME/.claude/fleet/restart/$FLEET_SHELL" "$sid" "$model" "$p" \\
+            >/dev/null 2>&1 </dev/null &
+    }
+    [ "$state" = "config" ] && { relaunch; exit 0; }
 
     # The one message that travels towards the session rather than away from it: when Fleet
     # has decided the machine has stopped keeping up, the agent is told so in its own context,
@@ -570,6 +661,7 @@ enum Hooks {
     tmp="$dir/$sid.json.$$"
     printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
         "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
+    [ "$state" = "ready" ] && relaunch
     exit 0
 
     """

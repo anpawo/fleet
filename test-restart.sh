@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Drives the installed hook and fish function against a throwaway HOME and checks when a
+# settings change relaunches a session and when it must not: an idle session is ended and
+# resumed on the new model, a busy one is left alone until its turn ends, and nothing outside
+# Fleet's `claude` function is ever ended. Run after `fleet --install-hooks`.
+set -uo pipefail
+
+HOOK="${1:-$HOME/.claude/fleet/session-state.sh}"
+FISHFN="${2:-$HOME/.config/fish/functions/claude.fish}"
+[ -x "$HOOK" ] || { echo "no hook at $HOOK — run: fleet --install-hooks"; exit 1; }
+[ -f "$FISHFN" ] || { echo "no fish function at $FISHFN — run: fleet --install-hooks"; exit 1; }
+
+FAKE=$(mktemp -d)
+trap 'rm -rf "$FAKE"' EXIT
+mkdir -p "$FAKE/.claude/fleet/state"
+SID=11111111-2222-3333-4444-555555555555
+fail=0
+
+model() {
+    printf '{"model":"%s","modelSettings":{"claude-opus-5-5":{"effortLevel":"xhigh"}}}' "$1" \
+        > "$FAKE/.claude/settings.json"
+}
+
+# Fires one hook the way Claude Code does: the hook is a child of a stand-in "claude", itself a
+# child of a stand-in shell that FLEET_SHELL names — unless $3 is "bare". The stand-in claude
+# outlives the hook by two seconds and leaves `survived` behind unless it was ended first.
+fire() {
+    rm -f "$FAKE/survived"
+    rm -rf "$FAKE/.claude/fleet/restart"
+    payload=$(printf '{"session_id":"%s","hook_event_name":"%s","transcript_path":"/tmp/t.jsonl"}' "$SID" "$1")
+    HOME="$FAKE" HOOK="$HOOK" PAYLOAD="$payload" ARG="$2" BARE="${3:-}" sh -c '
+        [ -n "$BARE" ] || export FLEET_SHELL=$$
+        echo $$ > "$HOME/shell.pid"
+        sh -c "printf %s \"\$PAYLOAD\" | sh \"\$HOOK\" \"\$ARG\" >/dev/null; sleep 2; touch \"\$HOME/survived\""
+    '
+}
+
+# $1 name, $2 "kept" or the arguments the relaunch should resume with.
+check() {
+    note="$FAKE/.claude/fleet/restart/$(cat "$FAKE/shell.pid")"
+    if [ -f "$FAKE/survived" ] && [ ! -f "$note" ]; then got=kept
+    elif [ ! -f "$FAKE/survived" ] && [ -f "$note" ]; then got=$(tr '\n' ' ' < "$note" | sed 's/ $//')
+    else got="survived=$([ -f "$FAKE/survived" ] && echo y || echo n) note=$([ -f "$note" ] && echo y || echo n)"
+    fi
+    if [ "$got" = "$2" ]; then printf '  ok    %s\n' "$1"
+    else printf '  FAIL  %s — wanted %s, got %s\n' "$1" "$2" "$got"; fail=1; fi
+}
+
+echo "hook: $HOOK"
+model opus
+fire SessionStart start
+fire Stop ready;                 check "idle session, settings unchanged: left alone" kept
+model fable
+fire UserPromptSubmit running
+fire ConfigChange config;        check "busy session when settings change: left alone" kept
+fire Stop ready;                 check "busy session relaunched when its turn ends" "$SID --model fable"
+fire SessionStart start
+fire ConfigChange config;        check "resumed session is not relaunched again" kept
+model opus
+fire ConfigChange config;        check "idle session relaunched on a settings change" "$SID --model opus"
+fire SessionStart start
+model fable
+fire Stop ready bare;            check "session outside the fish function never ended" kept
+
+echo "fish: $FISHFN"
+if command -v fish >/dev/null; then
+    mkdir -p "$FAKE/bin"
+    cat > "$FAKE/bin/claude" <<'EOF'
+#!/bin/sh
+echo "$*" >> "$HOME/calls"
+[ -n "${FLEET_SHELL:-}" ] && [ ! -f "$HOME/once" ] || exit 0
+touch "$HOME/once"
+mkdir -p "$HOME/.claude/fleet/restart"
+printf '%s\n--model\nfable\n' 11111111-2222-3333-4444-555555555555 > "$HOME/.claude/fleet/restart/$FLEET_SHELL"
+EOF
+    chmod +x "$FAKE/bin/claude"
+    try() {
+        rm -f "$FAKE/calls" "$FAKE/once"
+        HOME="$FAKE" PATH="$FAKE/bin:$PATH" fish --no-config -c "source '$FISHFN'; claude $1"
+        got=$(tr '\n' '|' < "$FAKE/calls")
+        if [ "$got" = "$2" ]; then printf '  ok    %s\n' "$3"
+        else printf '  FAIL  %s — wanted %s, got %s\n' "$3" "$2" "$got"; fail=1; fi
+    }
+    try hello "hello|--resume $SID --model fable|" "ended session resumed once, on the new model"
+    try "-p hi" "-p hi|" "claude -p is never resumed"
+else
+    echo "  FAIL  fish not found"; fail=1
+fi
+
+[ $fail = 0 ] && echo "all passed" || echo "FAILED"
+exit $fail

@@ -39,6 +39,9 @@ contre un HOME jetable et vérifie la seule décision non évidente du fichier �
 quand un STOP atteint une session et quand il ne l'atteint pas. Dire ce qu'il a
 affiché. Une app qui redémarre n'est pas un hook qui marche.
 
+Quand le changement touche la relance des sessions (`relaunch` dans le hook, la fonction
+fish `claude`), lancer aussi `./test-restart.sh`.
+
 Quand le changement touche le bloc EPITECH ou la barre d'alerte, lancer aussi
 `./test-epitech.sh` : il rejoue les formes que peuvent prendre `state.json` et
 `sources.json` et vérifie ce que la barre dit de chacune.
