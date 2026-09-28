@@ -296,7 +296,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Fleet · tenue à jour le 18 septembre 2026</p>
+    <p class="eyebrow">Fleet · tenue à jour le 28 septembre 2026</p>
     <h1>Journal de bord</h1>
     <p class="standfirst">
       Ce qui a cassé, ce qui est réparé, ce qui reste ouvert. Chaque entrée porte le symptôme
@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>15</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>16</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">c07ddc5</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">212146f</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,45 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Reels · ReelCheck · ALERT</span>
+        <span class="chip chip-sha">212146f</span>
+      </div>
+      <h3>Deux alertes pour un seul Reel, et personne pour le réessayer</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          La barre ALERT affiche <code>reel Dcwh5vLRW00: yt-dlp: ERROR: [Instagram]…</code> et
+          <code>firestore.reels</code>, et les garde.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Instagram ne sert ce Reel qu'à un client connecté&nbsp;: <code>Instagram sent an empty
+          media response</code>. La seconde alerte est la même panne&nbsp;: le job horaire sort
+          en code 1 dès qu'un check échoue. Et un check raté était définitif —
+          <code>fleetTriedAt</code> posé, plus jamais retenté — donc l'alerte restait jusqu'à ce
+          que le Reel soit rangé à la main.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          yt-dlp part sans session, et ne prend celle de Firefox que pour ce qui vient d'être
+          refusé&nbsp;: une requête signée par refus, pas une par Reel. Un check raté est retenté
+          par les passages suivants, trois essais à 45&nbsp;minutes d'écart
+          (<code>fleetTries</code>)&nbsp;; ALERT ne nomme un Reel, et le job ne sort en 1, qu'une
+          fois les essais épuisés.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>yt-dlp --simulate, sans session : ERROR empty media response   avec : mp4, 176 s
+launchctl kickstart firestore.reels → reel Dcwh5vLRW00 — plutot_vrai, note écrite
+last exit code : 1 → 0     fleet --reels : 0 ligne d'erreur     rendu : plus de barre ALERT
+Fleet --selftest : 8 cas sur la règle de réessai, all ok</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
