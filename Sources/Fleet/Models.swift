@@ -344,6 +344,8 @@ struct TranscriptInfo {
     var workflows: [WorkflowLaunch] = []
     /// The newest of them, read off its journal. Filled in after the parse, like `subagents`.
     var workflow: WorkflowProgress?
+    /// Claude's last reply whole, lines kept, for the tile's hover.
+    var lastReply: String?
 }
 
 /// One rendered line of the mini-transcript shown on a tile.
@@ -514,6 +516,8 @@ struct Session: Identifiable {
     var lastSaid: String? {
         steps.last { $0.kind == .assistant }?.text
     }
+
+    var lastReply: String? { transcript?.lastReply }
 
     /// The recent conversation, oldest first: your prompts, the tools Claude ran, what it said.
     var steps: [PreviewLine] { transcript?.preview ?? [] }
