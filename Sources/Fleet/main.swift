@@ -395,7 +395,9 @@ if CommandLine.arguments.contains("--reels-run") {
         while hub.working, Date() < deadline {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
-        print("reels: \(hub.reels.count) unread, \(hub.reelsReadToday) read today"
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        print("\(stamp.string(from: Date())) reels: \(hub.reels.count) unread, \(hub.reelsReadToday) read today"
               + (hub.working ? " — still working, stopped at the cap" : "")
               + (hub.failedThisRun ? " — a check or a read failed" : ""))
         exit(hub.failedThisRun ? 1 : 0)
