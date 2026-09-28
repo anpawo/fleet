@@ -929,26 +929,8 @@ struct GroupTile: View {
         .onHover { hovering = $0 }
     }
 
-    /// Where the name's own line starts, measured from the top of the folded card. Named
-    /// because the HEAD label above it has to divide what is left.
+    /// Where the name's own line starts, measured from the top of the folded card.
     static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
-
-    /// Roughly the HEAD label's line height, the way `nameLine` is the title's.
-    static let mainLine: CGFloat = 13
-
-    /// The word worn over the head's card inside an open group.
-    static var mainLabel: some View {
-        Text("HEAD")
-            .font(.system(size: 11, weight: .bold))
-            .tracking(3.2)
-            .foregroundStyle(.white)
-            .fixedSize()
-    }
-
-    /// What the title's line box leaves above its capitals. The label is centred on what the
-    /// eye sees and not on two frames: measured on an offscreen render, halving the frames
-    /// left 18.5pt over the word and 28.5 under it.
-    static let titleLead: CGFloat = 10
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
     /// centring it on the folded card needs a number before anything is drawn.
@@ -1114,7 +1096,8 @@ struct SessionTile: View {
     /// What the card is called, when the directory name it defaults to would say nothing —
     /// inside an unfolded group, where every card shares that directory.
     var heading: String?
-    /// Whether this is the group's head, said over the name.
+    /// Whether this is the group's head: its name glows. Not written over it (asked 2026-09-28):
+    /// the head is always the first card, top left.
     var main = false
     /// Inside an unfolded group, whose heading already names the directory: no folder in the
     /// corner, which leaves the pills the whole line.
@@ -1188,13 +1171,6 @@ struct SessionTile: View {
                     }
                 }
                 .padding(11)
-
-                if main {
-                    GroupTile.mainLabel
-                        .opacity(0.5)
-                        .padding(.top, (GroupTile.titleTop + GroupTile.titleLead
-                                        - GroupTile.mainLine) / 2)
-                }
             }
             .frame(height: Self.height, alignment: .top)
             // The glow is cast by the card's own ground, a single shape, rather than by the
