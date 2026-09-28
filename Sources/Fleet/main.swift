@@ -752,12 +752,18 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         // The side columns come off the network, and an offscreen render has nobody to wait for
         // them. Waiting by spinning the run loop rather than blocking on it: the fetch lands on
         // the main actor, and a blocked main thread would never let it finish.
+        //
+        // A failed first fetch is retried rather than taken as the end of the wait: stopping on
+        // it drew both columns at "Loading…" after 1.3 s, one render in five (patch notes).
         controller.hub.refresh()
         let deadline = Date().addingTimeInterval(8)
         while controller.hub.isConfigured,
               !controller.hub.loaded || controller.hub.reelsFetchedAt == .distantPast,
-              controller.hub.failure == nil, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+              Date() < deadline {
+            if controller.hub.failure != nil, !controller.hub.loaded, !controller.hub.fetching {
+                controller.hub.refresh()
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         }
 
         // `--cmd` draws the panel as it looks with ⌘ held: the todo column's ✕s are otherwise

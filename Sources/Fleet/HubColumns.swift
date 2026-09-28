@@ -62,10 +62,12 @@ struct MailColumn: View {
                                       max(40, limit - Self.chrome)), alignment: .top)
             } else {
                 // Same bound as the scroll, without the scroll: a list longer than its block
-                // drew straight over the one below.
+                // drew straight over the one below. Asked for its own height (the fixedSize),
+                // not handed the cap: a bare maxHeight frame takes all it is offered.
                 VStack(spacing: 8) { rows }
                     .frame(maxHeight: max(40, limit - Self.chrome), alignment: .top)
                     .clipped()
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         // ⌘ enfoncée alors que le pointeur est déjà sur une carte : le changement vient du
@@ -75,7 +77,7 @@ struct MailColumn: View {
 
     @ViewBuilder private var rows: some View {
         if !hub.loaded {
-            HubEmptyLine(text: "Loading\u{2026}")
+            HubEmptyLine(text: hub.pending)
         }
         ForEach(hub.mail.prefix(Self.maxItems)) { mail in
             MailCard(hub: hub, mail: mail,
@@ -534,7 +536,7 @@ struct TodoColumn: View {
             }
             if hub.todos.isEmpty {
                 if !hub.composing {
-                    HubEmptyLine(text: hub.loaded ? "Nothing to do" : "Loading\u{2026}")
+                    HubEmptyLine(text: hub.loaded ? "Nothing to do" : hub.pending)
                 }
             } else {
                 let visible = hub.todos

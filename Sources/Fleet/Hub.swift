@@ -815,6 +815,13 @@ final class HubStore: ObservableObject {
     var schoolEmpty: Bool { loaded && (epitech?.modules.isEmpty ?? true) }
     var todoEmpty: Bool { loaded && todos.isEmpty && !composing }
 
+    /// What an empty column says before its first fetch has landed: waiting, or that the first
+    /// one failed. "Loading…" after a failure waited on something that was not coming — the
+    /// column sat there until the next refresh, and a render drew it (patch notes, --render).
+    var pending: String { failure == nil ? "Loading\u{2026}" : "Offline" }
+    /// A fetch is on its way — see `refresh`, which cancels one to start the next.
+    var fetching: Bool { inFlight != nil }
+
     func refresh() {
         guard isConfigured else { return }
         inFlight?.cancel()
