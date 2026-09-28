@@ -1,5 +1,5 @@
 import Metal
-import MetalKit
+import simd
 import SwiftUI
 
 /// Jarvis's orb: VoiceOrbs' "Siri Sheet" (github.com/amunozdev/voiceorbs, MIT, Alexis Munoz),
@@ -83,13 +83,17 @@ enum OrbShader {
         return p
     }
 
-    /// One frame on a texture read back, for the offscreen renders: a Metal layer is not
-    /// captured by `cacheDisplay`.
-    static func image(_ uniforms: [Float], pixels: Int) -> CGImage? {
-        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: pixels, height: pixels, mipmapped: false)
-        td.usage = [.renderTarget, .shaderRead]
-        td.storageMode = .shared
-        guard let texture = device?.makeTexture(descriptor: td), let buffer = queue?.makeCommandBuffer() else { return nil }
+    private static var texture: MTLTexture?
+
+    /// One frame on a texture read back as an image, for the panel and the offscreen renders alike.
+    @MainActor static func image(_ uniforms: [Float], pixels: Int) -> CGImage? {
+        if texture?.width != pixels {
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: pixels, height: pixels, mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead]
+            td.storageMode = .shared
+            texture = device?.makeTexture(descriptor: td)
+        }
+        guard let texture, let buffer = queue?.makeCommandBuffer() else { return nil }
         encode(uniforms, into: pass(texture), buffer: buffer)
         buffer.commit()
         buffer.waitUntilCompleted()

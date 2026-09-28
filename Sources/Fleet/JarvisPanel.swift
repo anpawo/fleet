@@ -1,5 +1,4 @@
 import AppKit
-import MetalKit
 import SwiftUI
 
 /// What the panel shows. Every size is worked out here rather than left to SwiftUI, so the
@@ -384,61 +383,22 @@ private struct QueueBadge: View {
 }
 
 /// The shader's canvas: the ball is 80% of it at rest and swells to 88% with the voice, the
-/// rest is for its halo. Live it is a Metal view drawing at the display's rate while shown;
-/// frozen (offscreen renders) it is one frame read back as an image.
+/// rest is for its halo. Every frame is drawn on the GPU and read back as an image: the same
+/// path as the offscreen renders, so what they show is what the panel shows.
 private struct OrbView: View {
     let orb: OrbModel
     let running: Bool
     static let canvas: CGFloat = 48
+    private static let pixels = 144
 
     var body: some View {
-        Group {
-            if let frozen = orb.frozen, let image = OrbShader.image(orb.uniforms(at: Date(timeIntervalSinceReferenceDate: frozen), pixels: 144), pixels: 144) {
-                Image(decorative: image, scale: 3)
-            } else {
-                OrbMetal(orb: orb, running: running)
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !running)) { timeline in
+            let date = orb.frozen.map { Date(timeIntervalSinceReferenceDate: $0) } ?? timeline.date
+            if let image = OrbShader.image(orb.uniforms(at: date, pixels: Float(Self.pixels)), pixels: Self.pixels) {
+                Image(decorative: image, scale: CGFloat(Self.pixels) / Self.canvas)
             }
         }
         .frame(width: Self.canvas, height: Self.canvas)
         .padding(-(Self.canvas - JarvisModel.orb) / 2)
-    }
-}
-
-private struct OrbMetal: NSViewRepresentable {
-    let orb: OrbModel
-    let running: Bool
-
-    func makeCoordinator() -> Coordinator { Coordinator(orb: orb) }
-
-    func makeNSView(context: Context) -> MTKView {
-        let v = MTKView(frame: .zero, device: OrbShader.device)
-        v.colorPixelFormat = .bgra8Unorm
-        v.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        v.layer?.isOpaque = false
-        v.preferredFramesPerSecond = 60
-        v.delegate = context.coordinator
-        return v
-    }
-
-    func updateNSView(_ v: MTKView, context: Context) {
-        v.isPaused = !running
-    }
-
-    final class Coordinator: NSObject, MTKViewDelegate {
-        let orb: OrbModel
-        private lazy var queue = OrbShader.device?.makeCommandQueue()
-        init(orb: OrbModel) { self.orb = orb }
-
-        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
-
-        func draw(in view: MTKView) {
-            guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-                  let buffer = queue?.makeCommandBuffer() else { return }
-            let pixels = Float(view.drawableSize.width)
-            let uniforms = MainActor.assumeIsolated { orb.uniforms(at: Date(), pixels: pixels) }
-            OrbShader.encode(uniforms, into: pass, buffer: buffer)
-            buffer.present(drawable)
-            buffer.commit()
-        }
     }
 }

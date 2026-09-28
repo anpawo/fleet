@@ -35,6 +35,12 @@ final class Jarvis {
         let options: [JarvisOption]
         var key: String { "\(ask.sid):\(ask.hookPid)" }
         var line: String { ask.line ?? project.prefix(1).uppercased() + project.dropFirst() + " is done, sir." }
+        /// The line, then each option by its number, so the digits mean something by ear.
+        var spoken: String {
+            let numbers = ["One", "Two", "Three", "Four", "Five", "Six"]
+            return ([line] + options.enumerated().map { "\(numbers[$0.offset]): \(JarvisOptions.short($0.element.label))." })
+                .joined(separator: " ")
+        }
     }
 
     private var queue: [Item] = []
@@ -245,7 +251,7 @@ final class Jarvis {
             voiceEndedAt = Date()
             m.orb.set(.waiting)
         } else {
-            speak(item.line)
+            speak(item.spoken)
         }
 
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.check() } }
@@ -642,6 +648,13 @@ enum JarvisOptions {
         return text.isEmpty ? nil : text
     }
 
+    /// An option as said aloud: no parenthesis, ten words at most, no closing punctuation.
+    static func short(_ label: String) -> String {
+        let bare = label.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
+        return bare.split(separator: " ").prefix(10).joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!? "))
+    }
+
     private static func clean(_ raw: String) -> String {
         raw.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
             .trimmingCharacters(in: .whitespaces)
@@ -658,6 +671,9 @@ enum JarvisOptions {
 
     /// `fleet --selftest`: messages shaped like the ones sessions actually end on.
     static func check(_ expect: ([String], [String], String) -> Void) {
+        expect([short("Re-render them at 2x with sips -Z 800 (my pick)"), short("one two three four five six seven eight nine ten eleven.")],
+               ["Re-render them at 2x with sips -Z 800", "one two three four five six seven eight nine ten"],
+               "jarvis: an option said aloud drops its parenthesis and stops at ten words")
         func run(_ message: String, _ project: String) -> [String] {
             parse(message, project: project, cwd: NSHomeDirectory() + "/self/" + project)
                 .map { "\($0.label) | \($0.keyword)" }
