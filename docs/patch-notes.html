@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>21</dd></div>
-    <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>35</dd></div>
+    <div class="is-open"><dt>Ouverts</dt><dd>8</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">8f5c6aa</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">5fb9750</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,258 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.noRetry</span>
+        <span class="chip chip-sha">5fb9750</span>
+      </div>
+      <h3>my-setup.sync relancé pour le même refus</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Après un échec de <code>my-setup.sync</code>, Fleet le relance aussitôt&nbsp;: une
+          nouvelle session Claude headless de 5 à 7&nbsp;min, qui échoue pareil.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Ses échecs se répètent — le vet a refusé le diff, ou l'allowlist a refusé chaque appel
+          Bash — et la relance unique de Fleet ne change rien à l'un ni à l'autre.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>my-setup.sync</code> rejoint <code>noRetry</code>&nbsp;: l'échec va dans ALERT, le
+          rattrapage est le passage suivant, 12&nbsp;h plus tard.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : my-setup.sync en échec → aucun kickstart</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Launchd.awake · hung</span>
+        <span class="chip chip-sha">7b2d54d</span>
+      </div>
+      <h3>Une routine « hung » au réveil après un capot fermé en plein passage</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code (relecture du 28/09)&nbsp;: un <code>s14.recon-v3</code> surpris par la mise en veille à 18:05 se lit le lendemain matin comme tournant depuis 15&nbsp;h, et ALERT le dit bloqué.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          L'<code>etime</code> de <code>ps</code> continue de compter pendant la veille&nbsp;; Fleet le prenait pour l'âge du passage.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'âge est <code>min(etime, maintenant − kern.waketime)</code>, lu par <code>sysctlbyname</code>&nbsp;; sans réveil depuis le boot (0), l'etime tel quel. Un passage vraiment bloqué avant la veille est dit <code>hung</code> une allowance après le réveil.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>sysctl kern.waketime : { sec = 1790581031 } Mon Sep 28 09:37:11 2026
+--selftest : 3h d'etime, réveil il y a 10 min → 600 s, v3 non hung ; lancé après le réveil → etime ; sans réveil → etime</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.repair · ALERT</span>
+        <span class="chip chip-sha">c3f098c</span>
+      </div>
+      <h3>Une routine reportée à chaque passage, ambre pour toujours</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code&nbsp;: un VPN qui bloque <code>captive.apple.com</code> fait sortir chaque passage de <code>online</code> en 75. <code>s14.mcp-renew</code> resterait ambre une journée pendant que son jeton de 24&nbsp;h expire, sans jamais passer dans ALERT.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Un exit 75 n'était jamais une alerte, quelle que soit sa durée&nbsp;: Fleet ne se souvenait pas depuis quand ça durait.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Fleet note le premier passage reporté d'une série (<code>cronDeferred</code>, par label), effacé à toute autre sortie rapportée par launchd ou quand le plist quitte le dossier. Passé <code>max(6 h, 3 × allowance)</code>, ALERT dit <code>&lt;nom&gt; deferred Nh</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : 1er report retenu, pas d'ALERT ; 5 h sur un créneau horaire → rien ;
+  7 h → « selftest.f deferred 7h » ; allowance 3 h → attend 9 h ; launchd muet → gardé ; exit 1 → oublié</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.repair</span>
+        <span class="chip chip-sha">310dd7e</span>
+      </div>
+      <h3>Un passage bloqué tué à la main, relancé aussitôt sur le même montage mort</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code&nbsp;: tuer un passage <code>hung</code> laisse -15 dans launchd, donc un échec sans relance notée, et Fleet le relance dans les 10&nbsp;s — sur le même sshfs mort.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Un passage bloqué ne comptait pas comme une relance consommée.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un passage <code>hung</code> note sa relance comme dépensée (datée d'une minute, pour qu'ALERT ne l'attende pas), gardée tant qu'il reste bloqué&nbsp;; l'échec qui suit le kill va dans ALERT.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest (kickstart injecté, compté) : hung → relance dépensée, gardée sur un exit 0 ;
+  puis -15 → pas repairing, aucun kickstart de selftest.e</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Launchd.judge</span>
+        <span class="chip chip-sha">1eac4ee</span>
+      </div>
+      <h3>Une application gardée en vie, ambre pour un vieux 75</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code&nbsp;: un résident (KeepAlive) dont la dernière sortie était 75 s'affichait «&nbsp;deferred — no network&nbsp;» en servant normalement.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          <code>deferred</code> ne regardait que le code de sortie, pas le genre de l'agent&nbsp;; la dernière sortie d'un résident est de l'histoire, pas de la santé.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>deferred</code> seulement pour une routine (<code>trigger != nil</code>).
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : résident, pid 42, exit 75 → deferred false</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Launchd.allowance</span>
+        <span class="chip chip-sha">6200955</span>
+      </div>
+      <h3>Une routine horaire derrière <code>online</code> dite bloquée après 20 min d'attente du wifi</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code&nbsp;: <code>s14.recon-v3</code>, horaire, qui attend 20&nbsp;min le réseau puis tourne 45&nbsp;min dépasse son heure et passe <code>hung</code>.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          L'allowance ignorait les attentes bornées d'<code>online</code>&nbsp;: jusqu'à trois passages, chacun précédé d'une attente d'<code>ONLINE_WAIT</code> (1200&nbsp;s par défaut) que le <code>sleep 90</code> et la sonde de 5&nbsp;s peuvent dépasser.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Quand <code>ProgramArguments[0]</code> finit par <code>/online</code>, l'allowance ajoute <code>3 × (ONLINE_WAIT + 95 s)</code>, <code>ONLINE_WAIT</code> lu dans <code>EnvironmentVariables</code>. Plafond gardé à 6&nbsp;h&nbsp;: le pire cas du scan Epitech, 3 × (95 + 21,5)&nbsp;min, fait 5&nbsp;h&nbsp;50, et un passage au-delà de 6&nbsp;h a raté son créneau suivant — c'est la définition de <code>hung</code> ici.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : horaire sous online → 3600 + 3×1295 s ; 1h05 → non hung ; ONLINE_WAIT=300 → 3600 + 3×395 ;
+  epitech sous online → 6 h</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">SelfCheck · Launchd.judge</span>
+        <span class="chip chip-sha">2834dad</span>
+      </div>
+      <h3>Le selftest ne prouvait pas ce que la carte et ALERT font de launchd</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Chaque <code>--selftest</code> envoyait de vrais <code>launchctl kickstart</code> sur des labels <code>selftest.*</code> («&nbsp;Could not find service&nbsp;»), et le calcul (failing, deferred, hung, ok) n'était testé que par morceaux.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le calcul vivait dans <code>jobs()</code>, derrière un <code>launchctl list</code> et un <code>ps</code>&nbsp;; le kickstart était écrit en dur dans <code>repair</code>.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          <code>Launchd.judge</code>, fonction pure du plist, du pid, de la sortie et de l'âge&nbsp;; les lignes d'ALERT sortent par <code>AlertsBlock.cronAlerts</code>&nbsp;; le kickstart est injectable.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : exit 75, 1, -15, non listé, 2h10, résident ; ALERT = ["s14.x hung 2h", "s14.x"]
+  « Could not find service » : 0 ligne</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.repair</span>
+        <span class="chip chip-sha">00f0108</span>
+      </div>
+      <h3><code>cronRetries</code> réécrit toutes les 10 s, et perdu sur un plist à moitié écrit</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code&nbsp;: <code>UserDefaults</code> réécrit à chaque scan même sans changement&nbsp;; un plist qu'un <code>install.sh</code> est en train d'écrire perdait sa relance, et la routine était relancée une deuxième fois.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          L'écriture était inconditionnelle, et les entrées n'étaient gardées que pour les labels qui avaient donné un job ce scan — un plist illisible n'en donne pas.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Écriture seulement si le contenu change&nbsp;; entrées gardées pour tout fichier <code>.plist</code> du dossier, lisible ou non.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest : plist illisible → relance gardée ; rien de changé → 0 écriture ; un changement → 1</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">AlertsBlock · Block · CRONS</span>
+        <span class="chip chip-sha">6552f3c · 265fa12</span>
+      </div>
+      <h3>La puce d'ALERT seule au milieu de la barre, «&nbsp;mirror-cl&nbsp;» coupé net</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Au rendu&nbsp;: la puce <code>s14.recon-v3 hung 2h</code> centrée sur la barre, et la ligne S14 de CRONS coupée en plein mot sur <code>mirror-check</code>.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Les puces étaient posées au milieu de la barre&nbsp;; la ligne S14 (dix cartes) défile de côté et son bord coupait la carte sans rien signaler.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Les puces suivent le nom ALERT sur sa ligne, à 22&nbsp;pt comme entre deux puces&nbsp;; le titre d'un Block garde sa taille naturelle. La ligne qui déborde s'efface sur ses 36 derniers pt tant qu'il reste des cartes à droite.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--render --live --crons-open --hung s14.recon-v3 --size 2000x1300 :
+  puce collée à gauche après ALERT ; « mirror-c » s'efface en fondu ; autres blocs inchangés</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
