@@ -18,9 +18,40 @@ enum SelfCheck {
         subagents(expect)
         ghosts(expect)
         ports(expect)
+        reels(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
+    }
+
+    // MARK: - Reels
+
+    /// When a Reel that failed is tried again, and when it is given up on and named in ALERT.
+    private static func reels(_ expect: (Bool, Bool, String) -> Void) {
+        let now = Date()
+        func reel(tries: Int?, triedAgo: TimeInterval?, status: String = "pending") -> Reel {
+            var fields = ["status": ["stringValue": status]]
+            if let tries { fields["fleetTries"] = ["integerValue": String(tries)] }
+            if let triedAgo {
+                fields["fleetTriedAt"] = ["timestampValue":
+                    ISO8601DateFormatter().string(from: now.addingTimeInterval(-triedAgo))]
+            }
+            let json = try! JSONSerialization.data(withJSONObject: ["name": "factcheck/x", "fields": fields])
+            return Reel(try! JSONDecoder().decode(Firestore.Document.self, from: json))
+        }
+        expect(reel(tries: nil, triedAgo: nil).needsCheck(at: now), true, "a Reel never tried is checked")
+        expect(reel(tries: 1, triedAgo: 600).needsCheck(at: now), false,
+               "a Reel that failed ten minutes ago waits")
+        expect(reel(tries: 1, triedAgo: 3600).needsCheck(at: now), true,
+               "a Reel that failed an hour ago is tried again")
+        expect(reel(tries: nil, triedAgo: 3600).needsCheck(at: now), true,
+               "a failure from before the count gets its retries")
+        expect(reel(tries: Reel.maxTries, triedAgo: 86_400).needsCheck(at: now), false,
+               "a Reel out of tries is left alone")
+        expect(reel(tries: Reel.maxTries, triedAgo: 86_400).givenUp, true, "and is the one ALERT names")
+        expect(reel(tries: 2, triedAgo: 600).givenUp, false, "a Reel with a try left is not in ALERT")
+        expect(reel(tries: 1, triedAgo: 3600, status: "done").needsCheck(at: now), false,
+               "a checked Reel is not checked again")
     }
 
     // MARK: - Listening ports

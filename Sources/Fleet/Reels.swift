@@ -24,10 +24,12 @@ struct Reel: Identifiable {
     /// Put away from here. Not deleted: the phone still lists it, and the verdict is still
     /// there to reread on the day the Reel comes up in conversation.
     var seen: Bool
-    /// When this Mac last tried and failed. A check that failed is not retried on its own —
-    /// the same private account is private tomorrow — so this is what keeps a broken link
-    /// from costing a download attempt every five minutes.
+    /// When this Mac last tried and failed, and how many times it has. A failure is as often
+    /// Instagram throttling, the network or the model as it is the Reel, so it is tried again
+    /// — `maxTries` times, `retryAfter` apart — before anybody is told. The count is absent
+    /// from the failures written before 2026-09-28, which gives them their retries.
     var fleetTriedAt: Date?
+    var fleetTries: Int
     var fleetError: String
     /// Written by the sparkle, for a Reel that was not something to do: what kind of thing it
     /// was, from `Category`, and the one line worth remembering it by. Both absent until then.
@@ -56,6 +58,7 @@ struct Reel: Identifiable {
         createdAt = millis > 0 ? Date(timeIntervalSince1970: Double(millis) / 1000) : .distantPast
         seen = doc.bool("seen")
         fleetTriedAt = doc.date("fleetTriedAt")
+        fleetTries = doc.int("fleetTries")
         fleetError = doc.string("fleetError")
         category = doc.string("category")
         reminder = doc.string("reminder")
@@ -86,7 +89,17 @@ struct Reel: Identifiable {
     }
 
     var checked: Bool { status == "done" }
-    var needsCheck: Bool { !checked && fleetTriedAt == nil && !seen }
+    static let maxTries = 3
+    /// Under the job's hour, so the run after a failure is the one that tries again.
+    static let retryAfter: TimeInterval = 45 * 60
+
+    /// Out of tries: the one failure ALERT names, because it is the one left to Marius.
+    var givenUp: Bool { !checked && fleetTries >= Self.maxTries }
+    var needsCheck: Bool { needsCheck(at: Date()) }
+    func needsCheck(at now: Date) -> Bool {
+        guard !checked, !seen, !givenUp else { return false }
+        return fleetTriedAt.map { now.timeIntervalSince($0) > Self.retryAfter } ?? true
+    }
     var needsDigest: Bool { checked && digestedAt == nil }
 
     /// The phone's six verdicts folded to the four colours the panel has.
@@ -129,7 +142,7 @@ struct Reel: Identifiable {
 
     /// The word under the dot, in the verdict's own colour.
     var badge: String {
-        guard checked else { return fleetTriedAt == nil ? "to check" : "out of reach" }
+        guard checked else { return givenUp ? "out of reach" : "to check" }
         switch verdict {
         case "vrai": return "true"
         case "plutot_vrai": return "mostly true"
@@ -168,6 +181,9 @@ enum ReelCheck {
     private static let ffmpeg = "/opt/homebrew/bin/ffmpeg"
     private static let whisper = "/opt/homebrew/bin/whisper-cli"
     private static let models = NSHomeDirectory() + "/.local/share/whisper"
+    /// The Firefox profile signed in to Instagram. Named: left to itself yt-dlp takes the
+    /// profile last written to, which is as often the work one.
+    private static let firefox = "firefox:77xcox0v.default-release"
 
     /// Run the whole thing on one Reel and write the outcome to its document, whichever way it
     /// went. Never throws: the caller is a timer, and the document is where the answer goes.
@@ -188,6 +204,7 @@ enum ReelCheck {
             try? await Firestore.patch("factcheck/\(reel.id)", fields: [
                 "fleetError": ["stringValue": String(error.localizedDescription.prefix(500))],
                 "fleetTriedAt": Firestore.timestamp(Date()),
+                "fleetTries": ["integerValue": String(reel.fleetTries + 1)],
             ])
             return false
         }
@@ -204,16 +221,27 @@ enum ReelCheck {
         // the videos beside them. `--write-thumbnail` is what brings the photo slides back: a
         // slide's thumbnail is the slide.
         var refused: Error?
+        let fetch = ["-q", "--no-warnings", "--socket-timeout", "20",
+                     "--ignore-no-formats-error", "--write-thumbnail",
+                     "--convert-thumbnails", "jpg",
+                     "-o", "reel-%(autonumber)s.%(ext)s",
+                     "--print-to-file", "%(uploader)s\n%(description)s",
+                     "meta-%(autonumber)s.txt",
+                     url]
+        let written = { ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted() }
         do {
-            try await exec(ytdlp, ["-q", "--no-warnings", "--socket-timeout", "20",
-                                   "--ignore-no-formats-error", "--write-thumbnail",
-                                   "--convert-thumbnails", "jpg",
-                                   "-o", "reel-%(autonumber)s.%(ext)s",
-                                   "--print-to-file", "%(uploader)s\n%(description)s",
-                                   "meta-%(autonumber)s.txt",
-                                   url], in: dir, step: "yt-dlp", timeout: 300)
+            try await exec(ytdlp, fetch, in: dir, step: "yt-dlp", timeout: 300)
         } catch { refused = error }
-        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).sorted()
+        // Signed in only for what was refused signed out. Instagram keeps some Reels behind
+        // the login — "empty media response", 2026-09-28 — and an account that fetches every
+        // Reel from a script is an account that gets flagged; one request per refusal is not.
+        if !written().contains(where: { $0.hasPrefix("reel-") }) {
+            do {
+                try await exec(ytdlp, ["--cookies-from-browser", firefox] + fetch,
+                               in: dir, step: "yt-dlp-signed", timeout: 300)
+            } catch { refused = error }
+        }
+        let files = written()
         let meta = files.first { $0.hasPrefix("meta-") }
             .flatMap { try? String(contentsOf: dir.appending(path: $0), encoding: .utf8) } ?? ""
         let author = reel.author.isEmpty

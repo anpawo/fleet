@@ -560,7 +560,7 @@ final class HubStore: ObservableObject {
 
     /// The Reels the phone was handed, minus the ones put away — for `fleet --reels`.
     @Published private(set) var reels: [Reel] = []
-    /// The Reels this Mac could not check, newest first, each as ALERT names it: which Reel,
+    /// The Reels this Mac has given up on, newest first, each as ALERT names it: which Reel,
     /// and what stopped it. The phone giving up is not in here — it gives up on most of them,
     /// and this Mac takes them over on its next run.
     @Published private(set) var failedRuns: [String] = []
@@ -651,7 +651,7 @@ final class HubStore: ObservableObject {
             reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
             // Put away counts as dealt with: a Reel you have already read the failure of is not
             // news, and a bar that stays red for ever is a bar nobody looks at.
-            failedRuns = all.filter { !$0.seen && !$0.fleetError.isEmpty }
+            failedRuns = all.filter { !$0.seen && $0.givenUp }
                 .sorted { $0.createdAt > $1.createdAt }
                 .map { "reel \(String($0.label.prefix(24))): \(String($0.fleetError.prefix(40)))" }
             // The resident app does no check itself, but it does not leave one waiting for the
@@ -681,7 +681,10 @@ final class HubStore: ObservableObject {
             }
             checkingReel = next.id
             reelCheck = Task {
-                if !(await ReelCheck.run(next)) { failedThisRun = true }
+                // A failure with tries left is the next run's work, not a run gone wrong.
+                if !(await ReelCheck.run(next)), next.fleetTries + 1 >= Reel.maxTries {
+                    failedThisRun = true
+                }
                 reelCheck = nil
                 checkingReel = nil
                 await syncReels()
