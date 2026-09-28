@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>18</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>21</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>7</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">98c405b</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">8f5c6aa</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,116 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Launchd.allowance · ALERT · CRONS</span>
+        <span class="chip chip-sha">627277f</span>
+      </div>
+      <h3>Une routine bloquée depuis des heures, verte dans CRONS</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>s14.recon-v3</code> bloqué en état non interruptible sur une lecture sshfs morte
+          reste vert, et ALERT ne dit rien.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          launchd ne lance pas de nouveau passage tant que l'ancien tourne, et
+          <code>launchctl list</code> garde le code de sortie du passage d'avant&nbsp;: Fleet ne
+          lisait que ce code. Et une relance de Fleet qui se bloque restait
+          <code>repairing</code> tant qu'elle avait un pid, donc ALERT l'attendait pour toujours.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un seul <code>ps -o pid=,etime=</code> par scan donne l'âge de chaque passage en cours.
+          Passé son créneau suivant (<code>StartInterval</code>, ou le plus petit écart entre ses
+          heures de calendrier), borné entre 5&nbsp;min et 6&nbsp;h, il est <code>hung</code>&nbsp;:
+          ligne BROKEN, bord rouge, <code>s14.recon-v3 hung 2h</code> dans ALERT, jamais relancé
+          ni tué. Le plafond de <code>reels.scan</code> passe de 90 à 55&nbsp;min&nbsp;: horaire
+          depuis le 22/09, un long passage légitime aurait été dit bloqué.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>ps -o pid=,etime= -p 1,&lt;Fleet&gt;,99999 : « 02-16:12:30 », « 00:23 », pid absent ignoré, code 0
+--selftest : 15 cas (formes d'etime, créneaux, plancher, plafond, v3 à 2h10 = hung, à 40 min non)
+--render --hung s14.recon-v3 : ALERT « s14.recon-v3 hung 2h », BROKEN s14.recon-v3,
+  boîte ⌘ « hung — running for 2h »</pre>
+          Non observé sur un vrai passage bloqué&nbsp;: l'état est simulé au rendu.
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">LaunchdStore.repair</span>
+        <span class="chip chip-sha">8f5c6aa</span>
+      </div>
+      <h3>Une routine relancée deux fois quand launchd ne liste rien</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Lu dans le code, pas vu à l'écran&nbsp;: la règle «&nbsp;une relance par échec&nbsp;» ne
+          tient pas si <code>launchctl list</code> échoue une fois, ou si un
+          <code>install.sh</code> fait un bootout/bootstrap entre deux scans.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          <code>repair</code> oubliait la relance de toute routine qui n'échouait pas — y compris
+          celle que launchd ne listait pas, donc sans code de sortie — et ne gardait
+          <code>cronRetries</code> que pour les routines chargées. Le scan suivant la relançait
+          une deuxième fois. Au démarrage, la première lecture ne passait pas par
+          <code>repair</code>&nbsp;: une routine en pleine relance était dans ALERT pendant
+          10&nbsp;s.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          L'entrée ne part que quand launchd dit que le passage a réussi, ou quand le plist a
+          quitté le dossier (supprimé, renommé). La première lecture passe par
+          <code>repair</code>, relances coupées.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--selftest, 8 cas sur des labels inexistants (le kickstart échoue sans effet)
+ancien code : 3 FAILED — relance oubliée, relancée une 3e fois, relance bloquée attendue
+nouveau     : all ok</pre>
+        </dd>
+      </dl>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">Launchd.tempfail · CronCard</span>
+        <span class="chip chip-sha">5187bdd</span>
+      </div>
+      <h3>Un passage reporté faute de réseau aurait rougi et été relancé</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          <code>online</code> passe à <code>exit 75</code> quand il renonce à attendre le réseau
+          (il sortait en 0). Lu comme tout code non nul, le report serait allé dans BROKEN et ALERT,
+          et <code>repair</code> l'aurait relancé wifi toujours coupé.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Fleet ne distinguait que zéro et non-zéro.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          75 est <code>deferred</code>&nbsp;: pas en échec, ni nommé ni relancé, mais bord ambre
+          et «&nbsp;deferred — no network&nbsp;» dans la boîte ⌘.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>launchctl submit -l test.fleet-exit75 -- /bin/sh -c 'exit 75' → launchctl list : « -	75 »  (retiré ensuite)
+--selftest : « a deferred one is not started again »
+--render --deferred s14.mcp-renew : bord ambre, boîte ⌘ « deferred — no network »</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
