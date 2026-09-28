@@ -198,6 +198,7 @@ final class AppController: ObservableObject {
     private let awake = AwakeHold()
     private var overlay: OverlayWindowController?
     private var controlCenter: ControlCenterController?
+    private var jarvis: Jarvis?
     private var statusItem: StatusItemController?
     private var timer: Timer?
     /// When the last tick actually ran, and the interval it was due after. How far apart those
@@ -222,6 +223,11 @@ final class AppController: ObservableObject {
             Settings.popupsOff = popupsOff
             statusItem?.update(ram: reaper.footprint, muted: muted)
         }
+    }
+
+    /// See `Settings.jarvisOn`.
+    @Published var jarvisOn = Settings.jarvisOn {
+        didSet { Settings.jarvisOn = jarvisOn }
     }
 
     /// Whether the panel may open on its own right now: neither turned off nor muted.
@@ -275,6 +281,8 @@ final class AppController: ObservableObject {
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
+        jarvis = Jarvis(controller: self)
+        jarvis?.start()
     }
 
     /// `--render`: populate the panel without any window, for offscreen image rendering.
@@ -533,14 +541,19 @@ final class AppController: ObservableObject {
                                 hogs: reaper.hogs, pause: reaper.struggling ? sessionsToPause() : [])
     }
 
+    /// The session you typed into last.
+    var lastPrompted: Session? {
+        sessions.max {
+            ($0.transcript?.lastPromptAt ?? .distantPast) < ($1.transcript?.lastPromptAt ?? .distantPast)
+        }
+    }
+
     /// Every session but the one you last prompted — and never a session whose directory one of
     /// the heavy processes runs in: that is the session able to free the memory, so it keeps its
     /// hands. Home is no one's directory; every hog on the machine is under it.
     private func sessionsToPause() -> [String] {
         let home = NSHomeDirectory()
-        let lead = sessions.max {
-            ($0.transcript?.lastPromptAt ?? .distantPast) < ($1.transcript?.lastPromptAt ?? .distantPast)
-        }
+        let lead = lastPrompted
         return sessions.compactMap { session in
             guard session.id != lead?.id, let path = session.transcript?.path else { return nil }
             let cwd = session.cwd

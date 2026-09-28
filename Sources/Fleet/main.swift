@@ -463,6 +463,16 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
     }
 }
 
+// `--render-jarvis <dir>`: Jarvis's capsule and options in every state, as PNGs, offscreen.
+if let i = CommandLine.arguments.firstIndex(of: "--render-jarvis"),
+   i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        JarvisPanel.render(to: CommandLine.arguments[i + 1])
+        exit(0)
+    }
+}
+
 if CommandLine.arguments.contains("--selftest") {
     MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
 }
@@ -908,7 +918,7 @@ let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--focus", "--hung", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
-    "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
+    "--live", "--reels-run", "--render", "--render-jarvis", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]

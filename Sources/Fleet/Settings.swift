@@ -101,6 +101,13 @@ enum Settings {
         set { UserDefaults.standard.set(newValue, forKey: "popupsOff") }
     }
 
+    /// Whether Jarvis speaks when a turn ends and offers the session's options. On unless
+    /// turned off.
+    static var jarvisOn: Bool {
+        get { UserDefaults.standard.object(forKey: "jarvisOn") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "jarvisOn") }
+    }
+
     /// Offered mute lengths, in seconds.
     static let muteDurationChoices: [TimeInterval] = [10 * 60, 30 * 60, 3600, 2 * 3600, 4 * 3600]
 

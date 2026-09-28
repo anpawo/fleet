@@ -84,6 +84,10 @@ struct ControlCenterView: View {
             mute
             section("WHEN IT APPEARS") {
                 idlePicker
+                row("Jarvis") {
+                    menu([true, false], label: { $0 ? "Speaks when a turn ends" : "Off" },
+                         selection: $controller.jarvisOn)
+                }
                 row("Mute lasts") {
                     menu(Settings.muteDurationChoices, label: Self.muteLabel,
                          selection: Binding(get: { muteDuration },

@@ -22,6 +22,7 @@ enum SelfCheck {
         crons(expect)
         judging(expect)
         repairs(expect)
+        JarvisOptions.check(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
