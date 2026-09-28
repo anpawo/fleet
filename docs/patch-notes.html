@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>35</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>36</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>8</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">5fb9750</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">a6141d1</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,39 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore</span>
+        <span class="chip chip-sha">a6141d1</span>
+      </div>
+      <h3>Sous-agents relancés par SendMessage invisibles</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          À 12:08, la carte jarvis affiche READY sans sous-agent alors que le terminal attend
+          «&nbsp;2 background agents&nbsp;».
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Les six sièges du council avaient tous rendu leur premier tour&nbsp;; deux ont été
+          relancés par <code>SendMessage</code> (tour 2). Fleet ne comptait que les appels
+          <code>Agent</code>, et le <code>meta.json</code> d'un agent relancé nomme toujours son
+          spawn d'origine, clos.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Un résultat de <code>SendMessage</code> portant <code>resumedAgentId</code> rouvre cet
+          agent jusqu'à la notification qui nomme l'appel <code>SendMessage</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--parse sur le transcript coupé à 12:08 : 0 sous-agent → 2 (platform, integration)
+--selftest : relancé par SendMessage → 1, notification → 0</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
