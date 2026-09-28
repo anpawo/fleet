@@ -22,6 +22,9 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
     /// From the frame to the chips, either side and never on top. The fleet's is its tiles'
     /// own margin, so the name starts on the line the cards start on.
     var titleInset: CGFloat = 10
+    /// The title bar centred on the frame's top line rather than 10pt under it, and taking no
+    /// height: the body starts `bodyGap` from the block's own top. The fleet's.
+    var titleOnLine = false
     /// A gauge filled from the left instead of a flat wash — MEMORY's RAM.
     var level: BlockLevel?
     /// Between the title bar and the body.
@@ -45,7 +48,8 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
                         .tracking(tracking)
                 }
                 .foregroundStyle(titleColor)
-                .titleGround()
+                // Opaque on the line, which a translucent chip lets run through the words.
+                .titleGround(titleOnLine ? 1 : 0.55)
                 Spacer(minLength: 3)
                 if middleBetween {
                     middle()
@@ -57,6 +61,10 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
             // beside them, the frame reaching `spread` past the block.
             .padding(.horizontal, titleInset + 7 - spread)
             .overlay { if !middleBetween { middle() } }
+            .frame(height: titleOnLine ? 0 : nil)
+            // The frame starts 13pt over the block.
+            .offset(y: titleOnLine ? -13 : 0)
+            .zIndex(titleOnLine ? 1 : 0)
             content()
         }
         .blockFrame(tint, fill: fill, spread: spread, bottomSpread: bottomSpread, level: level)

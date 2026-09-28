@@ -345,14 +345,16 @@ struct OverlayView: View {
         // this one runs into the key beside it.
         Block(title: "CLAUDE CODE FLEET", tracking: 2.6, tint: BlockTint.fleet,
               fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13,
-              titleInset: Self.fleetSpread, bodyGap: 11) {
+              // The grid brings 18pt of glow room over its first row and the frame starts 13pt
+              // over the block: five back leaves the tiles their 26pt under the line too.
+              titleInset: Self.fleetSpread, titleOnLine: true, bodyGap: -5) {
             legendKey
         } trailing: {
             if !controller.sessions.isEmpty {
                 Text("\(controller.sessions.count)")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.45))
-                    .titleGround()
+                    .titleGround(1)
             }
         } content: {
             // The same gap the side columns leave under their own rule, plus the room the
