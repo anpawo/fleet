@@ -76,6 +76,11 @@ enum Launchd {
         /// put the run off to the next slot. Not a failure — nothing is wrong with the routine,
         /// and running it again while the wifi is still out would only defer it again.
         var deferred = false
+        /// How long the run in progress has been going, when that is longer than its schedule
+        /// allows — see `allowance`. launchd starts no new run while one is going and
+        /// `launchctl list` keeps the previous exit, so a run stuck for hours on a dead sshfs
+        /// read otherwise looks exactly like a healthy routine between two runs.
+        var hung: TimeInterval?
 
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
@@ -91,6 +96,7 @@ enum Launchd {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let live = status()
         let ports = listening(live.values.compactMap(\.pid))
+        let ages = elapsed(live.filter { mine.contains(where: $0.key.hasPrefix) }.values.compactMap(\.pid))
         return names.compactMap { file -> Job? in
             guard file.hasSuffix(".plist") else { return nil }
             let label = String(file.dropLast(6))
@@ -104,17 +110,19 @@ enum Launchd {
             let enabled = state != nil
             let exit = state?.exit ?? 0
             let failing = exit != 0 && exit != tempfail
+            let hung = trigger == nil ? nil : Launchd.hung(state?.pid.flatMap { ages[$0] }, plist)
             return Job(id: label,
                        name: shorten(label),
                        schedule: trigger ?? resting(plist),
                        enabled: enabled,
                        failing: failing,
                        triggered: trigger != nil,
-                       ok: trigger != nil ? (enabled && !failing) : state?.pid != nil,
+                       ok: trigger != nil ? (enabled && !failing && hung == nil) : state?.pid != nil,
                        note: notes[label] ?? fallbackNote(plist),
                        address: port.map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" },
                        busy: state?.pid != nil,
-                       deferred: exit == tempfail)
+                       deferred: exit == tempfail,
+                       hung: hung)
         }.sorted { $0.name < $1.name }
     }
 
@@ -308,6 +316,85 @@ enum Launchd {
     /// reports it as a plain 75 — a signal would be negative (measured 28-09-2026 with a
     /// throwaway `launchctl submit` of `exit 75`).
     static let tempfail = 75
+
+    /// Five minutes: under that a run is slow, not stuck — `online` alone sleeps 90 s between
+    /// two looks at the network, and s14.mounts, every minute, would go red on its first wait.
+    static let floor: TimeInterval = 5 * 60
+    /// Six hours: the longest run on record here is the Epitech scan's 95 minutes (22-09), and
+    /// `online` may run a job three times with up to 20 minutes of waiting before each — just
+    /// under six hours for that one. Nothing legitimate runs longer, and a daily job stuck
+    /// since morning must not wait for tomorrow's slot to be called hung.
+    static let ceiling: TimeInterval = 6 * 3600
+
+    /// How long a run may go before it is hung: until its next run was due, which it has then
+    /// missed — launchd does not start one while it is still going. For a calendar job that is
+    /// the shortest gap between two of its times in a week; a watched path has no next run,
+    /// and gets the ceiling. `Day` and `Month` are ignored, which only shortens the gap, and
+    /// the ceiling is shorter than any gap they would make.
+    static func allowance(_ plist: [String: Any]) -> TimeInterval {
+        var period = ceiling
+        if let seconds = plist["StartInterval"] as? Int {
+            period = TimeInterval(seconds)
+        } else if let calendar = plist["StartCalendarInterval"] {
+            let entries = (calendar as? [[String: Any]]) ?? [(calendar as? [String: Any]) ?? [:]]
+            var fires = Set<Int>()
+            for entry in entries {
+                let days = (entry["Weekday"] as? Int).map { [$0 % 7] } ?? Array(0..<7)
+                let hours = (entry["Hour"] as? Int).map { [$0] } ?? Array(0..<24)
+                let minutes = (entry["Minute"] as? Int).map { [$0] } ?? Array(0..<60)
+                for d in days { for h in hours { for m in minutes { fires.insert((d * 24 + h) * 60 + m) } } }
+            }
+            let sorted = fires.sorted()
+            if let first = sorted.first, let last = sorted.last {
+                let gaps = zip(sorted, sorted.dropFirst()).map { $1 - $0 } + [first + 7 * 1440 - last]
+                period = TimeInterval(gaps.min()! * 60)
+            }
+        }
+        return min(max(period, floor), ceiling)
+    }
+
+    /// How long the run has been going, when that is past its allowance.
+    static func hung(_ age: TimeInterval?, _ plist: [String: Any]) -> TimeInterval? {
+        guard let age, age > allowance(plist) else { return nil }
+        return age
+    }
+
+    /// How long each of these processes has been running, in one `ps`. A pid that has gone
+    /// meanwhile is left out of the answer, not an error.
+    static func elapsed(_ pids: [Int]) -> [Int: TimeInterval] {
+        guard !pids.isEmpty else { return [:] }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-o", "pid=,etime=", "-p", pids.map(String.init).joined(separator: ",")]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return [:] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        var out: [Int: TimeInterval] = [:]
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let columns = line.split(separator: " ")
+            guard columns.count == 2, let pid = Int(columns[0]),
+                  let age = parseElapsed(columns[1]) else { continue }
+            out[pid] = age
+        }
+        return out
+    }
+
+    /// `ps`'s etime, `[[dd-]hh:]mm:ss`, in seconds.
+    static func parseElapsed(_ text: Substring) -> TimeInterval? {
+        let parts = text.split(separator: "-")
+        guard (1...2).contains(parts.count), let days = parts.count == 2 ? Int(parts[0]) : 0 else { return nil }
+        let clock = parts[parts.count - 1].split(separator: ":").map { Int($0) }
+        guard (2...3).contains(clock.count), !clock.contains(nil) else { return nil }
+        return TimeInterval(days * 86400 + clock.reduce(0) { $0 * 60 + $1! })
+    }
+
+    /// "40 min", "2h", "3d" — how long, in the fewest characters ALERT has room for.
+    static func span(_ seconds: TimeInterval) -> String {
+        seconds < 3600 ? "\(Int(seconds) / 60) min" : seconds < 2 * 86400 ? "\(Int(seconds) / 3600)h" : "\(Int(seconds) / 86400)d"
+    }
 }
 
 /// What the panel reads. Not the enum above straight from `body`: `launchctl list` is a
@@ -359,8 +446,9 @@ final class LaunchdStore: ObservableObject {
                 return job
             }
             if let at = retried[job.id] {
-                // Kicked a moment ago and not yet picked up, or still running.
-                job.repairing = job.busy || now.timeIntervalSince1970 - at < 60
+                // Kicked a moment ago and not yet picked up, or still running — but a retry
+                // that hangs is not one ALERT can wait for.
+                job.repairing = job.hung == nil && (job.busy || now.timeIntervalSince1970 - at < 60)
                 return job
             }
             guard repairs, !job.busy, !Self.noRetry.contains(job.id) else { return job }
@@ -377,6 +465,18 @@ final class LaunchdStore: ObservableObject {
         let labels = Set(jobs.map(\.id))
         UserDefaults.standard.set(retried.filter { labels.contains($0.key) }, forKey: Self.retriesKey)
         return out
+    }
+
+    /// For `--render --hung <label>` and `--deferred <label>`: that routine in the state
+    /// nothing on this machine can be made to produce on demand.
+    func simulate(_ label: String, hung: Bool) {
+        guard let i = jobs.firstIndex(where: { $0.id == label }) else { return }
+        if hung {
+            jobs[i].hung = 2 * 3600 + 600
+            jobs[i].ok = false
+        } else {
+            jobs[i].deferred = true
+        }
     }
 
     /// Called from `AppController.tick`, on the timer that is already running.

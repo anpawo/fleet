@@ -389,9 +389,9 @@ if CommandLine.arguments.contains("--reels-run") {
         hub.mayCheck = { true }
         await hub.syncReels()
         // Each finished check calls `syncReels` again, so the backlog drains on its own and
-        // this only has to wait for the quiet. The cap is the cron's own interval: a job still
-        // going when the next one starts is two whispers on eleven cores.
-        let deadline = Date().addingTimeInterval(90 * 60)
+        // this only has to wait for the quiet. The cap is under the cron's own interval, hourly
+        // since 22-09: a run still going past it is one Fleet calls hung — see `Launchd.allowance`.
+        let deadline = Date().addingTimeInterval(55 * 60)
         while hub.working, Date() < deadline {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
@@ -769,6 +769,13 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--reel") {
             controller.hub.checkingReel = "demo"
         }
+        // `--hung <label>` and `--deferred <label>`: that routine's card and ALERT line as the
+        // day it hangs on a dead mount, or runs with the wifi out.
+        for (flag, hung) in [("--hung", true), ("--deferred", false)] {
+            if let h = CommandLine.arguments.firstIndex(of: flag), h + 1 < CommandLine.arguments.count {
+                controller.launchd.simulate(CommandLine.arguments[h + 1], hung: hung)
+            }
+        }
 
         // `--open <directory>` draws a group unfolded. It is the one state a render cannot
         // otherwise reach — nothing opens a group but a click — and it is the state whose
@@ -899,7 +906,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
-    "--empty-terminals", "--epitech", "--fake", "--focus", "--idle", "--install-hooks", "--open",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--focus", "--hung", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",

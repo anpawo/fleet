@@ -289,10 +289,11 @@ struct CronColumn: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
-                if job.deferred {
-                    Text("deferred — no network")
+                if let state = job.hung.map({ "hung — running for \(Launchd.span($0))" })
+                    ?? (job.deferred ? "deferred — no network" : nil) {
+                    Text(state)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(SessionState.apiError.tint)
+                        .foregroundStyle((job.deferred ? SessionState.apiError : SessionState.running).tint)
                 }
                 if let address = job.address {
                     let link = address.hasPrefix("http://") ? URL(string: address) : nil
@@ -1620,7 +1621,11 @@ struct AlertsBlock: View {
         // red card among fifteen; this is the line you read without looking for it. Only the
         // routines: a resident's last exit is history, not health — see `Job.ok`.
         // Not while Fleet's own retry of it is running: most failed runs pass the second time.
-        for job in crons where job.triggered && job.failing && !job.repairing { out.append(job.name) }
+        // A hung run is named whatever its last exit said: that exit is the run before.
+        for job in crons where job.triggered {
+            if let hung = job.hung { out.append("\(job.name) hung \(Launchd.span(hung))") }
+            else if job.failing && !job.repairing { out.append(job.name) }
+        }
         if out.isEmpty, UserDefaults.standard.bool(forKey: "runsAlarm") { out.append(demo) }
         return out
     }

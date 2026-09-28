@@ -19,6 +19,7 @@ enum SelfCheck {
         ghosts(expect)
         ports(expect)
         reels(expect)
+        crons(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
@@ -52,6 +53,34 @@ enum SelfCheck {
         expect(reel(tries: 2, triedAgo: 600).givenUp, false, "a Reel with a try left is not in ALERT")
         expect(reel(tries: 1, triedAgo: 3600, status: "done").needsCheck(at: now), false,
                "a checked Reel is not checked again")
+    }
+
+    // MARK: - Crons
+
+    /// When a routine's run is hung: past its next slot, within the floor and the ceiling —
+    /// see `Launchd.allowance`. The age is `ps`'s etime, which has three shapes.
+    private static func crons(_ expect: (TimeInterval?, TimeInterval?, String) -> Void) {
+        expect(Launchd.parseElapsed("02-16:12:30"), 2 * 86400 + 16 * 3600 + 12 * 60 + 30, "etime with days")
+        expect(Launchd.parseElapsed("16:12:30"), 16 * 3600 + 12 * 60 + 30, "etime with hours")
+        expect(Launchd.parseElapsed("00:23"), 23, "etime under an hour")
+        expect(Launchd.parseElapsed("1-2-03:04"), nil, "etime that is not one")
+        let me = Int(getpid())
+        expect(Launchd.elapsed([me])[me].map { $0 < 600 ? 1 : 0 }, 1, "ps answers for a live pid")
+
+        let v3: [String: Any] = ["StartCalendarInterval": ["Minute": 5]]
+        let epitech: [String: Any] = ["StartCalendarInterval": [8, 14, 20].map { ["Hour": $0, "Minute": 0] }]
+        let weekdays: [String: Any] = ["StartCalendarInterval": (1...5).map { ["Weekday": $0, "Hour": 18, "Minute": 30] }]
+        expect(Launchd.allowance(v3), 3600, "an hourly calendar job has an hour")
+        expect(Launchd.allowance(epitech), 6 * 3600, "8h, 14h, 20h: the shortest gap, six hours")
+        expect(Launchd.allowance(weekdays), 6 * 3600, "weekdays at 18:30: a day, down to the ceiling")
+        expect(Launchd.allowance(["StartInterval": 60]), 300, "every minute: up to the floor")
+        expect(Launchd.allowance(["StartInterval": 43200]), 6 * 3600, "every 12h: down to the ceiling")
+        expect(Launchd.allowance(["WatchPaths": ["/tmp/x"]]), 6 * 3600, "a watched path: the ceiling")
+        expect(Launchd.hung(Launchd.parseElapsed("02:10:00"), v3), 7800, "recon-v3 running 2h10 is hung")
+        expect(Launchd.hung(Launchd.parseElapsed("40:00"), v3), nil, "recon-v3 running 40 min is not")
+        expect(Launchd.hung(Launchd.parseElapsed("04:00"), ["StartInterval": 60]), nil,
+               "the mounts running 4 min are slow, not hung")
+        expect(Launchd.hung(nil, v3), nil, "a routine between two runs is not hung")
     }
 
     // MARK: - Listening ports
