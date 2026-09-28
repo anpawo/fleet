@@ -645,7 +645,11 @@ struct JarvisBlock: View {
     let on: Bool
     let muted: Bool
 
-    static let tint = Color(red: 0.36, green: 0.22, blue: 0.58)
+    /// Electric blue, brighter than CRONS' and TODO's, and alive: while he listens the block
+    /// breathes a glow, three seconds in and out. Still when off or muted.
+    static let tint = Color(red: 0.0, green: 0.66, blue: 1.0)
+
+    @State private var breath = false
 
     private static let clock: DateFormatter = {
         let f = DateFormatter()
@@ -660,8 +664,15 @@ struct JarvisBlock: View {
     }()
 
     var body: some View {
-        HubColumn(title: "JARVIS", count: 0, tint: Self.tint, fill: Self.tint.darkened(0.48),
+        let alive = on && !muted
+        HubColumn(title: "JARVIS", count: 0, tint: Self.tint, fill: Self.tint.darkened(0.6),
                   badgeText: line, collapsed: true) { EmptyView() }
+            .shadow(color: Self.tint.opacity(alive ? (breath ? 0.9 : 0.3) : 0),
+                    radius: breath ? 14 : 5)
+            .onAppear { breath = alive }
+            .onChange(of: alive) { _, now in breath = now }
+            .animation(alive ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
+                             : .easeOut(duration: 0.3), value: breath)
     }
 
     private var line: Text {
