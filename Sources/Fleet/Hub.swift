@@ -662,7 +662,7 @@ final class HubStore: ObservableObject {
                 kickedAt = Date()
                 let kick = Process()
                 kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-                kick.arguments = ["kickstart", "gui/\(getuid())/firestore.reels"]
+                kick.arguments = ["kickstart", "gui/\(getuid())/reels.scan"]
                 try? kick.run()
             }
             guard reelCheck == nil, mayCheck() else { return }

@@ -21,7 +21,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["app.", "mac.", "s14.", "epitech.", "firestore.", "my-setup."]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "reels.", "my-setup."]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
@@ -167,7 +167,7 @@ enum Launchd {
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
-        "firestore.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
+        "reels.scan": "Downloads and transcribes the Reels you saved, then files the notes.",
         "mac.revive": "Starts back what should be running and is not.",
         "epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
         "mac.guard": "Stops whatever is about to freeze the Mac.",
