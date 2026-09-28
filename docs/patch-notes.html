@@ -307,10 +307,10 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>36</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>37</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>8</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
-    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">a6141d1</dd></div>
+    <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">8d62e8f</dd></div>
   </dl>
 
   <section>
@@ -318,6 +318,39 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">TranscriptStore.parse</span>
+        <span class="chip chip-sha">8d62e8f</span>
+      </div>
+      <h3>Agent lancé avant la fenêtre lue : session READY</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          À 13:17, la carte video-code affiche READY alors que son agent #130
+          (renderer-engineer) travaille en arrière-plan.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          Le transcript fait 23&nbsp;Mo et le lancement de l'agent est 2&nbsp;Mo avant la fin.
+          Un Fleet redémarré ne lit que les 256&nbsp;Ko de la fin&nbsp;; la tête du fichier
+          n'était parcourue que pour les shells en arrière-plan, pas pour les agents.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          Le parcours de la tête retient aussi les appels <code>Agent</code>/<code>Task</code>,
+          «&nbsp;Async agent launched&nbsp;» et les reprises <code>resumedAgentId</code>.
+        </dd>
+        <dt>Mesure</dt>
+        <dd>
+          <pre>--parse du transcript coupé à 13:17 : ancien binaire → aucun sous-agent,
+nouveau → renderer-engineer (#130)
+--selftest : agent lancé avant la fenêtre → toujours compté après redémarrage</pre>
+        </dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
