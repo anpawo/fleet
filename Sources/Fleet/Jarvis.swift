@@ -10,6 +10,8 @@ struct JarvisAsk: Decodable {
     let cwd: String
     var lastMessage: String?
     var at: Double?
+    /// What to say instead of "<project> is done, sir.", for a composed line or a demo.
+    var line: String?
 }
 
 struct JarvisOption: Equatable {
@@ -32,7 +34,7 @@ final class Jarvis {
         let project: String
         let options: [JarvisOption]
         var key: String { "\(ask.sid):\(ask.hookPid)" }
-        var line: String { project.prefix(1).uppercased() + project.dropFirst() + " is done, sir." }
+        var line: String { ask.line ?? project.prefix(1).uppercased() + project.dropFirst() + " is done, sir." }
     }
 
     private var queue: [Item] = []

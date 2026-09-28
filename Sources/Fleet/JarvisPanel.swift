@@ -21,6 +21,8 @@ final class JarvisModel: ObservableObject {
 
     /// Each answer is its own black square holding only its digit; the label shows on hover.
     static let square: CGFloat = 53, squareGap: CGFloat = 8, digitSize: CGFloat = 26, inset: CGFloat = 12
+    /// The black tray the squares sit in, this far from its edge.
+    static let tray: CGFloat = 8
     /// Clear space over the orb, and between it and the squares.
     static let top: CGFloat = 24, gap: CGFloat = 12, orb: CGFloat = 36
     static let labelFont = NSFont.systemFont(ofSize: 15)
@@ -34,14 +36,14 @@ final class JarvisModel: ObservableObject {
     var itemsWidth: CGFloat { CGFloat(options.count + 1) * (Self.square + Self.squareGap) - Self.squareGap }
     var fieldWidth: CGFloat { max(itemsWidth, 360) }
     var width: CGFloat {
-        (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
+        2 * Self.tray + (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
     }
-    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square }
+    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square + 2 * Self.tray }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
         let m = JarvisModel()
         m.options = Array(repeating: JarvisOption(label: "x", keyword: "y"), count: JarvisOptions.limit)
-        expect(m.width, 7 * square + 6 * squareGap, "jarvis: six options and 0 are seven squares")
+        expect(m.width, 7 * square + 6 * squareGap + 2 * tray, "jarvis: six options and 0 are seven squares in their tray")
     }
 }
 
@@ -302,7 +304,6 @@ struct JarvisView: View {
                     .frame(width: JarvisModel.headerWidth, alignment: .leading)
                     .padding(.horizontal, JarvisModel.inset)
                     .frame(height: JarvisModel.square)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
             }
             if model.typing {
                 TypingField(model: model)
@@ -316,7 +317,9 @@ struct JarvisView: View {
                 .opacity(model.failure != nil ? 0.35 : 1)
             }
         }
-        .frame(width: model.width, height: JarvisModel.square, alignment: .leading)
+        .padding(JarvisModel.tray)
+        .frame(width: model.width, height: JarvisModel.square + 2 * JarvisModel.tray, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12 + JarvisModel.tray).fill(JarvisModel.fill))
         .contentShape(Rectangle())
         // A click between the squares says his attention is here: the digits come back.
         .onTapGesture { model.act(.rearm) }
@@ -334,8 +337,8 @@ private struct OptionSquare: View {
             .font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
             .foregroundStyle(.white.opacity(model.live ? 1 : 0.35))
             .frame(width: JarvisModel.square, height: JarvisModel.square)
-            .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
-            .overlay(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(hover ? 0.1 : 0)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(hover ? 0.1 : 0)))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.25), lineWidth: 1))
             .contentShape(Rectangle())
             .help(option.map { "\($0.label)\n\($0.keyword)" } ?? JarvisModel.other)
             .onHover { hover = $0 }
@@ -362,7 +365,7 @@ private struct TypingField: View {
         }
         .padding(.horizontal, JarvisModel.inset)
         .frame(width: model.fieldWidth, height: JarvisModel.square)
-        .background(RoundedRectangle(cornerRadius: 12).fill(JarvisModel.fill))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.25), lineWidth: 1))
     }
 }
 
