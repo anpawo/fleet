@@ -62,8 +62,6 @@ struct OverlayView: View {
     /// The directory the grid last had open. Survives the close so the card has somewhere to
     /// shrink back to — cleared by nothing, since the next open overwrites it.
     @State private var lastGroup: String?
-    /// The session card under the pointer: its row grows to show the last reply.
-    @State private var hoveredTile: pid_t?
 
     /// Opening a directory moves every other card at once. Cut rather than animated, the grid
     /// reads as a different grid each click.
@@ -507,15 +505,10 @@ struct OverlayView: View {
     /// block at the top are two different places in the view tree, so the first was removed and
     /// the second inserted — the card blinked out of the grid and the block arrived from above.
     private var grid: some View {
-        let hovered = cells.firstIndex { $0.id == "pid:\(hoveredTile ?? -1)" }
-        let reply: CGFloat = hovered.map { i -> CGFloat in
-            guard case let .session(session, _) = cells[i] else { return 0 }
-            return SessionTile.replyHeight(session.lastReply)
-        } ?? 0
-        return FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
+        FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
                     spacing: tileSpacing, columns: Self.tilesPerRow,
                     open: openIndex, openHeight: openHeight,
-                    progress: openGroup == nil ? 0 : 1, grown: hovered, grownBy: reply) {
+                    progress: openGroup == nil ? 0 : 1) {
             ForEach(cells) { cell in
                 Group {
                     switch cell {
@@ -533,11 +526,7 @@ struct OverlayView: View {
                                   },
                                   onActivate: { controller.activate($0) })
                     case let .session(session, heading):
-                        SessionTile(session: session, heading: heading, onHover: { on in
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                if on { hoveredTile = session.id } else if hoveredTile == session.id { hoveredTile = nil }
-                            }
-                        }) {
+                        SessionTile(session: session, heading: heading) {
                             controller.activate(session)
                         }
                     }
@@ -754,10 +743,6 @@ struct FleetLayout: Layout {
     var openHeight: CGFloat
     /// 0 folded, 1 open. The one thing that is animated; everything else is arithmetic on it.
     var progress: CGFloat
-    /// The hovered card, and the room its reply takes: its row grows by that much and every
-    /// row under it moves down.
-    var grown: Int? = nil
-    var grownBy: CGFloat = 0
 
     var animatableData: CGFloat {
         get { progress }
@@ -774,15 +759,14 @@ struct FleetLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Open, the grid is exactly the open card: the others are off the bottom, and counting
         // them would give the scroll view somewhere to scroll them back into view.
-        let folded = rows(subviews.count) + (grown == nil ? 0 : grownBy)
+        let folded = rows(subviews.count)
         return CGSize(width: width, height: folded + (openHeight - folded) * progress)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
                        cache: inout ()) {
         for (i, subview) in subviews.enumerated() {
-            var from = slot(i, in: bounds, at: i, drop: grown.map { i / columns > $0 / columns ? grownBy : 0 } ?? 0)
-            if i == grown { from.size.height += grownBy }
+            let from = slot(i, in: bounds, at: i, drop: 0)
             let to: CGRect
             if i == open {
                 to = CGRect(origin: bounds.origin, size: CGSize(width: width, height: openHeight))
@@ -1135,8 +1119,6 @@ struct SessionTile: View {
     /// Inside an unfolded group, whose heading already names the directory: no folder in the
     /// corner, which leaves the pills the whole line.
     var grouped = false
-    /// Tells the grid the pointer is on this card, so it can make room for the reply.
-    var onHover: (Bool) -> Void = { _ in }
     let onSelect: () -> Void
 
     /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
@@ -1152,21 +1134,8 @@ struct SessionTile: View {
     /// Tracks `name`'s point size — if one moves the other has to.
     private static let nameLine: CGFloat = 37
 
-    private static let replyLine: CGFloat = 13.5
-
-    /// What a hovered card grows by to show its last reply: one row per line, never wrapped —
-    /// a long line scrolls sideways — and the whole card within a third of the screen, the
-    /// rest scrolling down.
-    static func replyHeight(_ reply: String?) -> CGFloat {
-        guard let reply, !reply.isEmpty else { return 0 }
-        let lines = CGFloat(reply.split(separator: "\n", omittingEmptySubsequences: false).count)
-        let cap = (NSScreen.main?.frame.height ?? 900) / 3 - height
-        return max(0, min(lines * replyLine + 16, cap))
-    }
-
     var body: some View {
         Button(action: onSelect) {
-            VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
                     // The name sits with its centre 30% down the tile, so every tile's name
@@ -1221,19 +1190,6 @@ struct SessionTile: View {
                 .padding(11)
             }
             .frame(height: Self.height, alignment: .top)
-            if hovering, let reply = session.lastReply, !reply.isEmpty {
-                ScrollView([.horizontal, .vertical]) {
-                    Text(reply)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .fixedSize()
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                }
-                .scrollIndicators(.never)
-                .frame(height: Self.replyHeight(reply))
-            }
-            }
             // The glow is cast by the card's own ground, a single shape, rather than by the
             // card as a group: a shadow taken from a group of layers is an offscreen pass per
             // tile on every frame anything on the panel moves — a todo column scrolling included.
@@ -1258,7 +1214,7 @@ struct SessionTile: View {
             .animation(.easeInOut(duration: 0.22), value: session.state)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0; onHover($0) }
+        .onHover { hovering = $0 }
     }
 
     private var name: some View {

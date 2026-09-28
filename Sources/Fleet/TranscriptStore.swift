@@ -387,7 +387,6 @@ private struct ParseState {
     var pending: [String: PendingTool] = [:]    // tool_use id -> the call
     var issued = 0
     var preview: [PreviewLine] = []
-    var lastReply: String?
     var turnOpen = false
     var lastCompleted: String?
     var cwd: String?
@@ -530,9 +529,6 @@ private struct ParseState {
                     // Capped: this state outlives a single read now, and a reply runs for pages.
                     preview.append(PreviewLine(kind: type == "user" ? .user : .assistant,
                                                text: String(t.prefix(200))))
-                    if type == "assistant", let raw = block["text"] as? String {
-                        lastReply = String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000))
-                    }
                 }
             case "tool_use":
                 let name = (block["name"] as? String) ?? "tool"
@@ -657,8 +653,7 @@ private struct ParseState {
             workflows: workflowFiles.compactMap { id, files in
                 guard let since = shellSpawnedAt[id], agentEndedAt[id] == nil else { return nil }
                 return WorkflowLaunch(dir: files.dir, script: files.script, since: since)
-            }.sorted { $0.since < $1.since },
-            lastReply: lastReply
+            }.sorted { $0.since < $1.since }
         )
     }
 
