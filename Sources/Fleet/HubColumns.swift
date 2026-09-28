@@ -1376,11 +1376,11 @@ struct EpitechColumn: View {
             // to open, and last what is banked — it asks nothing more of you.
             let loose = plan.todo.filter { line in !snapshot.modules.contains { $0.code == line.id } }
             LazyVGrid(columns: Self.pair, spacing: 8) {
-                ForEach(loose.filter(\.started)) { CreditCard(line: $0, banked: false) }
+                ForEach(loose.filter(\.started)) { CreditCard(line: $0, banked: false, detailed: commandHeld) }
                 moduleCards(snapshot.modules.filter(\.started))
-                ForEach(loose.filter { !$0.started }) { CreditCard(line: $0, banked: false) }
+                ForEach(loose.filter { !$0.started }) { CreditCard(line: $0, banked: false, detailed: commandHeld) }
                 moduleCards(snapshot.modules.filter { !$0.started })
-                ForEach(plan.done) { CreditCard(line: $0, banked: true) }
+                ForEach(plan.done) { CreditCard(line: $0, banked: true, detailed: commandHeld) }
             }
         } else if let snapshot = hub.epitech, !snapshot.modules.isEmpty {
             LazyVGrid(columns: Self.pair, spacing: 8) { moduleCards(snapshot.modules) }
@@ -1391,7 +1391,7 @@ struct EpitechColumn: View {
 
     private func moduleCards(_ modules: [Epitech.Module]) -> some View {
         ForEach(modules) { module in
-            ModuleCard(module: module, lit: lit(module.id))
+            ModuleCard(module: module, lit: lit(module.id), detailed: commandHeld)
                 .epitechOpen(commandHeld: commandHeld, url: module.url,
                              onHover: { hover(module.id, $0) }, onDismiss: onDismiss)
         }
@@ -1438,16 +1438,12 @@ struct EpitechColumn: View {
 struct CreditCard: View {
     let line: Epitech.CreditLine
     let banked: Bool
+    let detailed: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(line.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(banked ? 0.55 : 0.92))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            LedgerTitle(name: line.name, ongoing: !banked && line.started, detailed: detailed,
+                        dimmed: banked)
             Spacer(minLength: 2)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(line.credits) CR")
@@ -1466,7 +1462,38 @@ struct CreditCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard(tint: banked ? LedgerTint.banked : nil, dashed: !banked && line.started)
+        .panelCard(tint: banked ? LedgerTint.banked : nil)
+    }
+}
+
+/// A card's name in the EPITECH block. At rest only what comes before " - ", so "EIP Seminar"
+/// holds on its line; the rest ("Open Source…", "AWS") shows while ⌘ is held, wrapping if it
+/// must. A white dot before it says the module is under way.
+struct LedgerTitle: View {
+    let name: String
+    var ongoing = false
+    let detailed: Bool
+    var dimmed = false
+
+    var body: some View {
+        let short = name.components(separatedBy: " - ")[0]
+        let wraps = detailed && short != name
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if ongoing {
+                // Held on the first line's baseline, a little above it: level with the letters
+                // whether the name shrank to fit or wrapped with ⌘.
+                Circle().fill(.white).frame(width: 5, height: 5)
+                    .alignmentGuide(.firstTextBaseline) { $0.height / 2 + 3.5 }
+            }
+            Text(wraps ? name : short)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(dimmed ? 0.55 : 0.92))
+                .lineLimit(wraps ? 3 : 1)
+                // 0.7, not 0.8: the dot's 11pt cut "Administrative Meetings" at 0.8.
+                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -1524,10 +1551,7 @@ extension View {
     /// The card every row of the EPITECH block sits on. `tint` washes it in the colour of the
     /// pile its credits are counted in on the heading — dark, so the heading's figure stays the
     /// bright one.
-    /// `dashed`: under way. Said by the border alone, so an ongoing card keeps the plain ground
-    /// of the others (asked 2026-09-28); the stroke is brighter because a dotted line at the
-    /// plain border's 0.07 all but disappears.
-    func panelCard(lit: Bool = false, tint: Color? = nil, dashed: Bool = false) -> some View {
+    func panelCard(lit: Bool = false, tint: Color? = nil) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
@@ -1536,8 +1560,7 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(.white.opacity(lit ? 0.2 : dashed ? 0.3 : 0.07),
-                                  style: StrokeStyle(lineWidth: 1, dash: dashed ? [3, 3] : []))
+                    .strokeBorder(.white.opacity(lit ? 0.2 : 0.07), lineWidth: 1)
             )
     }
 }
@@ -1549,6 +1572,8 @@ struct ModuleCard: View {
     let module: Epitech.Module
     /// ⌘ is down and the pointer is here: this is the card that would open.
     let lit: Bool
+    /// ⌘ is down: the whole name, not only what comes before " - ".
+    let detailed: Bool
 
     private static let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -1559,16 +1584,9 @@ struct ModuleCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // One line, whatever the name costs: twelve cards of equal height read as a term,
-            // and a name that wraps makes its card taller than the one beside it. The long
-            // ones shrink a fifth before they are cut.
-            Text(module.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // One line at rest: twelve cards of equal height read as a term, and a name that
+            // wraps makes its card taller than the one beside it.
+            LedgerTitle(name: module.name, ongoing: module.started, detailed: detailed)
 
             Spacer(minLength: 2)
 
@@ -1588,7 +1606,7 @@ struct ModuleCard: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .panelCard(lit: lit, dashed: module.started)
+        .panelCard(lit: lit)
     }
 }
 
