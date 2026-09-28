@@ -118,7 +118,6 @@ vertex float4 vmain(uint id [[vertex_id]]) {
     return float4(p[id], 0, 1);
 }
 
-constant float SOFT = 0.005;
 
 float hash(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(float2 p) {
@@ -176,6 +175,7 @@ float3 over(float3 dst, float3 src, float a) { float k = clamp(a, 0.0, 1.0); ret
 
 fragment float4 fmain(float4 pos [[position]], constant U &u [[buffer(0)]]) {
     float2 frag = float2(pos.x, u.size - pos.y);
+    float SOFT = 3.0 / u.size;
     float2 uv = (frag * 2.0 - u.size) / u.size;
     float r = length(uv);
     float ang = atan2(uv.y, uv.x);

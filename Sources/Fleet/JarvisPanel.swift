@@ -20,29 +20,34 @@ final class JarvisModel: ObservableObject {
 
     /// Each answer is its own black square holding only its digit; the label shows on hover.
     static let square: CGFloat = 53, squareGap: CGFloat = 8, digitSize: CGFloat = 26, inset: CGFloat = 12
-    /// The black tray the squares sit in, this far from its edge.
-    static let tray: CGFloat = 8
+    /// The black tray the squares sit in, this far from its edge; ✕ on its left and Other on
+    /// its right stand `apart` from the digits.
+    static let tray: CGFloat = 8, apart: CGFloat = 20, otherWidth: CGFloat = 84
     /// Clear space over the orb, and between it and the squares.
-    static let top: CGFloat = 24, gap: CGFloat = 12, orb: CGFloat = 36
+    static let top: CGFloat = 12, gap: CGFloat = 12, orb: CGFloat = 36
     static let labelFont = NSFont.systemFont(ofSize: 15)
     static let failureFont = NSFont.systemFont(ofSize: 12)
     static let other = "Something else…"
-    /// Fleet's sessions panel wash (OverlayView.tintOpacity); the text is always drawn for dark.
+    /// The tray is Fleet's sessions panel wash (OverlayView.tintOpacity); the keys on it are opaque,
+    /// like Fleet's tiles. The text is always drawn for dark.
     static let fill = Color.black.opacity(0.8)
     /// Only a failure takes a text block, on two lines: the line itself is spoken, not shown.
     static let headerWidth: CGFloat = 240
 
-    var itemsWidth: CGFloat { CGFloat(options.count + 1) * (Self.square + Self.squareGap) - Self.squareGap }
+    var itemsWidth: CGFloat {
+        CGFloat(options.count) * (Self.square + Self.squareGap) - Self.squareGap + Self.apart + Self.otherWidth
+    }
     var fieldWidth: CGFloat { max(itemsWidth, 360) }
     var width: CGFloat {
-        2 * Self.tray + (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
+        2 * Self.tray + Self.square + Self.apart + (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0)
+            + (typing ? fieldWidth : itemsWidth)
     }
     var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square + 2 * Self.tray }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
         let m = JarvisModel()
         m.options = Array(repeating: JarvisOption(label: "x", keyword: "y"), count: JarvisOptions.limit)
-        expect(m.width, 7 * square + 6 * squareGap + 2 * tray, "jarvis: six options and 0 are seven squares in their tray")
+        expect(m.width, 2 * tray + square + apart + 6 * square + 5 * squareGap + apart + otherWidth, "jarvis: ✕, six digits and Other fill their tray")
     }
 }
 
@@ -294,6 +299,10 @@ struct JarvisView: View {
 
     private var bar: some View {
         HStack(spacing: JarvisModel.squareGap) {
+            Square(width: JarvisModel.square, help: "Close (esc)", action: { model.act(.close) }) {
+                Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
+            }
+            .padding(.trailing, JarvisModel.apart - JarvisModel.squareGap)
             if let failure = model.failure {
                 Text(failure)
                     .font(Font(JarvisModel.failureFont))
@@ -309,11 +318,17 @@ struct JarvisView: View {
             } else {
                 Group {
                     ForEach(Array(model.options.enumerated()), id: \.offset) { i, option in
-                        OptionSquare(model: model, digit: i + 1, option: option)
+                        Square(width: JarvisModel.square, help: "\(option.label)\n\(option.keyword)",
+                               action: { model.act(.pick(i + 1)) }) {
+                            Text("\(i + 1)").font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
+                        }
                     }
-                    OptionSquare(model: model, digit: 0, option: nil)
+                    Square(width: JarvisModel.otherWidth, help: "\(JarvisModel.other) (0)",
+                           action: { model.act(.type) }) {
+                        Text("Other").font(.system(size: 17, weight: .semibold))
+                    }
+                    .padding(.leading, JarvisModel.apart - JarvisModel.squareGap)
                 }
-                .opacity(model.failure != nil ? 0.35 : 1)
             }
         }
         .padding(JarvisModel.tray)
@@ -325,23 +340,24 @@ struct JarvisView: View {
     }
 }
 
-private struct OptionSquare: View {
-    @ObservedObject var model: JarvisModel
-    let digit: Int
-    let option: JarvisOption?
+/// One outlined key in the tray: a digit, Other or ✕.
+private struct Square<Label: View>: View {
+    let width: CGFloat
+    let help: String
+    let action: () -> Void
+    @ViewBuilder let label: Label
     @State private var hover = false
 
     var body: some View {
-        Text("\(digit)")
-            .font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
-            .foregroundStyle(.white.opacity(model.live ? 1 : 0.35))
-            .frame(width: JarvisModel.square, height: JarvisModel.square)
-            .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(hover ? 0.1 : 0)))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.25), lineWidth: 1))
+        label
+            .foregroundStyle(.white)
+            .frame(width: width, height: JarvisModel.square)
+            .background(RoundedRectangle(cornerRadius: 12).fill(hover ? Color(white: 0.12) : .black))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.35), lineWidth: 1))
             .contentShape(Rectangle())
-            .help(option.map { "\($0.label)\n\($0.keyword)" } ?? JarvisModel.other)
+            .help(help)
             .onHover { hover = $0 }
-            .onTapGesture { model.act(digit == 0 ? .type : .pick(digit)) }
+            .onTapGesture(perform: action)
     }
 }
 
@@ -352,9 +368,6 @@ private struct TypingField: View {
 
     var body: some View {
         HStack(spacing: JarvisModel.inset) {
-            Text("0")
-                .font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
             TextField("Tell \(model.project) what to do", text: $model.draft)
                 .textFieldStyle(.plain)
                 .font(Font(JarvisModel.labelFont))
@@ -364,7 +377,8 @@ private struct TypingField: View {
         }
         .padding(.horizontal, JarvisModel.inset)
         .frame(width: model.fieldWidth, height: JarvisModel.square)
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.25), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12).fill(.black))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.35), lineWidth: 1))
     }
 }
 
@@ -389,13 +403,14 @@ private struct OrbView: View {
     let orb: OrbModel
     let running: Bool
     static let canvas: CGFloat = 48
-    private static let pixels = 144
+    /// Twice the Retina resolution, scaled down: the ball's rim is a hard edge.
+    private static let pixels = 192
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !running)) { timeline in
             let date = orb.frozen.map { Date(timeIntervalSinceReferenceDate: $0) } ?? timeline.date
             if let image = OrbShader.image(orb.uniforms(at: date, pixels: Float(Self.pixels)), pixels: Self.pixels) {
-                Image(decorative: image, scale: CGFloat(Self.pixels) / Self.canvas)
+                Image(decorative: image, scale: CGFloat(Self.pixels) / Self.canvas).interpolation(.high).antialiased(true)
             }
         }
         .frame(width: Self.canvas, height: Self.canvas)

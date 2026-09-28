@@ -69,6 +69,7 @@ final class Jarvis {
     private var levelBuffer = ""
     private var level = 0.0
     private var heardLevel = false
+    private var waitingForVoice = false
     private var orbTimer: Timer?
     private var lastFrame = Date()
 
@@ -230,9 +231,6 @@ final class Jarvis {
         failed = false
         voiceEndedAt = nil
         voiceResult = "none"
-        let keyIdle = Self.idle(.keyDown)
-        let startLive = keyIdle >= 1.5 && !terminalOverBlueSession()
-
         let m = panel.model
         m.project = item.project
         m.line = item.line
@@ -241,22 +239,34 @@ final class Jarvis {
         m.failure = nil
         m.typing = false
         m.draft = ""
-        setLive(startLive)
-        panel.show()
-        NSLog("Fleet: jarvis showing \(item.project) (\(startLive ? "live" : "passive"))")
+        live = false
+        registerKeys()
 
-        // Text first, then the voice: he can answer before a word is said.
         if let mic = MicWatcher.recording() {
             voiceResult = "mic: \(mic)"
             voiceEndedAt = Date()
             m.orb.set(.waiting)
+            reveal()
         } else {
             speak(item.spoken)
+            waitingForVoice = true
         }
 
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.check() } }
         RunLoop.main.add(t, forMode: .common)
         poll = t
+    }
+
+    /// On screen once the voice is heard, not while the PC is still rendering it; without a
+    /// voice, as soon as it has failed, and after 8 s at the latest.
+    private func reveal() {
+        guard let item = current else { return }
+        waitingForVoice = false
+        shownAt = Date()
+        let startLive = Self.idle(.keyDown) >= 1.5 && !terminalOverBlueSession()
+        setLive(startLive)
+        panel.show()
+        NSLog("Fleet: jarvis showing \(item.project) (\(startLive ? "live" : "passive"))")
     }
 
     /// A "1" typed at Claude Code's own question must reach it, not Jarvis.
@@ -278,6 +288,10 @@ final class Jarvis {
             return
         }
         reapVoice()
+        if waitingForVoice {
+            guard heardLevel || voiceEndedAt != nil || now.timeIntervalSince(shownAt) > 8 else { return }
+            reveal()
+        }
         // A voice that never ends would hold the session forever: the timeout runs from its end.
         if voice > 0, now.timeIntervalSince(shownAt) > 30 { stopVoice() }
         if live, !typing {
@@ -419,6 +433,7 @@ final class Jarvis {
     private func dismiss() {
         stopVoice()
         current = nil
+        waitingForVoice = false
         typing = false
         failed = false
         poll?.invalidate()
