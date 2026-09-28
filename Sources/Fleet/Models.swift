@@ -312,6 +312,8 @@ struct TranscriptInfo {
     /// arrive, when the agent stops, is a `<task-notification>` naming the call that spawned
     /// it, so a spawn with no notification after it is an agent still out.
     var unfinishedAgentIDs: [String] = []
+    /// Ids of finished agents a `SendMessage` has put back to work, until they report again.
+    var resumedAgentIDs: [String] = []
     /// When each background shell still running was started — see `TranscriptStore`.
     var backgroundShellsStartedAt: [Date] = []
     /// Name of the most recent tool that actually finished — the last completed step. Nil

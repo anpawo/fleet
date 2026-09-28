@@ -293,6 +293,15 @@ enum SelfCheck {
         expect(done?.subagents.count ?? -1, 0,
                "and the tile stops counting it")
 
+        // Woken up again by a SendMessage: its meta still names the ended spawn.
+        append(#"{"type":"assistant","timestamp":"\#(stamp(5))","message":{"id":"m3b","content":[{"type":"tool_use","id":"toolu_resume","name":"SendMessage","input":{"to":"x","message":"round 2"}}]}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(5))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_resume","content":[{"type":"text","text":"{\"success\":true,\"message\":\"Resuming agent x\",\"resumedAgentId\":\"x\"}"}]}]}}"#)
+        expect(store.info(for: session)?.subagents.count ?? -1, 1,
+               "an agent resumed by SendMessage is out again")
+        append(#"{"type":"user","timestamp":"\#(stamp(5))","message":{"content":[{"type":"text","text":"<task-notification>\n<tool-use-id>toolu_resume</tool-use-id>\n<status>completed</status>\n</task-notification>"}]}}"#)
+        expect(store.info(for: session)?.subagents.count ?? -1, 0,
+               "until the notification naming the SendMessage")
+
         // A shell moved to the background and then stopped by hand: no notification follows.
         append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m4","content":[{"type":"tool_use","id":"toolu_sh","name":"Bash","input":{"command":"sleep 99"}}]}}"#)
         append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_sh","content":"Command did not complete within its 120s timeout and was moved to the background (ID: b1x2y3z). Output is being written to: /tmp/x"}]}}"#)

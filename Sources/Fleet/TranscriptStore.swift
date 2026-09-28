@@ -106,7 +106,8 @@ final class TranscriptStore {
     func info(for path: String) -> TranscriptInfo? {
         guard var info = parse(path: path, acceptSidechain: false) else { return nil }
         info.subagents = liveSubagents(of: path,
-                                       spawns: info.pendingTaskIDs + info.unfinishedAgentIDs)
+                                       spawns: info.pendingTaskIDs + info.unfinishedAgentIDs,
+                                       resumed: Set(info.resumedAgentIDs.map { "agent-" + $0 }))
         info.workflow = info.workflows.last.flatMap(progress(of:))
         return info
     }
@@ -198,7 +199,8 @@ final class TranscriptStore {
     /// later by a `<task-notification>`, which means the agent has been working in the
     /// background all along. Both are handed in here; neither costs a directory listing when
     /// there is nothing out.
-    private func liveSubagents(of sessionPath: String, spawns: [String]) -> [SubagentRun] {
+    private func liveSubagents(of sessionPath: String, spawns: [String],
+                               resumed: Set<String>) -> [SubagentRun] {
         guard !spawns.isEmpty else {
             // Nothing delegated: no directory listing, no reads, nothing to keep cached.
             subagentPaths[sessionPath] = nil
@@ -220,10 +222,10 @@ final class TranscriptStore {
             let metaPath = (dir as NSString).appendingPathComponent(name)
             guard let data = FileManager.default.contents(atPath: metaPath),
                   let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let toolUseID = meta["toolUseId"] as? String,
-                  wanted.contains(toolUseID) else { continue }
-
+                  let toolUseID = meta["toolUseId"] as? String else { continue }
             let id = String(name.dropLast(suffix.count))
+            guard wanted.contains(toolUseID) || resumed.contains(id) else { continue }
+
             let agentPath = (dir as NSString).appendingPathComponent(id + ".jsonl")
             // A sub-agent's transcript is entirely sidechain traffic — that flag is what marks
             // it as not belonging to the main thread — so it is read with the filter off.
@@ -398,6 +400,10 @@ private struct ParseState {
     /// be a quarter of an hour and several turns apart.
     var agentSpawnedAt: [String: Date] = [:]
     var agentEndedAt: [String: Date] = [:]
+    /// A `SendMessage` that woke a finished agent back up, by its own `tool_use` id → the
+    /// agent's id. The agent's meta still names the original spawn, long since ended; what
+    /// ends this run is a notification naming the `SendMessage` call.
+    var resumedAgent: [String: String] = [:]
     /// Shell commands running in the background, by the `tool_use` that started them. Their
     /// call is answered at once too, and ended the same way: a `<task-notification>` naming it,
     /// recorded in `agentEndedAt` like an agent's.
@@ -499,9 +505,8 @@ private struct ParseState {
             guard let kind = block["type"] as? String else { continue }
             switch kind {
             case "text":
-                // "A task-notification fires each time this agent stops" — so the last one
-                // wins, and an agent resumed after one is missed until it stops again. That is
-                // the whole cost of never listing a directory while nothing is out.
+                // "A task-notification fires each time this agent stops", naming the call that
+                // last started it: the spawn, or the `SendMessage` that resumed it.
                 if let raw = block["text"] as? String, raw.contains("<task-notification>"),
                    let call = Self.tagged("tool-use-id", in: raw) {
                     agentEndedAt[call] = lastMessageAt ?? Date()
@@ -561,6 +566,11 @@ private struct ParseState {
                         if let task = texts.lazy.compactMap(Self.taskID(in:)).first {
                             shellCallByTask[task] = id
                         }
+                    }
+                    if let agent = Self.field(#""resumedAgentId":""#, in: texts)
+                        .map({ String($0.prefix { $0 != "\"" }) }), !agent.isEmpty {
+                        agentSpawnedAt[id] = lastMessageAt ?? Date()
+                        resumedAgent[id] = agent
                     }
                     // Stopped by hand: no notification will ever come for it.
                     for t in texts {
@@ -625,6 +635,9 @@ private struct ParseState {
             unfinishedAgentIDs: agentSpawnedAt
                 .filter { agentEndedAt[$0.key] == nil }
                 .map(\.key),
+            resumedAgentIDs: resumedAgent
+                .filter { agentEndedAt[$0.key] == nil }
+                .map(\.value),
             backgroundShellsStartedAt: shellSpawnedAt
                 .filter { agentEndedAt[$0.key] == nil }
                 .map(\.value),
