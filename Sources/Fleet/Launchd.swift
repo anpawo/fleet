@@ -323,8 +323,10 @@ final class LaunchdStore: ObservableObject {
 
     /// Routines that are not started again. mirror-check says on a shared Matrix room that
     /// the mirror did not run, and a second run is a second message; the mounts run every
-    /// minute and are their own retry.
-    static let noRetry: Set<String> = ["s14.mirror-check", "s14.mounts"]
+    /// minute and are their own retry. The Epitech scan is a Claude run of up to 95 minutes and
+    /// reads Discord again, which its own `run.sh` refuses to retry; it catches up at its next
+    /// run of the day.
+    static let noRetry: Set<String> = ["s14.mirror-check", "s14.mounts", "epitech.scan"]
 
     /// When each failing routine was started again, by label. One retry per failure: a run
     /// that fails twice is broken, not unlucky, and a retry loop would hide it. Kept across

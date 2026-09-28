@@ -691,6 +691,8 @@ final class HubStore: ObservableObject {
             }
         } catch {
             NSLog("Fleet: reels fetch failed — \(error.localizedDescription)")
+            // A run that could not read the collection did nothing, and `--reels-run` must say so.
+            failedThisRun = true
         }
     }
 
