@@ -21,19 +21,27 @@ model() {
         > "$FAKE/.claude/settings.json"
 }
 
-# Fires one hook the way Claude Code does: the hook is a child of a stand-in "claude", itself a
-# child of a stand-in shell that FLEET_SHELL names — unless $3 is "bare". The stand-in claude
-# outlives the hook by two seconds and leaves `survived` behind unless it was ended first.
+# The stand-in claude is a copy of bash, so that `ps` names it claude as it does the real one.
+cp /bin/bash "$FAKE/claude"
+
+# Fires one hook the way Claude Code does: the hook is a child of the stand-in claude, itself a
+# child of a stand-in shell that FLEET_SHELL names — unless $3 is "bare". The stand-in outlives
+# the hook by LIFE seconds (2) and leaves `survived` behind unless it was ended first. BIN, when
+# set, is the binary the stand-in claims to run.
 fire() {
     rm -f "$FAKE/survived"
     rm -rf "$FAKE/.claude/fleet/restart"
     payload=$(printf '{"session_id":"%s","hook_event_name":"%s","transcript_path":"/tmp/t.jsonl"}' "$SID" "$1")
-    HOME="$FAKE" HOOK="$HOOK" PAYLOAD="$payload" ARG="$2" BARE="${3:-}" sh -c '
-        [ -n "$BARE" ] || export FLEET_SHELL=$$
+    HOME="$FAKE" HOOK="$HOOK" PAYLOAD="$payload" ARG="$2" BARE="${3:-}" LIFE="${LIFE:-2}" \
+        CLAUDE_CODE_EXECPATH="${BIN:-}" sh -c '
+        if [ -n "$BARE" ]; then unset FLEET_SHELL; else export FLEET_SHELL=$$; fi
         echo $$ > "$HOME/shell.pid"
-        sh -c "printf %s \"\$PAYLOAD\" | sh \"\$HOOK\" \"\$ARG\" >/dev/null; sleep 2; touch \"\$HOME/survived\""
+        "$HOME/claude" -c "printf %s \"\$PAYLOAD\" | sh \"\$HOOK\" \"\$ARG\" >/dev/null; sleep \$LIFE; touch \"\$HOME/survived\""
     '
 }
+
+# A binary modified after the stand-in started, as a display patch would leave it.
+patched() { touch -t "$(date -v+2M +%Y%m%d%H%M.%S)" "$FAKE/binary"; }
 
 # $1 name, $2 "kept" or the arguments the relaunch should resume with.
 check() {
@@ -61,6 +69,22 @@ fire ConfigChange config;        check "idle session relaunched on a settings ch
 fire SessionStart start
 model fable
 fire Stop ready bare;            check "session outside the fish function never ended" kept
+
+export BIN="$FAKE/binary"
+touch -t 202001010000 "$BIN"
+fire SessionStart start
+fire Stop ready;                 check "binary older than the session: left alone" kept
+patched
+fire Stop ready;                 check "binary patched since the session started: relaunched" "$SID --model fable"
+# An idle session fires no hook: the patcher's sweep has to reach it on its own.
+touch -t 202001010000 "$BIN"
+LIFE=4 fire Stop ready &
+sleep 1
+patched
+HOME="$FAKE" sh "$HOOK" sweep </dev/null
+wait
+check "idle session reached by the patcher's sweep" "$SID --model fable"
+unset BIN
 
 echo "fish: $FISHFN"
 if command -v fish >/dev/null; then

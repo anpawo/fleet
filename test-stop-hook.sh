@@ -84,6 +84,8 @@ rm -f "$FAKE/.claude/fleet/machine.json"
 printf '{"model":"opus"}' > "$FAKE/.claude/settings.json"
 run SessionStart start >/dev/null
 printf '{"model":"fable"}' > "$FAKE/.claude/settings.json"
+# The stand-in claude is a copy of bash, so that `ps` names it claude as it does the real one.
+cp /bin/bash "$FAKE/claude"
 cat > "$FAKE/claude.sh" <<'EOF'
 printf '%s' "$PAYLOAD" | sh "$HOOK" ready > "$HOME/out"
 echo $? > "$HOME/code"
@@ -98,7 +100,7 @@ stop() {
         -e 'POSIX::setsid(); exec @ARGV' -- sh -c '
         export FLEET_SHELL=$$; echo $$ > "$HOME/shell.pid"
         [ -z "$TTYV" ] || export FLEET_TEST_TTY="$TTYV"
-        sh "$HOME/claude.sh"; true' 2>/dev/null &
+        "$HOME/claude" "$HOME/claude.sh"; true' 2>/dev/null &
     stopper=$!
 }
 asked() { for _ in $(seq 50); do [ -f "$S/$SID.ask" ] && return 0; sleep 0.1; done; return 1; }

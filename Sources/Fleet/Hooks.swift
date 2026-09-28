@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 13
+    static let version = 14
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -435,15 +435,66 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 13
+    # fleet-hook-version: 14
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
     # means: running, awaiting, ready, or end — or start and config, which only feed the
-    # relaunch below.
+    # relaunch below, and sweep, which the display patcher runs from outside any session.
     set -u
     state="${1:-}"
     dir="$HOME/.claude/fleet/state"
+
+    # A session runs on the settings and the binary it had at launch: the model never changes
+    # under a live process, `--resume` brings the old one back, and a display patch replaces
+    # the binary on disk, not the one running. The settings are recorded at start, so a later
+    # edit of settings.json can be told apart from them; the binary is compared with the time
+    # the process started.
+    settings="$HOME/.claude/settings.json"
+    cfg() {
+        for k in model modelSettings outputStyle; do
+            # xml1, not json: plutil refuses to print a bare string as JSON.
+            plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
+        done
+    }
+
+    # Either is out of date for session $1: it is ended if it is still idle a second later, and
+    # the `claude` function Fleet puts in fish resumes it in the same terminal on the new ones.
+    # Only a session that function started is ever ended — `<id>.shell` names its claude, the
+    # fish that brings it back and its binary — so a `claude -p` job, an IDE session or a nested
+    # claude keeps what it started on. A prompt typed in that second wins; a busy session is
+    # caught at the Stop that ends its turn.
+    relaunch() {
+        [ -f "$dir/$1.shell" ] || return 0
+        read -r cl sh bin < "$dir/$1.shell"
+        # still that session's claude, not a pid handed to something else since
+        [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$sh" ] || return 0
+        if [ "$(cfg)" = "$(cat "$dir/$1.cfg" 2>/dev/null)" ]; then
+            [ -n "${bin:-}" ] || return 0
+            age=$(ps -o etime= -p "$cl" 2>/dev/null | awk -F'[-:]' '{ n = NF; s = $n + $(n-1) * 60
+                if (n > 2) s += $(n-2) * 3600; if (n > 3) s += $(n-3) * 86400; print s }')
+            [ "$(stat -f %m "$bin" 2>/dev/null || echo 0)" -gt $(( $(date +%s) - ${age:-0} )) ] || return 0
+        fi
+        model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
+        /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
+            grep -q "$1" "$2" || exit 0
+            mkdir -p "${3%/*}"
+            { echo "$4"; [ -z "$5" ] || { echo --model; echo "$5"; }; } > "$3"
+            kill -TERM "$6"' _ '"state":"ready"' "$dir/$1.json" \\
+            "$HOME/.claude/fleet/restart/$sh" "$1" "$model" "$cl" \\
+            >/dev/null 2>&1 </dev/null &
+    }
+
+    # An idle session fires no hook, so the display patcher calls this once it has replaced the
+    # binary: every session gets the check its own Stop would give it.
+    if [ "$state" = "sweep" ]; then
+        for f in "$dir"/*.shell; do
+            [ -f "$f" ] || continue
+            s=${f##*/}; relaunch "${s%.shell}"
+        done
+        exit 0
+    fi
+
     input=$(cat)
 
     # "session_id":"<uuid>" — the same id that names the session's transcript file.
@@ -452,49 +503,30 @@ enum Hooks {
     [ -n "$sid" ] || exit 0
 
     if [ "$state" = "end" ]; then
-        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg" "$dir/$sid.ask" "$dir/$sid.answer"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg" "$dir/$sid.ask" "$dir/$sid.answer" "$dir/$sid.shell"
         exit 0
     fi
 
-    # A session runs on the settings it read at launch: the model never changes under a live
-    # process, and `--resume` brings the old one back. What they were is recorded at start, so
-    # a later edit of settings.json can be told apart from the settings the session has.
-    settings="$HOME/.claude/settings.json"
-    cfg() {
-        for k in model modelSettings outputStyle; do
-            # xml1, not json: plutil refuses to print a bare string as JSON.
-            plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
-        done
-    }
-    [ "$state" = "start" ] && { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; exit 0; }
+    [ "$state" = "start" ] && { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; }
     [ -f "$dir/$sid.cfg" ] || { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; }
 
-    # Those settings changed since: a session with nothing in flight is ended, and the `claude`
-    # function Fleet puts in fish resumes it in the same terminal on the new ones. Only that
-    # function's own child is ever ended — FLEET_SHELL names the fish that will bring it back —
-    # so a `claude -p` job, an IDE session or a nested claude keeps the settings it started on.
-    # The end comes a second later and only if the session is still idle by then, so a prompt
-    # typed in that second wins; a busy one is caught at the Stop that ends its turn.
-    relaunch() {
-        [ -n "${FLEET_SHELL:-}" ] || return 0
-        [ "$(cfg)" != "$(cat "$dir/$sid.cfg" 2>/dev/null)" ] || return 0
-        p=$PPID; up=; n=0
+    # Which process relaunch may end: the nearest claude above this hook, when its parent is the
+    # fish FLEET_SHELL names — a nested claude inherits FLEET_SHELL but not that parent. Worked
+    # out at start and whenever the shell differs, not on every tool call.
+    if [ -n "${FLEET_SHELL:-}" ] && { [ "$state" = "start" ] ||
+        [ "$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" != "$FLEET_SHELL" ]; }; then
+        p=$PPID; n=0; cl=
         while [ $n -lt 4 ] && [ -n "$p" ]; do
-            up=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
-            [ "$up" = "$FLEET_SHELL" ] && break
-            p=$up; n=$((n + 1))
+            case "$(ps -o comm= -p "$p" 2>/dev/null)" in
+                claude | */claude | claude.exe | */claude.exe ) cl=$p; break ;;
+            esac
+            p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); n=$((n + 1))
         done
-        [ "$up" = "$FLEET_SHELL" ] || return 0
-        model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
-        /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
-            grep -q "$1" "$2" || exit 0
-            mkdir -p "${3%/*}"
-            { echo "$4"; [ -z "$5" ] || { echo --model; echo "$5"; }; } > "$3"
-            kill -TERM "$6"' _ '"state":"ready"' "$dir/$sid.json" \\
-            "$HOME/.claude/fleet/restart/$FLEET_SHELL" "$sid" "$model" "$p" \\
-            >/dev/null 2>&1 </dev/null &
-    }
-    [ "$state" = "config" ] && { relaunch; exit 0; }
+        [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$FLEET_SHELL" ] &&
+            mkdir -p "$dir" && echo "$cl $FLEET_SHELL ${CLAUDE_CODE_EXECPATH:-}" > "$dir/$sid.shell"
+    fi
+    [ "$state" = "start" ] && exit 0
+    [ "$state" = "config" ] && { relaunch "$sid"; exit 0; }
 
     # The one message that travels towards the session rather than away from it: when Fleet
     # has decided the machine has stopped keeping up, the agent is told so in its own context,
@@ -713,7 +745,7 @@ enum Hooks {
         esac
     fi
 
-    [ "$state" = "ready" ] && relaunch
+    [ "$state" = "ready" ] && relaunch "$sid"
     exit 0
 
     """
