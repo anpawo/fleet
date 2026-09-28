@@ -307,7 +307,8 @@ final class TranscriptStore {
             // A shell sent to the background hours ago is still out when nothing since has
             // ended it, and that "since" can be megabytes: a Fleet restarted with the start
             // past the tail read the session as finished. Only the lines that start or end
-            // one are worth the head of the file, and they say so in fixed words.
+            // one are worth the head of the file, and they say so in fixed words. The same
+            // for an agent (28-09: video-code READY with one working, its spawn 2 MB back).
             try? handle.seek(toOffset: 0)
             let head = (try? handle.read(upToCount: Int(start))) ?? Data()
             for raw in head.split(separator: UInt8(ascii: "\n"))
@@ -333,7 +334,9 @@ final class TranscriptStore {
 
     private static let delegationMarks = ["background with ID", "moved to the background",
                                           "Workflow launched in background", "<task-notification>",
-                                          "Successfully stopped task"].map { Data($0.utf8) }
+                                          "Successfully stopped task",
+                                          #""name":"Agent""#, #""name":"Task""#,
+                                          "Async agent launched", "resumedAgentId"].map { Data($0.utf8) }
 
     /// Sessions are long and only recent state matters, so a cold read starts near the end.
     private static func tailStart(size: UInt64) -> UInt64 {

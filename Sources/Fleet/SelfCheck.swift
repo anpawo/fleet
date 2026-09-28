@@ -303,6 +303,17 @@ enum SelfCheck {
         expect(store.info(for: session)?.subagents.count ?? -1, 0,
                "until the notification naming the SendMessage")
 
+        // Spawned further back than a cold read's tail, and nothing has ended it since.
+        try? #"{"agentType":"general-purpose","description":"Fix the corners","toolUseId":"toolu_old"}"#
+            .write(toFile: agents + "/agent-y.meta.json", atomically: true, encoding: .utf8)
+        try? FileManager.default.copyItem(atPath: agents + "/agent-x.jsonl", toPath: agents + "/agent-y.jsonl")
+        append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m3c","content":[{"type":"tool_use","id":"toolu_old","name":"Agent","input":{"description":"Fix the corners"}}]}}"#)
+        append(#"{"type":"user","timestamp":"\#(stamp(4))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_old","content":[{"type":"text","text":"Async agent launched successfully."}]}]}}"#)
+        let padding = #"{"type":"assistant","timestamp":"\#(stamp(3))","message":{"id":"m3d","content":[{"type":"text","text":"\#(String(repeating: "x", count: 4000))"}]}}"#
+        for _ in 0 ..< (Config.transcriptTailBytes / 4000 + 2) { append(padding) }
+        expect(TranscriptStore().info(for: session)?.subagents.count ?? -1, 1,
+               "an agent spawned before the parsed tail is still out after a restart")
+
         // A shell moved to the background and then stopped by hand: no notification follows.
         append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m4","content":[{"type":"tool_use","id":"toolu_sh","name":"Bash","input":{"command":"sleep 99"}}]}}"#)
         append(#"{"type":"user","timestamp":"\#(stamp(3))","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_sh","content":"Command did not complete within its 120s timeout and was moved to the background (ID: b1x2y3z). Output is being written to: /tmp/x"}]}}"#)
