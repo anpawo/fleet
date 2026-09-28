@@ -78,6 +78,17 @@ enum SelfCheck {
         expect(Launchd.allowance(["StartInterval": 60]), 300, "every minute: up to the floor")
         expect(Launchd.allowance(["StartInterval": 43200]), 6 * 3600, "every 12h: down to the ceiling")
         expect(Launchd.allowance(["WatchPaths": ["/tmp/x"]]), 6 * 3600, "a watched path: the ceiling")
+        let online = ["/Users/mr/.local/bin/online", "/bin/bash", "routine.sh"]
+        var v3online = v3
+        v3online["ProgramArguments"] = online
+        expect(Launchd.allowance(v3online), 3600 + 3 * 1295, "hourly under online: an hour and three waits of 21.5 min")
+        expect(Launchd.hung(Launchd.parseElapsed("01:05:00"), v3online), nil,
+               "a 20-min wait then a 45-min run is not hung")
+        v3online["EnvironmentVariables"] = ["ONLINE_WAIT": "300"]
+        expect(Launchd.allowance(v3online), 3600 + 3 * 395, "ONLINE_WAIT from the plist is the wait")
+        var epitechOnline = epitech
+        epitechOnline["ProgramArguments"] = online
+        expect(Launchd.allowance(epitechOnline), 6 * 3600, "epitech under online: still the ceiling")
         expect(Launchd.hung(Launchd.parseElapsed("02:10:00"), v3), 7800, "recon-v3 running 2h10 is hung")
         expect(Launchd.hung(Launchd.parseElapsed("40:00"), v3), nil, "recon-v3 running 40 min is not")
         expect(Launchd.hung(Launchd.parseElapsed("04:00"), ["StartInterval": 60]), nil,

@@ -333,9 +333,10 @@ enum Launchd {
     /// two looks at the network, and s14.mounts, every minute, would go red on its first wait.
     static let floor: TimeInterval = 5 * 60
     /// Six hours: the longest run on record here is the Epitech scan's 95 minutes (22-09), and
-    /// `online` may run a job three times with up to 20 minutes of waiting before each — just
-    /// under six hours for that one. Nothing legitimate runs longer, and a daily job stuck
-    /// since morning must not wait for tomorrow's slot to be called hung.
+    /// `online` may run a job three times with up to 21.5 minutes of waiting before each — 5h50
+    /// for that one. Kept at six even though three 100-minute scans would pass it: the scan
+    /// runs every six hours, so a run that long has missed its next slot, which is what hung
+    /// means here. And a daily job stuck since morning must not wait for tomorrow to be called hung.
     static let ceiling: TimeInterval = 6 * 3600
 
     /// How long a run may go before it is hung: until its next run was due, which it has then
@@ -362,7 +363,17 @@ enum Launchd {
                 period = TimeInterval(gaps.min()! * 60)
             }
         }
-        return min(max(period, floor), ceiling)
+        return min(max(period, floor) + waits(plist), ceiling)
+    }
+
+    /// What `~/.local/bin/online` may spend waiting on top of the run: up to three passes, each
+    /// after a wait of up to ONLINE_WAIT (its default, 1200 s) that its 90 s sleep and 5 s probe
+    /// can overrun. Without it an hourly routine that waited 20 minutes and then ran 45 was hung.
+    static func waits(_ plist: [String: Any]) -> TimeInterval {
+        guard (plist["ProgramArguments"] as? [String])?.first?.hasSuffix("/online") == true else { return 0 }
+        let wait = ((plist["EnvironmentVariables"] as? [String: String])?["ONLINE_WAIT"])
+            .flatMap(TimeInterval.init) ?? 1200
+        return 3 * (wait + 95)
     }
 
     /// How long the run has been going, when that is past its allowance.
