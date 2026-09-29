@@ -177,7 +177,7 @@ enum Claude {
         Marius's open todos:
         \(todos.isEmpty ? "(none)" : todos.map { "- \($0)" }.joined(separator: "\n"))
         """
-        let text = try await run(prompt: prompt, model: classifierModel, timeout: 30)
+        let text = try await run(prompt: prompt, model: classifierModel, timeout: 30, lean: true)
         guard let json = firstJSONObject(in: text), let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let line = object["line"] as? String, !line.isEmpty else { throw Failure.malformed(text) }
@@ -190,7 +190,7 @@ enum Claude {
     static func briefing(sessions: [String], todos: [String]) async throws -> String {
         let prompt = """
         You are Jarvis, Marius's assistant, just switched on. Brief him aloud on his Claude \
-        Code sessions, in English, in at most five short sentences of plain speech: no lists, \
+        Code sessions, in English, in 60 words at most of plain speech: no greeting, no lists, \
         no markdown, no numbers for options. Start with the sessions that finished and wait for \
         a new task, saying what each did and what it could do next; then the ones that wait \
         on him; then, in one sentence, what the others are busy with. If an open todo looks \
@@ -202,7 +202,7 @@ enum Claude {
         Open todos:
         \(todos.isEmpty ? "(none)" : todos.map { "- \($0)" }.joined(separator: "\n"))
         """
-        return try await run(prompt: prompt, model: classifierModel, timeout: 30)
+        return try await run(prompt: prompt, model: classifierModel, timeout: 30, lean: true)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -397,14 +397,26 @@ enum Claude {
     // MARK: - Running the binary
 
     private static func run(prompt: String, model: String, system: String? = nil,
-                            tools: [String] = [], timeout: TimeInterval = Self.timeout) async throws
-        -> String {
+                            tools: [String] = [], timeout: TimeInterval = Self.timeout,
+                            lean: Bool = false) async throws -> String {
         guard let binary = binaryPath() else { throw Failure.notInstalled }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["-p", prompt, "--model", model, "--output-format", "json"]
-        if let system { process.arguments! += ["--append-system-prompt", system] }
+        if lean {
+            // Nothing of Marius's setup: his settings, hooks, CLAUDE.md files and MCP servers
+            // are ~75k tokens and 20 s on every call, and his reply rules (the ⟶ lines, colour
+            // codes) came out in what Jarvis said aloud. 400 tokens, 4 s (29/09/2026).
+            // No thinking either: Haiku thought for 5,000 tokens and 49 s over a five-sentence
+            // briefing; without it, 3 s.
+            process.arguments! += ["--setting-sources", "", "--tools", "", "--disable-slash-commands",
+                                   "--strict-mcp-config", "--settings", #"{"alwaysThinkingEnabled":false}"#,
+                                   "--system-prompt",
+                                   system ?? "You are Jarvis, Marius's voice assistant."]
+        } else if let system {
+            process.arguments! += ["--append-system-prompt", system]
+        }
         // Nothing is allowed by default in a headless turn, and a fact-check with no web is
         // a guess. Named tools only: no shell, no files.
         if !tools.isEmpty { process.arguments! += ["--allowedTools", tools.joined(separator: ",")] }
@@ -415,6 +427,8 @@ enum Claude {
 
         let out = Pipe()
         let err = Pipe()
+        // An inherited stdin that stays open costs 3 s: `claude -p` waits for piped input first.
+        process.standardInput = FileHandle.nullDevice
         process.standardOutput = out
         process.standardError = err
 

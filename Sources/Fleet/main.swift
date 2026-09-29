@@ -319,6 +319,61 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
+// `--jarvis-brief`: the switch-on briefing on the live sessions, timed, then spoken — the
+// Claude read, the first sound and the end of the voice, each from the start.
+if CommandLine.arguments.contains("--jarvis-brief") {
+    Task { @MainActor in
+        let start = Date()
+        func at() -> String { String(format: "%5.1f s", Date().timeIntervalSince(start)) }
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        let sessions = registry.refresh()
+        let hub = HubStore()
+        hub.refresh()
+        while !hub.loaded, hub.failure == nil, Date().timeIntervalSince(start) < 10 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        let todos = Jarvis.openTodos(hub.todos)
+        print("\(at())  \(sessions.count) sessions, \(todos.count) open todos")
+        let text: String
+        do {
+            text = try await Claude.briefing(sessions: Jarvis.briefingLines(sessions), todos: todos)
+        } catch {
+            print("briefing failed: \(error)"); exit(1)
+        }
+        print("\(at())  briefing written (\(text.split(separator: " ").count) words):\n\n\(text)\n")
+        if let ready = sessions.first(where: { $0.state == .ready }) {
+            let t = Date()
+            let conversation = ready.steps.map { $0.text }.joined(separator: "\n")
+            if let next = try? await Claude.nextTask(project: Session.project(for: ready.cwd),
+                                                     conversation: conversation, todos: todos) {
+                print(String(format: "next task for %@, read in %.1f s: %@ → %@\n",
+                             Session.project(for: ready.cwd), Date().timeIntervalSince(t),
+                             next.line, next.task ?? "none"))
+            }
+        }
+        let levels = NSTemporaryDirectory() + "jarvis-brief-levels.log"
+        FileManager.default.createFile(atPath: levels, contents: nil)
+        let voice = Process()
+        voice.executableURL = URL(fileURLWithPath: NSHomeDirectory() + "/self/jarvis/tools/jarvis-speak.sh")
+        voice.arguments = [text]
+        voice.environment = ProcessInfo.processInfo.environment.merging(["JARVIS_LEVELS": levels]) { $1 }
+        let spoken = Date()
+        try? voice.run()
+        var heard = false
+        while voice.isRunning {
+            if !heard, let log = try? String(contentsOfFile: levels, encoding: .utf8), log.contains("RMS_level=") {
+                heard = true
+                print(String(format: "\(at())  first sound, %.1f s after the voice started", Date().timeIntervalSince(spoken)))
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        print("\(at())  voice ended (exit \(voice.terminationStatus))")
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // The EPITECH block without the panel: the modules under way and the rendus still ahead.
 if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     // An optional path, so a state.json that says something this one does not — a dead session,
@@ -922,7 +977,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
-    "--deferred", "--empty-terminals", "--epitech", "--fake", "--focus", "--hung", "--idle", "--install-hooks", "--open",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--focus", "--hung", "--idle", "--install-hooks", "--jarvis-brief", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--reels-run", "--render", "--render-jarvis", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",

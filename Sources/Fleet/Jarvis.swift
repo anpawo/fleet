@@ -169,7 +169,7 @@ final class Jarvis {
         let conversation = steps.map { step in
             (step.kind == .user ? "Marius: " : step.kind == .tool ? "Tool: " : "Claude: ") + step.text
         }.joined(separator: "\n") + "\nClaude (last message): " + message
-        let todos = openTodos()
+        let todos = Self.openTodos(controller.hub.todos)
         Task { [weak self] in
             do {
                 let next = try await Claude.nextTask(project: project, conversation: conversation, todos: todos)
@@ -192,24 +192,29 @@ final class Jarvis {
     }
 
     /// Marius's open todos, soonest first, with their day when they have one.
-    private func openTodos() -> [String] {
+    static func openTodos(_ todos: [Todo]) -> [String] {
         let day = DateFormatter()
         day.dateFormat = "EEE d MMM"
-        return controller.hub.todos.filter(\.open)
+        return todos.filter(\.open)
             .sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }
             .prefix(15)
             .map { todo in todo.due.map { "\(todo.title) (due \(day.string(from: $0)))" } ?? todo.title }
     }
 
-    /// Said once on switching on: every session, the ones waiting for a task first.
-    func brief() {
-        let sessions = controller.sessions.sorted { $0.state.sortRank < $1.state.sortRank }.map { s in
+    /// One line per session for the briefing, the ones waiting for a task first.
+    static func briefingLines(_ sessions: [Session]) -> [String] {
+        sessions.sorted { $0.state.sortRank < $1.state.sortRank }.map { s in
             let state = s.state == .ready ? "finished, waiting for a new task"
                 : s.state == .awaitingAnswer ? "waiting on Marius" : "working"
             return [Session.project(for: s.cwd), state, s.transcript?.title ?? "",
                     String((s.lastSaid ?? "").prefix(400))].joined(separator: " · ")
         }
-        let todos = openTodos()
+    }
+
+    /// Said once on switching on: every session, the ones waiting for a task first.
+    func brief() {
+        let sessions = Self.briefingLines(controller.sessions)
+        let todos = Self.openTodos(controller.hub.todos)
         Task { [weak self] in
             do {
                 let text = try await Claude.briefing(sessions: sessions, todos: todos)
