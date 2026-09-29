@@ -59,20 +59,20 @@ final class JarvisModel: ObservableObject {
     var rest: CGFloat {
         (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
     }
-    var width: CGFloat { 2 * Self.tray + Self.square + (rest > 0 ? Self.apart + rest : 0) }
+    var width: CGFloat { 2 * Self.tray + Self.otherWidth + (rest > 0 ? Self.apart + rest : 0) }
     var height: CGFloat { Self.top + Self.orb + Self.gap + Self.keys + 2 * Self.tray }
     static var keys: CGFloat { caption + captionGap + square }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
         let m = JarvisModel()
         m.task = "Run the tests"
-        expect(m.width, 2 * tray + square + apart + taskWidth("Run the tests") + apart + otherWidth,
+        expect(m.width, 2 * tray + otherWidth + apart + taskWidth("Run the tests") + apart + otherWidth,
                "jarvis: ✕, the task and Other fill their tray")
         m.task = String(repeating: "long words ", count: 60)
         expect(taskWidth(m.task!), taskMax, "jarvis: a long task wraps at the cap")
         m.task = nil
         m.briefing = true
-        expect(m.width, 2 * tray + square, "jarvis: the briefing shows ✕ alone")
+        expect(m.width, 2 * tray + otherWidth, "jarvis: the briefing shows ✕ alone")
     }
 }
 
@@ -317,7 +317,7 @@ struct JarvisView: View {
 
     private var bar: some View {
         HStack(alignment: .bottom, spacing: JarvisModel.squareGap) {
-            Square(width: JarvisModel.square, key: "⎋ - Esc", help: "Close", action: { model.act(.close) }) {
+            Square(width: JarvisModel.otherWidth, key: "⎋ - Esc", help: "Close", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
             if model.rest > 0 { Dash() }
