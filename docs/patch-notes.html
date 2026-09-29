@@ -307,7 +307,7 @@
   </header>
 
   <dl class="tally">
-    <div class="is-ok"><dt>Corrigés</dt><dd>42</dd></div>
+    <div class="is-ok"><dt>Corrigés</dt><dd>43</dd></div>
     <div class="is-open"><dt>Ouverts</dt><dd>4</dd></div>
     <div><dt>Impasses mesurées</dt><dd>3</dd></div>
     <div><dt>Dernier commit</dt><dd style="font-family: var(--mono); font-size: 20px;">8c2cd08</dd></div>
@@ -318,6 +318,39 @@
       <h2>Corrigés</h2>
       <p class="section-note">Vérifiés sur la machine, pas seulement compilés.</p>
     </div>
+
+    <article class="entry">
+      <div class="entry-head">
+        <span class="chip chip-ok">Corrigé</span>
+        <span class="chip chip-where">main · lancement</span>
+        <span class="chip chip-sha">9ab7628</span>
+      </div>
+      <h3>Fleet mort au lancement pendant une heure</h3>
+      <dl class="facts">
+        <dt>Symptôme</dt>
+        <dd>
+          Après le commit <code>96480a7</code> (29-09, ~11&nbsp;h), <code>launchctl list</code>
+          montre <code>app.fleet</code> sans pid, dernier code <code>-5</code> (SIGTRAP)&nbsp;: plus
+          de panneau, plus de hooks lus, plus de relance des crons.
+        </dd>
+        <dt>Cause</dt>
+        <dd>
+          La note de <code>config.gc</code> ajoutée deux fois au dictionnaire <code>notes</code>
+          de <code>Launchd.swift</code> — une édition refusée par un hook puis rejouée alors que la
+          première était passée. Un littéral de dictionnaire à clé dupliquée piège à la première
+          lecture (<code>Dictionary literal contains duplicate keys</code> dans le rapport de
+          crash), et <code>LaunchdStore.init</code> la lit au lancement.
+        </dd>
+        <dt>Correctif</dt>
+        <dd>
+          La ligne en double retirée. <code>--selftest</code> passe par
+          <code>LaunchdStore()</code> et aurait piégé pareil&nbsp;: son code de sortie
+          (<code>133</code>) n'avait pas été regardé, seule sa sortie l'avait été.
+        </dd>
+        <dt>Mesure</dt>
+        <dd><pre>--selftest exit 0 · app.fleet pid 40760 · test-stop-hook all good</pre></dd>
+      </dl>
+    </article>
 
     <article class="entry">
       <div class="entry-head">
