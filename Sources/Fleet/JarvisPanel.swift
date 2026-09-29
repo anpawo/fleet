@@ -26,13 +26,14 @@ final class JarvisModel: ObservableObject {
     static let square: CGFloat = 53, squareGap: CGFloat = 8, inset: CGFloat = 12
     static let taskMax: CGFloat = 420, taskMin: CGFloat = 120
     /// The row over the keys: the key that does each, and what the task is about.
-    static let caption: CGFloat = 12, captionGap: CGFloat = 4
+    static let caption: CGFloat = 15, captionGap: CGFloat = 3
     /// The black tray the keys sit in, this far from its edge; ✕ on its left and Other on
     /// its right stand `apart` from the task.
     static let tray: CGFloat = 8, apart: CGFloat = 32, otherWidth: CGFloat = 84
     /// Clear space over the orb, and between it and the squares.
     static let top: CGFloat = 12, gap: CGFloat = 12, orb: CGFloat = 36
-    static let labelFont = NSFont.systemFont(ofSize: 15)
+    static let labelFont = NSFont.systemFont(ofSize: 17)
+    static let subjectFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let failureFont = NSFont.systemFont(ofSize: 12)
     static let other = "Something else…"
     /// The tray is Fleet's sessions panel wash (OverlayView.tintOpacity); the keys on it are opaque,
@@ -41,12 +42,13 @@ final class JarvisModel: ObservableObject {
     /// Only a failure takes a text block, on two lines: the line itself is spoken, not shown.
     static let headerWidth: CGFloat = 240
 
-    static func taskWidth(_ task: String) -> CGFloat {
-        let text = ceil((task as NSString).size(withAttributes: [.font: labelFont]).width)
+    static func taskWidth(_ task: String, subject: String = "") -> CGFloat {
+        let text = ceil(max((task as NSString).size(withAttributes: [.font: labelFont]).width,
+                            (subject as NSString).size(withAttributes: [.font: subjectFont]).width))
         return min(max(text + 2 * inset, taskMin), taskMax)
     }
     var itemsWidth: CGFloat {
-        let task = self.task.map(Self.taskWidth) ?? 0
+        let task = self.task.map { Self.taskWidth($0, subject: subject) } ?? 0
         let other = briefing ? 0 : Self.otherWidth
         return task + other + (task > 0 && other > 0 ? Self.apart : 0)
     }
@@ -312,7 +314,7 @@ struct JarvisView: View {
 
     private var bar: some View {
         HStack(alignment: .bottom, spacing: JarvisModel.squareGap) {
-            Square(width: JarvisModel.square, key: "esc", help: "Close", action: { model.act(.close) }) {
+            Square(width: JarvisModel.square, key: "⎋", help: "Close (esc)", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
             if model.rest > 0 { Dash() }
@@ -329,21 +331,26 @@ struct JarvisView: View {
             }
             if model.typing {
                 TypingField(model: model)
-                    .captioned(width: model.fieldWidth, subject: model.subject, key: "enter")
+                    .captioned(width: model.fieldWidth, key: "↩")
             } else {
                 if let task = model.task {
-                    Square(width: JarvisModel.taskWidth(task), key: "enter", subject: model.subject, help: task,
+                    Square(width: JarvisModel.taskWidth(task, subject: model.subject), key: "↩", help: task,
                            action: { model.act(.take) }) {
-                        Text(task)
-                            .font(Font(JarvisModel.labelFont))
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, JarvisModel.inset)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(model.subject)
+                                .font(Font(JarvisModel.subjectFont))
+                                .foregroundStyle(.white.opacity(0.45))
+                            Text(task)
+                                .font(Font(JarvisModel.labelFont))
+                        }
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, JarvisModel.inset)
                     }
                     if !model.briefing { Dash() }
                 }
                 if !model.briefing {
-                    Square(width: JarvisModel.otherWidth, key: "del", help: JarvisModel.other,
+                    Square(width: JarvisModel.otherWidth, key: "⌫", help: "\(JarvisModel.other) (delete)",
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
                     }
@@ -368,16 +375,12 @@ private struct Dash: View {
 }
 
 private extension View {
-    /// The key that does it over a key, and in grey what it is about, on the tray's top row.
-    func captioned(width: CGFloat, subject: String? = nil, key: String? = nil) -> some View {
+    /// The key that does it, as a menu writes it, over the key on the tray's top row.
+    func captioned(width: CGFloat, key: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: JarvisModel.captionGap) {
-            HStack(spacing: 4) {
-                if let subject { Text(subject).foregroundStyle(.white.opacity(0.4)) }
-                if subject != nil { Spacer(minLength: 0) }
-                if let key { Text(key).foregroundStyle(.white.opacity(0.75)) }
-            }
-            .font(.system(size: 10, weight: .semibold))
-            .lineLimit(1)
+            Text(key ?? "")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.6))
             .padding(.horizontal, 4)
             .frame(width: width, height: JarvisModel.caption, alignment: .leading)
             self
@@ -389,7 +392,6 @@ private extension View {
 private struct Square<Label: View>: View {
     let width: CGFloat
     let key: String
-    var subject: String?
     let help: String
     let action: () -> Void
     @ViewBuilder let label: Label
@@ -405,7 +407,7 @@ private struct Square<Label: View>: View {
             .help(help)
             .onHover { hover = $0 }
             .onTapGesture(perform: action)
-            .captioned(width: width, subject: subject, key: key)
+            .captioned(width: width, key: key)
     }
 }
 
