@@ -212,6 +212,16 @@ enum SelfCheck {
         expect(remembers("selftest.g", deferredKey), false, "a deferred routine gone from the folder is forgotten")
         _ = store.repair([job("my-setup.sync", failing: true)], now: now)
         expect(kicked.contains("my-setup.sync"), false, "my-setup.sync is not started again")
+        store.network(true)
+        _ = store.repair([job("selftest.w", deferred: true)], now: now)
+        expect(kicked.contains("selftest.w"), false, "a network up all along starts no deferred run")
+        store.network(false)
+        store.network(true)
+        _ = store.repair([job("selftest.w", deferred: true), job("selftest.x", busy: true, deferred: true)], now: now)
+        expect(kicked.filter { $0 == "selftest.w" }.count == 1 && !kicked.contains("selftest.x"), true,
+               "the network back starts a deferred run once, not one already going")
+        _ = store.repair([job("selftest.w", deferred: true)], now: now)
+        expect(kicked.filter { $0 == "selftest.w" }.count == 1, true, "and only on that return")
     }
 
     // MARK: - Listening ports

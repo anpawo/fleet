@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import SwiftUI
 
 /// The jobs this machine runs on its own — the LaunchAgents in `~/Library/LaunchAgents`.
@@ -224,7 +225,6 @@ enum Launchd {
         "s14.mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
         "app.fleet": "This panel.",
         "app.screenshot": "Screenshots and screen recordings, on ⌘⇧5.",
-        "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
         "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
     ]
 
@@ -477,6 +477,29 @@ final class LaunchdStore: ObservableObject {
     init() {
         jobs = []
         jobs = repair(Launchd.jobs(), now: Date()).filter(\.running)
+        // @Sendable: the monitor calls it on its own queue, not on the main actor.
+        path.pathUpdateHandler = { @Sendable [weak self] path in
+            let up = path.status == .satisfied
+            Task { @MainActor in self?.network(up) }
+        }
+        path.start(queue: .global(qos: .utility))
+    }
+
+    /// A run `online` put off waits for the next slot unless something starts it again, and a
+    /// daily job would wait a day. The network coming back is that something: every deferred
+    /// routine is started once, on the next scan. Only on a return, not on a network that was
+    /// up all along: a VPN that blocks captive.apple.com defers every run, and starting them
+    /// again on each scan would be a run every ten seconds.
+    private let path = NWPathMonitor()
+    private var online: Bool?
+    private var networkBack = false
+
+    func network(_ up: Bool) {
+        if up, online == false {
+            networkBack = true
+            lastScan = .distantPast
+        }
+        online = up
     }
 
     /// Routines that are not started again. mirror-check says on a shared Matrix room that
@@ -511,9 +534,16 @@ final class LaunchdStore: ObservableObject {
     func repair(_ jobs: [Launchd.Job], now: Date, files: Set<String> = Launchd.labels()) -> [Launchd.Job] {
         var retried = UserDefaults.standard.dictionary(forKey: Self.retriesKey) as? [String: Double] ?? [:]
         var deferred = UserDefaults.standard.dictionary(forKey: Self.deferredKey) as? [String: Double] ?? [:]
+        let back = networkBack
+        networkBack = false
         let out = jobs.map { job -> Launchd.Job in
             var job = job
             guard job.triggered else { return job }
+            // Not held back by `noRetry`: a deferred run never ran the command, so there is no
+            // second message or second Discord read to fear.
+            if job.deferred, back, repairs, !job.busy, kick(job.id) {
+                NSLog("Fleet: \(job.id) was put off for want of network, started again now it is back")
+            }
             if job.deferred {
                 let since = deferred[job.id] ?? now.timeIntervalSince1970
                 deferred[job.id] = since
