@@ -91,6 +91,8 @@ enum SelfCheck {
         var epitechOnline = epitech
         epitechOnline["ProgramArguments"] = online
         expect(Launchd.allowance(epitechOnline), 6 * 3600, "epitech under online: still the ceiling")
+        v3online["ProgramArguments"] = ["/Users/mr/.local/bin/catchup"] + online
+        expect(Launchd.allowance(v3online), 3600 + 3 * 395, "online behind catchup still waits")
         expect(Launchd.hung(Launchd.parseElapsed("02:10:00"), v3), 7800, "recon-v3 running 2h10 is hung")
         expect(Launchd.hung(Launchd.parseElapsed("40:00"), v3), nil, "recon-v3 running 40 min is not")
         expect(Launchd.hung(Launchd.parseElapsed("04:00"), ["StartInterval": 60]), nil,

@@ -100,7 +100,7 @@ echo "==> Installing the Claude Code hooks"
 # yt-dlp, whisper and the read. Once an hour rather than at four fixed times: what it costs is
 # a folder listing when there is nothing new, and a Reel saved at 10:20 is read at 11 instead
 # of waiting until 13:15. A run missed while the lid is shut is coalesced by launchd into one
-# catch-up run on waking, not twelve.
+# catch-up run on waking, not twelve; one missed while the Mac was off is `catchup`'s, at login.
 REELS="reels.scan"
 REELS_PLIST="$HOME/Library/LaunchAgents/$REELS.plist"
 # Named firestore.reels until 2026-09-28: the old agent goes, or two would run the same backlog.
@@ -116,11 +116,14 @@ cat > "$REELS_PLIST.new" <<PLIST_EOF
 	<string>$REELS</string>
 	<key>ProgramArguments</key>
 	<array>
+		<string>$BIN/catchup</string>
 		<string>$DEST/Contents/MacOS/Fleet</string>
 		<string>--reels-run</string>
 	</array>
 	<key>StartInterval</key>
 	<integer>3600</integer>
+	<key>RunAtLoad</key>
+	<true/>
 	<key>ProcessType</key>
 	<string>Background</string>
 	<key>LowPriorityIO</key>

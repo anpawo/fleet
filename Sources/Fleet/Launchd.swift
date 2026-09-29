@@ -224,6 +224,8 @@ enum Launchd {
         "s14.mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
         "app.fleet": "This panel.",
         "app.screenshot": "Screenshots and screen recordings, on ⌘⇧5.",
+        "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
+        "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
     ]
 
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a
@@ -383,7 +385,9 @@ enum Launchd {
     /// after a wait of up to ONLINE_WAIT (its default, 1200 s) that its 90 s sleep and 5 s probe
     /// can overrun. Without it an hourly routine that waited 20 minutes and then ran 45 was hung.
     static func waits(_ plist: [String: Any]) -> TimeInterval {
-        guard (plist["ProgramArguments"] as? [String])?.first?.hasSuffix("/online") == true else { return 0 }
+        // Second when `catchup` goes first.
+        guard let args = plist["ProgramArguments"] as? [String],
+              args.prefix(2).contains(where: { $0.hasSuffix("/online") }) else { return 0 }
         let wait = ((plist["EnvironmentVariables"] as? [String: String])?["ONLINE_WAIT"])
             .flatMap(TimeInterval.init) ?? 1200
         return 3 * (wait + 95)
