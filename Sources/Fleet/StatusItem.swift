@@ -18,9 +18,6 @@ final class StatusItemController {
 
     private static let dotSize: CGFloat = 4
 
-    /// What colour the dot currently is. The refresh tick fires every few seconds and the
-    /// colour almost never changes, so this avoids redrawing the menu bar for nothing.
-    private var shown: NSColor?
 
     init(controller: AppController) {
         self.controller = controller
@@ -45,6 +42,7 @@ final class StatusItemController {
     private func install(dot: NSView, on button: NSStatusBarButton) {
         dot.wantsLayer = true
         dot.layer?.cornerRadius = Self.dotSize / 2
+        dot.layer?.backgroundColor = NSColor.white.cgColor
         dot.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(dot)
 
@@ -70,14 +68,11 @@ final class StatusItemController {
 
     // MARK: - Appearance
 
-    /// Green while Fleet may show itself, red while it is turned off, and nothing else: the
-    /// RAM has its own block on the panel (asked 2026-09-29). The dot rather than the plane —
-    /// a hollow plane read as a different logo (asked 2026-09-28).
+    /// White while Fleet may show itself, gone while it is turned off, and nothing else
+    /// (asked 2026-09-29). The dot rather than the plane — a hollow plane read as a different
+    /// logo (asked 2026-09-28).
     func update(off: Bool) {
-        let colour = NSColor(off ? SessionState.running.tint : SessionState.ready.tint)
-        guard shown != colour else { return }
-        shown = colour
-        dot.layer?.backgroundColor = colour.cgColor
+        dot.isHidden = off
     }
 
     /// `paperplane.fill` rather than anything boat-shaped: at 15pt a hull and mast collapse into

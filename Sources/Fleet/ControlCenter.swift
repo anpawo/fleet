@@ -81,7 +81,7 @@ struct ControlCenterView: View {
             section("WHEN IT APPEARS") {
                 idlePicker
                 row("Jarvis") {
-                    menu([true, false], label: { $0 ? "Speaks when a turn ends" : "Off" },
+                    menu([true, false], label: { $0 ? "On" : "Off" },
                          selection: $controller.jarvisOn)
                 }
             }
@@ -93,10 +93,7 @@ struct ControlCenterView: View {
                                 controller.bindHotKeys()
                             }))
             }
-            section("SESSION STATE") {
-                legend
-                hooks
-            }
+            hooks
             footer
         }
         .padding(.horizontal, 26)
@@ -138,15 +135,9 @@ struct ControlCenterView: View {
             Circle()
                 .fill(off ? SessionState.running.tint : SessionState.ready.tint)
                 .frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(off ? "Fleet never shows itself" : "Fleet may show itself")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                Text("\(panelChord.label) still opens it.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(off ? "Fleet never shows itself" : "Fleet may show itself")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
             Spacer(minLength: 8)
             wideButton(off ? "Turn on" : "Turn off", width: 76) {
                 controller.popupsOff.toggle()
@@ -159,16 +150,10 @@ struct ControlCenterView: View {
     }
 
     private var idlePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            row("Show by itself after") {
-                menu(Settings.idleChoices, label: Self.idleLabel,
-                     selection: Binding(get: { idle },
-                                        set: { idle = $0; Settings.idleThreshold = $0 }))
-            }
-            Text("How long the machine has to sit untouched before the panel opens on its own. "
-                 + "It stays away while a video is playing or a microphone is recording.")
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.4))
+        row("Show by itself after") {
+            menu(Settings.idleChoices, label: Self.idleLabel,
+                 selection: Binding(get: { idle },
+                                    set: { idle = $0; Settings.idleThreshold = $0 }))
         }
     }
 
@@ -182,55 +167,9 @@ struct ControlCenterView: View {
         }
     }
 
-    /// What each border colour means. The panel is colour and almost nothing else — four
-    /// states and a fifth that is easy to mistake for green — so the key belongs somewhere you
-    /// can read it, and this window is the only page Fleet has.
-    private var legend: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(Self.meanings.enumerated()), id: \.offset) { _, entry in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(entry.state.label)
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.5)
-                        .foregroundStyle(entry.state.tint)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(entry.state.tint.opacity(0.15), in: Capsule())
-                        .frame(width: 96, alignment: .leading)
-                    Text(entry.meaning)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .lineLimit(1)
-                }
-            }
-        }
-    }
-
-    /// Green, blue, purple, red, orange, yellow — his order. One line each: this column is 262 points
-    /// wide and a description that wraps turns the key into a paragraph.
-    private static let meanings: [(state: SessionState, meaning: String)] = [
-        (.ready, "Finished its turn. Yours to type into."),
-        (.awaitingAnswer, "A question or a permission is on screen."),
-        (.delegated, "Agents or shells working, the session is free."),
-        (.running, "A tool is in flight."),
-        (.apiError, "The request failed. It is retrying."),
-        (.paused, "Held until the machine has room again."),
-    ]
-
     @ViewBuilder private var hooks: some View {
-        if Hooks.isInstalled {
-            Text("Claude Code reports each session's state to Fleet directly.")
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.4))
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Fleet is guessing each session's state from its transcript, which it "
-                     + "sometimes gets wrong. Hooks let Claude Code say so itself.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .fixedSize(horizontal: false, vertical: true)
-                wideButton(Hooks.isOutdated ? "Update Hooks…" : "Install Hooks…") { installHooks() }
-            }
+        if !Hooks.isInstalled {
+            wideButton(Hooks.isOutdated ? "Update Hooks…" : "Install Hooks…") { installHooks() }
         }
     }
 
