@@ -214,7 +214,7 @@ final class JarvisPanel {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let real = NSScreen.screens.lazy.map { notch(of: $0) }.first { $0.notched }
         let notchWidth = real?.width ?? 185
-        let task = "Run ./test-stop-hook.sh, then commit and push the Jarvis rework"
+        let task = "Commit and push the rework"
         func speaking(_ level: Double) -> (JarvisModel) -> Void {
             { $0.task = task; $0.orb.set(.preparing); $0.orb.frame(level: level, speaking: true) }
         }
