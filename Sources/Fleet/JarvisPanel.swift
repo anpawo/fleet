@@ -26,7 +26,7 @@ final class JarvisModel: ObservableObject {
     static let square: CGFloat = 53, squareGap: CGFloat = 8, inset: CGFloat = 12
     static let taskMax: CGFloat = 420, taskMin: CGFloat = 120
     /// The row over the keys: the key that does each, and what the task is about.
-    static let caption: CGFloat = 15, captionGap: CGFloat = 3
+    static let caption: CGFloat = 18, captionGap: CGFloat = 4
     /// The black tray the keys sit in, this far from its edge; ✕ on its left and Other on
     /// its right stand `apart` from the task.
     static let tray: CGFloat = 8, apart: CGFloat = 32, otherWidth: CGFloat = 84
@@ -44,7 +44,7 @@ final class JarvisModel: ObservableObject {
 
     static func taskWidth(_ task: String, subject: String = "") -> CGFloat {
         let text = ceil(max((task as NSString).size(withAttributes: [.font: labelFont]).width,
-                            (subject as NSString).size(withAttributes: [.font: subjectFont]).width))
+                            (subject as NSString).size(withAttributes: [.font: subjectFont]).width + 2 * Pill.pad))
         return min(max(text + 2 * inset, taskMin), taskMax)
     }
     var itemsWidth: CGFloat {
@@ -314,7 +314,7 @@ struct JarvisView: View {
 
     private var bar: some View {
         HStack(alignment: .bottom, spacing: JarvisModel.squareGap) {
-            Square(width: JarvisModel.square, key: "⎋", help: "Close (esc)", action: { model.act(.close) }) {
+            Square(width: JarvisModel.square, key: "⎋ - Esc", help: "Close", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
             if model.rest > 0 { Dash() }
@@ -331,26 +331,23 @@ struct JarvisView: View {
             }
             if model.typing {
                 TypingField(model: model)
-                    .captioned(width: model.fieldWidth, key: "↩")
+                    .captioned(width: model.fieldWidth, key: "↩ - Enter")
             } else {
                 if let task = model.task {
-                    Square(width: JarvisModel.taskWidth(task, subject: model.subject), key: "↩", help: task,
+                    Square(width: JarvisModel.taskWidth(task, subject: model.subject), key: "↩ - Enter", help: task,
                            action: { model.act(.take) }) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.subject)
-                                .font(Font(JarvisModel.subjectFont))
-                                .foregroundStyle(.white.opacity(0.45))
+                        VStack(spacing: 3) {
+                            Pill(text: model.subject, font: JarvisModel.subjectFont)
                             Text(task)
                                 .font(Font(JarvisModel.labelFont))
+                                .lineLimit(1)
                         }
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, JarvisModel.inset)
                     }
                     if !model.briefing { Dash() }
                 }
                 if !model.briefing {
-                    Square(width: JarvisModel.otherWidth, key: "⌫", help: "\(JarvisModel.other) (delete)",
+                    Square(width: JarvisModel.otherWidth, key: "⌫ - Delete", help: JarvisModel.other,
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
                     }
@@ -375,16 +372,31 @@ private struct Dash: View {
 }
 
 private extension View {
-    /// The key that does it, as a menu writes it, over the key on the tray's top row.
+    /// The key that does it, glyph and name, over the key on the tray's top row.
     func captioned(width: CGFloat, key: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: JarvisModel.captionGap) {
-            Text(key ?? "")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.6))
-            .padding(.horizontal, 4)
-            .frame(width: width, height: JarvisModel.caption, alignment: .leading)
+        VStack(spacing: JarvisModel.captionGap) {
+            Group { if let key { Pill(text: key, font: .systemFont(ofSize: 11, weight: .medium)) } }
+                .frame(width: width, height: JarvisModel.caption)
             self
         }
+    }
+}
+
+/// A grey outlined label: a key's glyph and name, or what a task is about.
+private struct Pill: View {
+    static let pad: CGFloat = 6
+    let text: String
+    let font: NSFont
+
+    var body: some View {
+        Text(text)
+            .font(Font(font))
+            .foregroundStyle(.white.opacity(0.6))
+            .lineLimit(1)
+            .padding(.horizontal, Self.pad)
+            .padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.white.opacity(0.3), lineWidth: 1))
+            .fixedSize()
     }
 }
 
