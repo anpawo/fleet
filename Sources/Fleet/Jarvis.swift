@@ -86,9 +86,9 @@ final class Jarvis {
         panel.model.act = { [weak self] action in self?.handle(action) }
     }
 
-    /// Enabled and not muted. Fleet's "never show itself" setting is about the panel, not
-    /// about Jarvis, so only the mute chord silences him.
-    private var active: Bool { controller.jarvisOn && controller.muteRemaining == nil }
+    /// Fleet's "never show itself" setting is about the panel, not about Jarvis: only his own
+    /// switch silences him.
+    private var active: Bool { controller.jarvisOn }
 
     func start() {
         try? FileManager.default.createDirectory(atPath: Self.dir, withIntermediateDirectories: true)

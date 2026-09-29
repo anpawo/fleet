@@ -71,27 +71,18 @@ struct ControlCenterView: View {
     // the picker would snap back to the old row until something else redrew the view.
     @State private var idle = Settings.idleThreshold
     @State private var panelChord = Settings.panelChord
-    @State private var muteChord = Settings.muteChord
-    @State private var muteDuration = Settings.muteDuration
-    @State private var newDesktopChord = Settings.newDesktopChord
-    @State private var closeDesktopChord = Settings.closeDesktopChord
 
     static let background = Color(red: 0.055, green: 0.055, blue: 0.07)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
             header
-            mute
+            status
             section("WHEN IT APPEARS") {
                 idlePicker
                 row("Jarvis") {
                     menu([true, false], label: { $0 ? "Speaks when a turn ends" : "Off" },
                          selection: $controller.jarvisOn)
-                }
-                row("Mute lasts") {
-                    menu(Settings.muteDurationChoices, label: Self.muteLabel,
-                         selection: Binding(get: { muteDuration },
-                                            set: { muteDuration = $0; Settings.muteDuration = $0 }))
                 }
             }
             section("SHORTCUTS") {
@@ -99,24 +90,6 @@ struct ControlCenterView: View {
                             selection: Binding(get: { panelChord }, set: {
                                 panelChord = $0
                                 Settings.panelChord = $0
-                                controller.bindHotKeys()
-                            }))
-                chordPicker("Mute", choices: Settings.muteChoices,
-                            selection: Binding(get: { muteChord }, set: {
-                                muteChord = $0
-                                Settings.muteChord = $0
-                                controller.bindHotKeys()
-                            }))
-                chordPicker("New desktop", choices: Settings.newDesktopChoices,
-                            selection: Binding(get: { newDesktopChord }, set: {
-                                newDesktopChord = $0
-                                Settings.newDesktopChord = $0
-                                controller.bindHotKeys()
-                            }))
-                chordPicker("Close desktop", choices: Settings.closeDesktopChoices,
-                            selection: Binding(get: { closeDesktopChord }, set: {
-                                closeDesktopChord = $0
-                                Settings.closeDesktopChord = $0
                                 controller.bindHotKeys()
                             }))
             }
@@ -159,48 +132,30 @@ struct ControlCenterView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// The mute row states its own end time rather than counting down: a countdown needs a
-    /// timer redrawing this window once a second for a number nobody watches.
-    private var mute: some View {
+    private var status: some View {
         let off = controller.popupsOff
         return HStack(spacing: 12) {
             Circle()
-                .fill(controller.muted ? SessionState.apiError.tint : SessionState.ready.tint)
+                .fill(off ? SessionState.running.tint : SessionState.ready.tint)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text(off ? "Fleet never shows itself"
-                     : controller.muteRemaining == nil ? "Fleet may show itself"
-                     : "Muted until \(muteEndTime)")
+                Text(off ? "Fleet never shows itself" : "Fleet may show itself")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                Text(off ? "\(panelChord.label) still opens it."
-                     : "\(muteChord.label) mutes it for \(Self.muteLabel(muteDuration)). "
-                       + "It still opens when you ask.")
+                Text("\(panelChord.label) still opens it.")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.4))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            VStack(spacing: 6) {
-                wideButton(controller.muteRemaining == nil ? "Mute" : "Unmute", width: 76) {
-                    controller.toggleMute()
-                }
-                .disabled(off)
-                .opacity(off ? 0.35 : 1)
-                wideButton(off ? "Turn on" : "Turn off", width: 76) {
-                    controller.popupsOff.toggle()
-                    if controller.popupsOff, controller.isPanelVisible { controller.hidePanel() }
-                }
+            wideButton(off ? "Turn on" : "Turn off", width: 76) {
+                controller.popupsOff.toggle()
+                if controller.popupsOff, controller.isPanelVisible { controller.hidePanel() }
             }
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
             .fill(.white.opacity(0.06)))
-    }
-
-    private var muteEndTime: String {
-        guard let until = controller.mutedUntil else { return "" }
-        return until.formatted(date: .omitted, time: .shortened)
     }
 
     private var idlePicker: some View {
@@ -384,13 +339,6 @@ struct ControlCenterView: View {
     private static func idleLabel(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite else { return "Never — only when I ask" }
         return seconds < 60 ? "\(Int(seconds)) seconds" : "\(Int(seconds / 60)) minutes"
-    }
-
-    private static func muteLabel(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds / 60)
-        guard minutes >= 60 else { return "\(minutes) minutes" }
-        let hours = minutes / 60
-        return hours == 1 ? "1 hour" : "\(hours) hours"
     }
 
     /// Asks first, because this writes to a file the user owns and Fleet did not create.

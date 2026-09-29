@@ -19,7 +19,7 @@ final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
         didSet {
-            statusItem?.update(ram: reaper.footprint, muted: muted)
+            statusItem?.update(off: popupsOff)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
             electHeads()
             nameOutsiders()
@@ -212,16 +212,11 @@ final class AppController: ObservableObject {
     /// the user has been active again.
     private var armed = true
 
-    /// While this is in the future, the panel never opens on its own. The chord, the menu bar
-    /// and `fleet` all still work — muting is about Fleet interrupting you, not about locking
-    /// it away.
-    @Published private(set) var mutedUntil: Date?
-
     /// See `Settings.popupsOff`. Here so the settings window and the menu bar follow it.
     @Published var popupsOff = Settings.popupsOff {
         didSet {
             Settings.popupsOff = popupsOff
-            statusItem?.update(ram: reaper.footprint, muted: muted)
+            statusItem?.update(off: popupsOff)
         }
     }
 
@@ -229,9 +224,6 @@ final class AppController: ObservableObject {
     @Published var jarvisOn = Settings.jarvisOn {
         didSet { Settings.jarvisOn = jarvisOn }
     }
-
-    /// Whether the panel may open on its own right now: neither turned off nor muted.
-    var muted: Bool { popupsOff || muteRemaining != nil }
 
     /// A `didSet` does not run for the value a property is declared with, and `--render` never
     /// calls `start()`: the names kept from the last run reach the tiles here or not at all.
@@ -305,7 +297,7 @@ final class AppController: ObservableObject {
         center.show()
     }
 
-    /// The two global chords, as currently set. Called again when the menu changes one, which
+    /// The panel's global chord, as currently set. Called again when the menu changes it, which
     /// releases the old chord and claims the new one.
     func bindHotKeys() {
         // A toggle, because Esc is not always yours to spend: the panel goes up over a
@@ -319,40 +311,6 @@ final class AppController: ObservableObject {
                 } else { self.forceShow() }
             }
         }
-        HotKey.register(Settings.muteChord, id: 2) { [weak self] in
-            MainActor.assumeIsolated { self?.toggleMute() }
-        }
-        HotKey.register(Settings.newDesktopChord, id: 3) {
-            MainActor.assumeIsolated { _ = Spaces.addDesktop(switchingTo: true) }
-        }
-        HotKey.register(Settings.closeDesktopChord, id: 4) {
-            MainActor.assumeIsolated { _ = Spaces.removeDesktop() }
-        }
-    }
-
-    // MARK: - Mute
-
-    /// How much longer Fleet stays quiet, or nil when it isn't muted.
-    var muteRemaining: TimeInterval? {
-        guard let mutedUntil else { return nil }
-        let left = mutedUntil.timeIntervalSinceNow
-        return left > 0 ? left : nil
-    }
-
-    /// The mute chord. Muting also puts the panel away if it happens to be up — you press this
-    /// because Fleet is in your way, and "in your way" usually means it is on screen right now.
-    /// Pressed again while muted, it unmutes: the same key gets you out of it.
-    func toggleMute() {
-        // Turned off is only undone where it was done, in the settings window: a chord that
-        // sits on Esc is too easy to press on the way to closing the panel.
-        guard !popupsOff else { return }
-        if muteRemaining != nil {
-            mutedUntil = nil
-        } else {
-            mutedUntil = Date().addingTimeInterval(Settings.muteDuration)
-            if isPanelVisible { hidePanel() }
-        }
-        statusItem?.update(ram: reaper.footprint, muted: muted)
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer
@@ -418,7 +376,7 @@ final class AppController: ObservableObject {
         EmptyTerminals.sweepIfDue()
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
-        statusItem?.update(ram: reaper.footprint, muted: muted)
+        statusItem?.update(off: popupsOff)
 
         if isPanelVisible {
             refreshVisible()
@@ -449,9 +407,9 @@ final class AppController: ObservableObject {
         }
         guard armed, !found.isEmpty else { return }
 
-        // Checked here rather than earlier so the refresh above still runs while muted: the
+        // Checked here rather than earlier so the refresh above still runs while off: the
         // panel you then open by hand has to be current.
-        guard !muted else { return }
+        guard !popupsOff else { return }
 
         // Idle because you are watching something, not because you are done. Left armed on
         // purpose: when the video ends and the machine goes quiet for real, the next tick

@@ -40,23 +40,6 @@ enum Settings {
         Chord(keyCode: UInt16(kVK_ANSI_F), modifiers: UInt32(cmdKey | shiftKey)),
     ]
 
-    static let muteChoices = [
-        Chord(keyCode: UInt16(kVK_Escape), modifiers: UInt32(cmdKey)),
-        Chord(keyCode: UInt16(kVK_Escape), modifiers: UInt32(cmdKey | shiftKey)),
-        Chord(keyCode: UInt16(kVK_ANSI_M), modifiers: UInt32(cmdKey | optionKey)),
-        Chord(keyCode: UInt16(kVK_ANSI_M), modifiers: UInt32(controlKey | optionKey)),
-    ]
-
-    static let newDesktopChoices = [
-        Chord(keyCode: UInt16(kVK_ANSI_N), modifiers: UInt32(cmdKey | optionKey)),
-        Chord(keyCode: UInt16(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey | cmdKey)),
-    ]
-
-    static let closeDesktopChoices = [
-        Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey)),
-        Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey | cmdKey)),
-    ]
-
     /// Offered idle delays, in seconds. `.infinity` is "never on its own" — the panel then only
     /// ever appears because you asked for it.
     static let idleChoices: [TimeInterval] = [15, 30, 45, 60, 120, 300, .infinity]
@@ -64,21 +47,6 @@ enum Settings {
     static var panelChord: Chord {
         get { chord(forKey: "panelChord") ?? panelChoices[0] }
         set { store(newValue, forKey: "panelChord") }
-    }
-
-    static var muteChord: Chord {
-        get { chord(forKey: "muteChord") ?? muteChoices[0] }
-        set { store(newValue, forKey: "muteChord") }
-    }
-
-    static var newDesktopChord: Chord {
-        get { chord(forKey: "newDesktopChord") ?? newDesktopChoices[0] }
-        set { store(newValue, forKey: "newDesktopChord") }
-    }
-
-    static var closeDesktopChord: Chord {
-        get { chord(forKey: "closeDesktopChord") ?? closeDesktopChoices[0] }
-        set { store(newValue, forKey: "closeDesktopChord") }
     }
 
     /// How long the machine must be untouched before the panel shows itself.
@@ -94,8 +62,8 @@ enum Settings {
         }
     }
 
-    /// A mute with no end: the panel never opens on its own until this is turned back on. The
-    /// panel chord, the menu bar and `fleet` still open it.
+    /// Off: the panel never opens on its own until this is turned back on. The panel chord,
+    /// the menu bar and `fleet` still open it.
     static var popupsOff: Bool {
         get { UserDefaults.standard.bool(forKey: "popupsOff") }
         set { UserDefaults.standard.set(newValue, forKey: "popupsOff") }
@@ -106,18 +74,6 @@ enum Settings {
     static var jarvisOn: Bool {
         get { UserDefaults.standard.object(forKey: "jarvisOn") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "jarvisOn") }
-    }
-
-    /// Offered mute lengths, in seconds.
-    static let muteDurationChoices: [TimeInterval] = [10 * 60, 30 * 60, 3600, 2 * 3600, 4 * 3600]
-
-    /// How long the mute chord silences the idle trigger for.
-    static var muteDuration: TimeInterval {
-        get {
-            let stored = UserDefaults.standard.double(forKey: "muteDuration")
-            return stored > 0 ? stored : muteDurationChoices[0]
-        }
-        set { UserDefaults.standard.set(newValue, forKey: "muteDuration") }
     }
 
     private static func chord(forKey key: String) -> Chord? {

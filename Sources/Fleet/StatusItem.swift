@@ -21,8 +21,6 @@ final class StatusItemController {
     /// What colour the dot currently is. The refresh tick fires every few seconds and the
     /// colour almost never changes, so this avoids redrawing the menu bar for nothing.
     private var shown: NSColor?
-    /// Same idea for the muted look, which takes the dot away.
-    private var shownMuted: Bool?
 
     init(controller: AppController) {
         self.controller = controller
@@ -37,7 +35,7 @@ final class StatusItemController {
             button.toolTip = "Fleet — click for the panel, right-click for settings"
             install(dot: dot, on: button)
         }
-        update(ram: MemoryPressure.footprint())
+        update(off: Settings.popupsOff)
     }
 
     /// The dot is a sibling view rather than part of the image on purpose: the plane is a
@@ -72,15 +70,11 @@ final class StatusItemController {
 
     // MARK: - Appearance
 
-    func update(ram: MemoryPressure.Footprint, muted: Bool = false) {
-        // No dot while muted: the chord is pressed with nothing on screen, so the menu bar is
-        // the only place that can acknowledge it. The dot rather than the plane — a hollow
-        // plane read as a different logo (asked 2026-09-28).
-        if shownMuted != muted {
-            shownMuted = muted
-            dot.isHidden = muted
-        }
-        let colour = NSColor(MemoryStrip.loadTint(ram))
+    /// Green while Fleet may show itself, red while it is turned off, and nothing else: the
+    /// RAM has its own block on the panel (asked 2026-09-29). The dot rather than the plane —
+    /// a hollow plane read as a different logo (asked 2026-09-28).
+    func update(off: Bool) {
+        let colour = NSColor(off ? SessionState.running.tint : SessionState.ready.tint)
         guard shown != colour else { return }
         shown = colour
         dot.layer?.backgroundColor = colour.cgColor
