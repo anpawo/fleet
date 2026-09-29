@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 final class JarvisModel: ObservableObject {
     @Published var project = ""
+    /// What the task is about, over its key: the project, three words at most.
+    var subject: String { project.split(separator: " ").prefix(3).joined(separator: " ") }
     @Published var line = ""
     @Published var task: String?
     /// The switch-on briefing: nothing to take, nothing to type.
@@ -22,7 +24,9 @@ final class JarvisModel: ObservableObject {
 
     /// Every key is a black square this tall; the task's is as wide as its text, up to `taskMax`.
     static let square: CGFloat = 53, squareGap: CGFloat = 8, inset: CGFloat = 12
-    static let taskMax: CGFloat = 420, hintWidth: CGFloat = 24
+    static let taskMax: CGFloat = 420, taskMin: CGFloat = 120
+    /// The row over the keys: the key that does each, and what the task is about.
+    static let caption: CGFloat = 12, captionGap: CGFloat = 4
     /// The black tray the keys sit in, this far from its edge; ✕ on its left and Other on
     /// its right stand `apart` from the task.
     static let tray: CGFloat = 8, apart: CGFloat = 32, otherWidth: CGFloat = 84
@@ -39,7 +43,7 @@ final class JarvisModel: ObservableObject {
 
     static func taskWidth(_ task: String) -> CGFloat {
         let text = ceil((task as NSString).size(withAttributes: [.font: labelFont]).width)
-        return min(text + 2 * inset + squareGap + hintWidth, taskMax)
+        return min(max(text + 2 * inset, taskMin), taskMax)
     }
     var itemsWidth: CGFloat {
         let task = self.task.map(Self.taskWidth) ?? 0
@@ -51,7 +55,8 @@ final class JarvisModel: ObservableObject {
         (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
     }
     var width: CGFloat { 2 * Self.tray + Self.square + (rest > 0 ? Self.apart + rest : 0) }
-    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square + 2 * Self.tray }
+    var height: CGFloat { Self.top + Self.orb + Self.gap + Self.keys + 2 * Self.tray }
+    static var keys: CGFloat { caption + captionGap + square }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
         let m = JarvisModel()
@@ -106,7 +111,7 @@ final class OrbModel {
     }
 }
 
-/// Never key, except while Marius types after 0: a non-activating panel takes the keyboard
+/// Never key, except while Marius types after del: a non-activating panel takes the keyboard
 /// without activating Fleet, so the app he was in stays the active one.
 final class JarvisWindow: NSPanel {
     var typing = false
@@ -306,8 +311,8 @@ struct JarvisView: View {
     }
 
     private var bar: some View {
-        HStack(spacing: JarvisModel.squareGap) {
-            Square(width: JarvisModel.square, help: "Close (esc)", action: { model.act(.close) }) {
+        HStack(alignment: .bottom, spacing: JarvisModel.squareGap) {
+            Square(width: JarvisModel.square, key: "esc", help: "Close", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
             if model.rest > 0 { Dash() }
@@ -320,28 +325,25 @@ struct JarvisView: View {
                     .frame(width: JarvisModel.headerWidth, alignment: .leading)
                     .padding(.horizontal, JarvisModel.inset)
                     .frame(height: JarvisModel.square)
+                    .captioned(width: JarvisModel.headerWidth + 2 * JarvisModel.inset)
             }
             if model.typing {
                 TypingField(model: model)
+                    .captioned(width: model.fieldWidth, subject: model.subject, key: "enter")
             } else {
                 if let task = model.task {
-                    Square(width: JarvisModel.taskWidth(task), help: "\(task) (tab)", action: { model.act(.take) }) {
-                        HStack(spacing: JarvisModel.squareGap) {
-                            Text(task)
-                                .font(Font(JarvisModel.labelFont))
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text("tab")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.45))
-                                .frame(width: JarvisModel.hintWidth)
-                        }
-                        .padding(.horizontal, JarvisModel.inset)
+                    Square(width: JarvisModel.taskWidth(task), key: "enter", subject: model.subject, help: task,
+                           action: { model.act(.take) }) {
+                        Text(task)
+                            .font(Font(JarvisModel.labelFont))
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, JarvisModel.inset)
                     }
                     if !model.briefing { Dash() }
                 }
                 if !model.briefing {
-                    Square(width: JarvisModel.otherWidth, help: "\(JarvisModel.other) (0)",
+                    Square(width: JarvisModel.otherWidth, key: "del", help: JarvisModel.other,
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
                     }
@@ -349,7 +351,7 @@ struct JarvisView: View {
             }
         }
         .padding(JarvisModel.tray)
-        .frame(width: model.width, height: JarvisModel.square + 2 * JarvisModel.tray, alignment: .leading)
+        .frame(width: model.width, height: JarvisModel.keys + 2 * JarvisModel.tray, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12 + JarvisModel.tray).fill(JarvisModel.fill))
         .contentShape(Rectangle())
         // A click between the keys says his attention is here: the keys come back.
@@ -361,13 +363,33 @@ struct JarvisView: View {
 private struct Dash: View {
     var body: some View {
         Capsule().fill(.white.opacity(0.35)).frame(width: 8, height: 2)
-            .frame(width: JarvisModel.apart - 2 * JarvisModel.squareGap)
+            .frame(width: JarvisModel.apart - 2 * JarvisModel.squareGap, height: JarvisModel.square)
+    }
+}
+
+private extension View {
+    /// The key that does it over a key, and in grey what it is about, on the tray's top row.
+    func captioned(width: CGFloat, subject: String? = nil, key: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: JarvisModel.captionGap) {
+            HStack(spacing: 4) {
+                if let subject { Text(subject).foregroundStyle(.white.opacity(0.4)) }
+                if subject != nil { Spacer(minLength: 0) }
+                if let key { Text(key).foregroundStyle(.white.opacity(0.75)) }
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 4)
+            .frame(width: width, height: JarvisModel.caption, alignment: .leading)
+            self
+        }
     }
 }
 
 /// One outlined key in the tray: the task, Other or ✕.
 private struct Square<Label: View>: View {
     let width: CGFloat
+    let key: String
+    var subject: String?
     let help: String
     let action: () -> Void
     @ViewBuilder let label: Label
@@ -383,10 +405,11 @@ private struct Square<Label: View>: View {
             .help(help)
             .onHover { hover = $0 }
             .onTapGesture(perform: action)
+            .captioned(width: width, subject: subject, key: key)
     }
 }
 
-/// After 0 the field takes the keys' place, so the answer is typed where the task was.
+/// After del the field takes the keys' place, so the answer is typed where the task was.
 private struct TypingField: View {
     @ObservedObject var model: JarvisModel
     @FocusState private var focused: Bool

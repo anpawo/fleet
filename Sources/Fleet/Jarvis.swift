@@ -371,12 +371,11 @@ final class Jarvis {
     }
 
     /// Bare keys are taken from the whole system, so only while Jarvis has the attention:
-    /// LIVE, and none but Esc while typing. Tab takes the task, 0 opens the field. Return is
-    /// never taken: it is the terminal's.
+    /// LIVE, and none but Esc while typing. Return takes the task, Delete opens the field.
     private func registerKeys() {
         let keys = live && !typing && !failed
-        let wanted = [(kVK_ANSI_0, keys && current?.briefing == false),
-                      (kVK_Tab, keys && current?.task != nil)]
+        let wanted = [(kVK_Delete, keys && current?.briefing == false),
+                      (kVK_Return, keys && current?.task != nil)]
         for (k, (code, on)) in wanted.enumerated() {
             let id = UInt32(100 + k)
             guard on else { HotKey.unregister(id: id); continue }
