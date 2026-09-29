@@ -6,8 +6,11 @@ import SwiftUI
 @MainActor
 final class JarvisModel: ObservableObject {
     @Published var project = ""
-    /// What the task is about, over its key: the project, three words at most.
-    var subject: String { project.split(separator: " ").prefix(3).joined(separator: " ") }
+    /// What the task is about, over it in its key: the project, three words at most, capitalised.
+    var subject: String {
+        let words = project.split(separator: " ").prefix(3).joined(separator: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
     @Published var line = ""
     @Published var task: String?
     /// The switch-on briefing: nothing to take, nothing to type.
@@ -44,7 +47,7 @@ final class JarvisModel: ObservableObject {
 
     static func taskWidth(_ task: String, subject: String = "") -> CGFloat {
         let text = ceil(max((task as NSString).size(withAttributes: [.font: labelFont]).width,
-                            (subject as NSString).size(withAttributes: [.font: subjectFont]).width + 2 * Pill.pad))
+                            (subject as NSString).size(withAttributes: [.font: subjectFont]).width))
         return min(max(text + 2 * inset, taskMin), taskMax)
     }
     var itemsWidth: CGFloat {
@@ -337,7 +340,9 @@ struct JarvisView: View {
                     Square(width: JarvisModel.taskWidth(task, subject: model.subject), key: "↩ - Enter", help: task,
                            action: { model.act(.take) }) {
                         VStack(spacing: 3) {
-                            Pill(text: model.subject, font: JarvisModel.subjectFont)
+                            Text(model.subject)
+                                .font(Font(JarvisModel.subjectFont))
+                                .foregroundStyle(.white.opacity(0.45))
                             Text(task)
                                 .font(Font(JarvisModel.labelFont))
                                 .lineLimit(1)
@@ -382,9 +387,8 @@ private extension View {
     }
 }
 
-/// A grey outlined label: a key's glyph and name, or what a task is about.
+/// A grey outlined label: a key's glyph and name.
 private struct Pill: View {
-    static let pad: CGFloat = 6
     let text: String
     let font: NSFont
 
@@ -393,7 +397,7 @@ private struct Pill: View {
             .font(Font(font))
             .foregroundStyle(.white.opacity(0.6))
             .lineLimit(1)
-            .padding(.horizontal, Self.pad)
+            .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.white.opacity(0.3), lineWidth: 1))
             .fixedSize()
