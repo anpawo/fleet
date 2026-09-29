@@ -88,12 +88,62 @@ enum Launchd {
         /// explains — see `LaunchdStore.repair`. A VPN that blocks captive.apple.com defers
         /// every run, and mcp-renew stayed amber for a day while its token ran out.
         var deferredFor: TimeInterval?
+        /// The last good run was a slot made up after the fact — see `Late`.
+        var late: Late?
 
         /// Whether this agent is actually running, which the two blocks only show. Not `ok`:
         /// a routine that failed its last run is still scheduled and still the thing worth
         /// seeing, so only the ones launchd has never been told about drop out. A resident
         /// with no pid is not running, and that is the whole of it.
         var running: Bool { triggered ? enabled : ok }
+    }
+
+    /// A slot `~/.local/bin/catchup` made up late: the Mac was off at the hour, the wifi was
+    /// down past `online`'s wait, or the lid was shut. Not a failure — the run happened — but a
+    /// scan at ten instead of eight is worth knowing about. catchup writes it when a late run
+    /// ends well and removes it when a run on time does.
+    struct Late: Equatable {
+        var slot: Date
+        var ran: Date
+        /// "off", "wifi" or "asleep".
+        var why: String
+
+        static let folder = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".local/state/catchup")
+
+        static func read(_ label: String) -> Late? {
+            guard let data = FileManager.default.contents(atPath: folder.appending(path: "\(label).late").path)
+            else { return nil }
+            return parse(data)
+        }
+
+        static func parse(_ data: Data) -> Late? {
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                  let slot = json["slot"].flatMap(date), let ran = json["ran"].flatMap(date),
+                  let why = json["why"] else { return nil }
+            return Late(slot: slot, ran: ran, why: why)
+        }
+
+        /// Python's `isoformat(timespec="minutes")`: local time, no zone.
+        private static func date(_ text: String) -> Date? {
+            let format = DateFormatter()
+            format.locale = Locale(identifier: "en_US_POSIX")
+            format.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            return format.date(from: text)
+        }
+
+        /// `8:00 → 10:02 · Mac off`, the slot's day in front when it was not today.
+        var line: String {
+            let clock = DateFormatter()
+            clock.locale = Locale(identifier: "en_US_POSIX")
+            clock.dateFormat = "H:mm"
+            let day = DateFormatter()
+            day.locale = clock.locale
+            day.dateFormat = "EEE H:mm"
+            let from = (Calendar.current.isDateInToday(slot) ? clock : day).string(from: slot)
+            let reason = ["off": "Mac off", "wifi": "no wifi", "asleep": "asleep"][why] ?? why
+            return "\(from) \u{2192} \(clock.string(from: ran)) \u{00B7} \(reason)"
+        }
     }
 
     /// Every agent of his, with what launchd currently says about it.
@@ -117,6 +167,7 @@ enum Launchd {
             var job = judge(label, plist, state, age: state?.pid.flatMap { ages[$0] })
             job.address = state?.pid.flatMap { ports[$0] }
                 .map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" }
+            if job.triggered { job.late = Late.read(label) }
             return job
         }.sorted { $0.name < $1.name }
     }

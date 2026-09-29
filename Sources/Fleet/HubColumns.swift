@@ -154,7 +154,8 @@ struct CronColumn: View {
                   fills: false,
                   topInset: 5,
                   collapsed: all.isEmpty || !open,
-                  healthy: all.isEmpty ? nil : all.allSatisfy(\.ok)) {
+                  healthy: all.isEmpty ? nil : all.allSatisfy(\.ok),
+                  late: all.filter { $0.late != nil }.count) {
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 5) { rows(all) }
@@ -266,7 +267,8 @@ struct CronColumn: View {
                 .padding(.trailing, 2)
                 // On the pills' own line, which sits under their padding.
                 .padding(.top, 5)
-            ForEach(jobs) { job in
+            // A late one first: the ↻ on the heading sends you to it, and the line scrolls.
+            ForEach(jobs.filter { $0.late != nil } + jobs.filter { $0.late == nil }) { job in
                 card(job, family: family == Self.other || family == Self.broken ? nil : family)
             }
         }
@@ -404,14 +406,18 @@ struct CronCard: View {
     static let radius: CGFloat = 5
 
     var body: some View {
-        // Amber for a run put off for want of network: the machine's colour for something
-        // going wrong that is not the routine's, and not a thing to go and fix.
+        // Amber for a run put off for want of network, or made up late: the machine's colour
+        // for something going wrong that is not the routine's, and not a thing to go and fix.
         let border: Color = !job.ok ? SessionState.running.tint.opacity(0.5)
-            : job.deferred ? SessionState.apiError.tint.opacity(0.5) : .white.opacity(0.07)
+            : job.deferred || job.late != nil ? SessionState.apiError.tint.opacity(0.5) : .white.opacity(0.07)
         // Set like the state pills on the session cards: small, and no wider than the name.
-        Text(label)
+        // A late run says which slot and why on the pill itself: the block folds to its
+        // heading, and the ↻ there sends you here.
+        (Text(label).foregroundColor(.white.opacity(0.92))
+            + Text(job.late.map { "  \($0.line)" } ?? "")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(SessionState.apiError.tint))
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.92))
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 4)
@@ -749,6 +755,10 @@ struct HubColumn<Content: View>: View {
     /// A verdict in the middle of the heading, for a block folded shut: a green check when
     /// all is well, a red cross when not. Nil draws nothing.
     var healthy: Bool?
+    /// Routines whose last run was a slot made up late — see `Launchd.Late`. On a healthy
+    /// block the check gives way to an amber ↻ and their number: nothing to fix, something to
+    /// know.
+    var late = 0
     @ViewBuilder let content: Content
 
     /// The figure top right: whatever `badge` says, or the count of rows. Nil when neither.
@@ -775,7 +785,12 @@ struct HubColumn<Content: View>: View {
         // the name's chip pulls it toward.
         Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset,
               middleBetween: healthy != nil) {
-            if let healthy {
+            if healthy == true, late > 0 {
+                (Text(Image(systemName: "arrow.clockwise")).font(.system(size: 10, weight: .bold))
+                    + Text(" \(late)").font(.system(size: 11, weight: .medium, design: .monospaced)))
+                    .foregroundStyle(SessionState.apiError.tint)
+                    .titleGround()
+            } else if let healthy {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
