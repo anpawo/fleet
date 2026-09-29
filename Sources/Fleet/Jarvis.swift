@@ -16,16 +16,10 @@ struct JarvisAsk: Decodable {
     var silent: Bool?
 }
 
-struct JarvisOption: Equatable {
-    var label: String
-    /// What the option touches — a file, a command, a project — on the line under the label.
-    var keyword: String
-    var opens = false
-}
-
-/// Jarvis v1: when a session with a terminal ends its turn, the Stop hook holds and writes an
-/// ask; Fleet says "<project> is done, sir." in the cloned voice, shows the options the
-/// session itself offered, and writes the choice back as the hook's answer.
+/// Jarvis: when a session with a terminal ends its turn, the Stop hook holds and writes an
+/// ask; a headless Claude reads the session and says what it did and what it should do next,
+/// Fleet shows that one task, and writes it back as the hook's answer when taken. Switched
+/// on, he first briefs Marius on every session.
 @MainActor
 final class Jarvis {
     private unowned let controller: AppController
@@ -34,15 +28,11 @@ final class Jarvis {
     private struct Item {
         let ask: JarvisAsk
         let project: String
-        let options: [JarvisOption]
+        var line: String
+        var task: String?
+        /// The switch-on briefing: no hook behind it, nothing to answer.
+        var briefing = false
         var key: String { "\(ask.sid):\(ask.hookPid)" }
-        var line: String { ask.line ?? project.prefix(1).uppercased() + project.dropFirst() + " is done, sir." }
-        /// The line, then each option by its number, so the digits mean something by ear.
-        var spoken: String {
-            let numbers = ["One", "Two", "Three", "Four", "Five", "Six"]
-            return ([line] + options.enumerated().map { "\(numbers[$0.offset]): \(JarvisOptions.short($0.element.label))." })
-                .joined(separator: " ")
-        }
     }
 
     private var queue: [Item] = []
@@ -123,11 +113,11 @@ final class Jarvis {
             log(item, "withdrawn")
             return true
         }
-        // Back from away, the Fleet panel shows every green tile: an item with nothing to
-        // choose is redundant. A choice waits for the panel to go.
+        // Back from away, the Fleet panel shows every green tile: an item with no task is
+        // redundant. A task, or the briefing, waits for the panel to go.
         if controller.isPanelVisible {
             queue.removeAll { item in
-                guard item.options.count == 1 else { return false }
+                guard item.task == nil, !item.briefing else { return false }
                 release(item, "fleet panel")
                 return true
             }
@@ -165,17 +155,73 @@ final class Jarvis {
             return
         }
         let project = Session.project(for: ask.cwd)
-        let message = ask.lastMessage.flatMap { $0.isEmpty ? nil : $0 } ?? session(for: ask)?.lastSaid ?? ""
-        let item = Item(ask: ask, project: project,
-                        options: JarvisOptions.parse(message, project: project, cwd: ask.cwd))
-        NSLog("Fleet: jarvis picked up \(project) (\(ask.sid), hook \(ask.hookPid), \(item.options.count) options)")
+        var item = Item(ask: ask, project: project,
+                        line: ask.line ?? project.prefix(1).uppercased() + project.dropFirst() + " is done, sir.")
+        NSLog("Fleet: jarvis picked up \(project) (\(ask.sid), hook \(ask.hookPid))")
         if let reason = releaseReason(for: ask) {
             release(item, reason)
             return
         }
+        // A composed line or a demo is said as written.
+        guard ask.line == nil else { return enqueue(item) }
+        let message = ask.lastMessage.flatMap { $0.isEmpty ? nil : $0 } ?? session(for: ask)?.lastSaid ?? ""
+        let steps = session(for: ask)?.steps ?? []
+        let conversation = steps.map { step in
+            (step.kind == .user ? "Marius: " : step.kind == .tool ? "Tool: " : "Claude: ") + step.text
+        }.joined(separator: "\n") + "\nClaude (last message): " + message
+        let todos = openTodos()
+        Task { [weak self] in
+            do {
+                let next = try await Claude.nextTask(project: project, conversation: conversation, todos: todos)
+                item.line = next.line
+                item.task = next.task
+            } catch {
+                NSLog("Fleet: jarvis could not read \(project) — \(error)")
+                item.task = JarvisOptions.nextStep(in: message)
+            }
+            guard let self, Self.alive(ask.hookPid) else { return }
+            if let reason = self.releaseReason(for: ask) { return self.release(item, reason) }
+            self.enqueue(item)
+        }
+    }
+
+    private func enqueue(_ item: Item) {
         queue.append(item)
         panel.model.queued = queue.count
         present()
+    }
+
+    /// Marius's open todos, soonest first, with their day when they have one.
+    private func openTodos() -> [String] {
+        let day = DateFormatter()
+        day.dateFormat = "EEE d MMM"
+        return controller.hub.todos.filter(\.open)
+            .sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }
+            .prefix(15)
+            .map { todo in todo.due.map { "\(todo.title) (due \(day.string(from: $0)))" } ?? todo.title }
+    }
+
+    /// Said once on switching on: every session, the ones waiting for a task first.
+    func brief() {
+        let sessions = controller.sessions.sorted { $0.state.sortRank < $1.state.sortRank }.map { s in
+            let state = s.state == .ready ? "finished, waiting for a new task"
+                : s.state == .awaitingAnswer ? "waiting on Marius" : "working"
+            return [Session.project(for: s.cwd), state, s.transcript?.title ?? "",
+                    String((s.lastSaid ?? "").prefix(400))].joined(separator: " · ")
+        }
+        let todos = openTodos()
+        Task { [weak self] in
+            do {
+                let text = try await Claude.briefing(sessions: sessions, todos: todos)
+                guard let self, self.active else { return }
+                let ask = JarvisAsk(sid: "briefing", hookPid: getpid(), claudePid: 0, cwd: NSHomeDirectory())
+                self.queue.insert(Item(ask: ask, project: "Fleet", line: text, briefing: true), at: 0)
+                self.panel.model.queued = self.queue.count
+                self.present()
+            } catch {
+                NSLog("Fleet: jarvis could not brief — \(error)")
+            }
+        }
     }
 
     /// Why this ask goes back empty at once, if it does.
@@ -236,7 +282,8 @@ final class Jarvis {
         let m = panel.model
         m.project = item.project
         m.line = item.line
-        m.options = item.options
+        m.task = item.task
+        m.briefing = item.briefing
         m.queued = queue.count
         m.failure = nil
         m.typing = false
@@ -255,7 +302,7 @@ final class Jarvis {
             m.orb.set(.waiting)
             reveal()
         } else {
-            speak(item.spoken)
+            speak(item.line)
             waitingForVoice = true
         }
 
@@ -323,15 +370,17 @@ final class Jarvis {
         registerKeys()
     }
 
-    /// Bare digits are taken from the whole system, so only while Jarvis has the attention:
-    /// LIVE, and none but Esc while typing. Return is never taken: it is the terminal's.
+    /// Bare keys are taken from the whole system, so only while Jarvis has the attention:
+    /// LIVE, and none but Esc while typing. Tab takes the task, 0 opens the field. Return is
+    /// never taken: it is the terminal's.
     private func registerKeys() {
-        let digits = live && !typing && !failed ? current?.options.count ?? -1 : -1
-        let codes = [kVK_ANSI_0, kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6]
-        for k in 0...6 {
+        let keys = live && !typing && !failed
+        let wanted = [(kVK_ANSI_0, keys && current?.briefing == false),
+                      (kVK_Tab, keys && current?.task != nil)]
+        for (k, (code, on)) in wanted.enumerated() {
             let id = UInt32(100 + k)
-            guard k <= digits else { HotKey.unregister(id: id); continue }
-            HotKey.register(Settings.Chord(keyCode: UInt16(codes[k]), modifiers: 0), id: id) { [weak self] in
+            guard on else { HotKey.unregister(id: id); continue }
+            HotKey.register(Settings.Chord(keyCode: UInt16(code), modifiers: 0), id: id) { [weak self] in
                 MainActor.assumeIsolated { self?.key(k) }
             }
         }
@@ -346,13 +395,13 @@ final class Jarvis {
 
     private func key(_ k: Int) {
         ignoreInputUntil = Date()
-        k == 0 ? beginTyping() : pick(k)
+        k == 0 ? beginTyping() : take()
     }
 
     private func handle(_ action: JarvisPanel.Action) {
         guard current != nil else { return }
         switch action {
-        case .pick(let k): pick(k)
+        case .take: take()
         case .type: beginTyping()
         case .submit(let text): submit(text)
         case .close: escape()
@@ -362,23 +411,13 @@ final class Jarvis {
         }
     }
 
-    private func pick(_ k: Int) {
-        guard let item = current, !failed, !typing, item.options.indices.contains(k - 1) else { return }
-        let option = item.options[k - 1]
-        if option.opens {
-            if let session = session(for: item.ask) {
-                TerminalFocus.focus(session: session)
-            } else {
-                ProcessScanner.hostApplication(of: item.ask.claudePid)?.app.activate()
-            }
-            finish("open", answer: "")
-        } else {
-            finish("pick \(k)", answer: "Go with: \(option.label)")
-        }
+    private func take() {
+        guard let item = current, !failed, !typing, let task = item.task else { return }
+        finish("take", answer: task)
     }
 
     private func beginTyping() {
-        guard current != nil, !failed, !typing else { return }
+        guard current?.briefing == false, !failed, !typing else { return }
         stopVoice()
         typing = true
         panel.model.typing = true
@@ -392,7 +431,7 @@ final class Jarvis {
         finish("type", answer: text)
     }
 
-    /// One step back: out of the field to the options, else out of Jarvis.
+    /// One step back: out of the field to the task, else out of Jarvis.
     private func escape() {
         guard current != nil else { return }
         if typing {
@@ -418,7 +457,7 @@ final class Jarvis {
     private func finish(_ outcome: String, answer: String) {
         guard let item = current else { return }
         stopVoice()
-        let delivered = Self.alive(item.ask.hookPid) && write(answer, for: item.ask)
+        let delivered = item.briefing || Self.alive(item.ask.hookPid) && write(answer, for: item.ask)
         if !delivered, !answer.isEmpty {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(answer, forType: .string)
@@ -453,7 +492,7 @@ final class Jarvis {
     }
 
     private func release(_ item: Item, _ reason: String) {
-        if Self.alive(item.ask.hookPid) { _ = write("", for: item.ask) }
+        if !item.briefing, Self.alive(item.ask.hookPid) { _ = write("", for: item.ask) }
         NSLog("Fleet: jarvis released \(item.project) empty (\(reason))")
         log(item, "released", detail: reason)
     }
@@ -482,7 +521,7 @@ final class Jarvis {
     private func log(_ item: Item, _ outcome: String, detail: String? = nil) {
         var entry: [String: Any] = [
             "at": ISO8601DateFormatter().string(from: Date()),
-            "sid": item.ask.sid, "project": item.project, "options": item.options.count,
+            "sid": item.ask.sid, "project": item.project, "task": item.task ?? "",
             "outcome": outcome,
         ]
         if let detail { entry["detail"] = detail }
@@ -617,50 +656,8 @@ final class Jarvis {
 
 // MARK: - Options
 
-/// What Jarvis offers, taken from the session's own last message and nothing else: its
-/// numbered choices, then its "⟶" next step, then always "Open <project>". Deterministic —
-/// a model that writes options would invent work.
+/// The fallback when the session cannot be read: its own "⟶" next step, if it named one.
 enum JarvisOptions {
-    static let limit = 6
-
-    private static let numbered = try! Regex(#"^\s*(?:\*\*)?(\d)[.)](?:\*\*)?\s+(.+)$"#)
-    private static let code = try! Regex(#"`([^`]+)`"#)
-    private static let path = try! Regex(#"(?:~|\.{1,2})?/[\w.@-]+(?:/[\w.@-]+)*/?|[\w-]+(?:/[\w.@-]+)+/?|[\w-]+\.(?:swift|sh|py|md|jsonl?|tsx?|js|kt|qml|cpp|h|ya?ml|toml|txt|png|html|css|plist)\b"#)
-    private static let command = try! Regex(#"\b(?:git|swift|npm|npx|pnpm|yarn|make|cmake|pytest|cargo|brew|gh|docker|launchctl|ssh|curl|fleet|claude)\s+[\w./:=-]+"#)
-
-    static func parse(_ message: String, project: String, cwd: String) -> [JarvisOption] {
-        var raws = Array(choices(in: message).prefix(limit - 1))
-        if raws.count < limit - 1, let next = nextStep(in: message),
-           !raws.map(clean).contains(clean(next)) {
-            raws.append(next)
-        }
-        let home = NSHomeDirectory()
-        let place = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
-        return raws.map { JarvisOption(label: clean($0), keyword: keyword(in: $0, project: project)) }
-            + [JarvisOption(label: "Open \(project)", keyword: place, opens: true)]
-    }
-
-    /// The last list numbered 1, 2, 3… — when it ends the message. What may follow it is a
-    /// question, the "⟶" line, or the lines indented under its last item; anything else means
-    /// it listed what was done, not what to choose.
-    static func choices(in message: String) -> [String] {
-        let lines = message.components(separatedBy: .newlines)
-        var run: [String] = [], best: [String] = [], end = -1
-        for (i, line) in lines.enumerated() {
-            guard let m = line.firstMatch(of: numbered),
-                  let n = m.output[1].substring.flatMap({ Int($0) }),
-                  let text = m.output[2].substring.map({ $0.trimmingCharacters(in: .whitespaces) }) else { continue }
-            if n == 1 { run = [text] } else if n == run.count + 1 { run.append(text) } else { continue }
-            if run.count >= 2 { best = run; end = i }
-        }
-        guard end >= 0 else { return [] }
-        let tail = lines[(end + 1)...].allSatisfy { line in
-            let t = line.trimmingCharacters(in: .whitespaces)
-            return t.isEmpty || line.first?.isWhitespace == true || t.hasPrefix("⟶") || t.contains("?")
-        }
-        return tail ? best : []
-    }
-
     /// The last "⟶" line, unless it is also the first: that one is the answer, not a step.
     static func nextStep(in message: String) -> String? {
         let lines = message.components(separatedBy: .newlines)
@@ -670,91 +667,16 @@ enum JarvisOptions {
         return text.isEmpty ? nil : text
     }
 
-    /// An option as said aloud: no parenthesis, ten words at most, no closing punctuation.
-    static func short(_ label: String) -> String {
-        let bare = label.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
-        return bare.split(separator: " ").prefix(10).joined(separator: " ")
-            .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!? "))
-    }
-
-    private static func clean(_ raw: String) -> String {
-        raw.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
-            .trimmingCharacters(in: .whitespaces)
-    }
-
-    /// The first `code` span; else the first path or command; else the project.
-    static func keyword(in raw: String, project: String) -> String {
-        if let m = raw.firstMatch(of: code), let s = m.output[1].substring { return String(s) }
-        let found = [raw.firstMatch(of: path), raw.firstMatch(of: command)].compactMap { $0 }
-            .min { $0.range.lowerBound < $1.range.lowerBound }
-        guard let m = found else { return project }
-        return String(raw[m.range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))
-    }
-
-    /// `fleet --selftest`: messages shaped like the ones sessions actually end on.
-    static func check(_ expect: ([String], [String], String) -> Void) {
-        expect([short("Re-render them at 2x with sips -Z 800 (my pick)"), short("one two three four five six seven eight nine ten eleven.")],
-               ["Re-render them at 2x with sips -Z 800", "one two three four five six seven eight nine ten"],
-               "jarvis: an option said aloud drops its parenthesis and stops at ten words")
-        func run(_ message: String, _ project: String) -> [String] {
-            parse(message, project: project, cwd: NSHomeDirectory() + "/self/" + project)
-                .map { "\($0.label) | \($0.keyword)" }
-        }
-        expect(run("""
-            ⟶ Two ways to fix the blurry thumbnails.
-
-            1. Re-render them at 2x with `sips -Z 800` (my pick)
-            2. Crop them in public/thumbs/
-            3. **Leave them**
-
-            Which one?
-
-            ⟶ Pick 1 and I push.
-            """, "portfolio"),
-               ["Re-render them at 2x with sips -Z 800 (my pick) | sips -Z 800",
-                "Crop them in public/thumbs/ | public/thumbs/",
-                "Leave them | portfolio",
-                "Pick 1 and I push. | portfolio",
-                "Open portfolio | ~/self/portfolio"],
-               "jarvis: numbered choices, then the next step, then Open")
-        expect(run("""
-            ⟶ Les corporate actions ne sont pas perdues : 14 ont été fermées à la main cette nuit.
+    static func check(_ expect: (String?, String?, String) -> Void) {
+        expect(nextStep(in: """
+            ⟶ Les corporate actions ne sont pas perdues.
 
             - `ca_close.py` a tourné à 02:14
-            - rien dans le log d'erreurs
 
             ⟶ Relance `./recon.sh --date 2026-09-27` pour vérifier.
-            """, "s14"),
-               ["Relance ./recon.sh --date 2026-09-27 pour vérifier. | ./recon.sh --date 2026-09-27",
-                "Open s14 | ~/self/s14"],
-               "jarvis: French, the last ⟶ line is the step, its code span the keyword")
-        expect(run("""
-            ⟶ C'est fait.
-
-            1. J'ai ajouté le toggle dans Settings.swift
-            2. J'ai relancé l'install
-
-            Le panneau s'ouvre bien.
-
-            ⟶ Regarde la capture dans /tmp/fleet.png
-            """, "fleet"),
-               ["Regarde la capture dans /tmp/fleet.png | /tmp/fleet.png", "Open fleet | ~/self/fleet"],
-               "jarvis: a numbered list of what was done is not a choice; a path is the keyword")
-        expect(run("⟶ Yes, the hook is version 13.", "fleet"), ["Open fleet | ~/self/fleet"],
+            """), "Relance `./recon.sh --date 2026-09-27` pour vérifier.",
+               "jarvis: the last ⟶ line is the step")
+        expect(nextStep(in: "⟶ Yes, the hook is version 13."), nil,
                "jarvis: a lone ⟶ line is the answer, not a step")
-        expect(run("""
-            Pick one:
-            1) Run swift build again
-            2) Revert Hooks.swift
-            3) Ask the other session
-            4) Wait
-            5) Nothing
-            6) Push anyway
-            7) Stop
-            ⟶ Say which.
-            """, "fleet"),
-               ["Run swift build again | swift build", "Revert Hooks.swift | Hooks.swift",
-                "Ask the other session | fleet", "Wait | fleet", "Nothing | fleet", "Open fleet | ~/self/fleet"],
-               "jarvis: capped at six, Open always last")
     }
 }

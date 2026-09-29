@@ -222,7 +222,10 @@ final class AppController: ObservableObject {
 
     /// See `Settings.jarvisOn`.
     @Published var jarvisOn = Settings.jarvisOn {
-        didSet { Settings.jarvisOn = jarvisOn }
+        didSet {
+            Settings.jarvisOn = jarvisOn
+            if jarvisOn, !oldValue { jarvis?.brief() }
+        }
     }
 
     /// A `didSet` does not run for the value a property is declared with, and `--render` never

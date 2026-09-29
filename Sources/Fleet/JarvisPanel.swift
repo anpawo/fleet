@@ -7,7 +7,9 @@ import SwiftUI
 final class JarvisModel: ObservableObject {
     @Published var project = ""
     @Published var line = ""
-    @Published var options: [JarvisOption] = []
+    @Published var task: String?
+    /// The switch-on briefing: nothing to take, nothing to type.
+    @Published var briefing = false
     @Published var queued = 0
     @Published var live = true
     @Published var typing = false
@@ -18,10 +20,11 @@ final class JarvisModel: ObservableObject {
     let orb = OrbModel()
     var act: (JarvisPanel.Action) -> Void = { _ in }
 
-    /// Each answer is its own black square holding only its digit; the label shows on hover.
-    static let square: CGFloat = 53, squareGap: CGFloat = 8, digitSize: CGFloat = 26, inset: CGFloat = 12
-    /// The black tray the squares sit in, this far from its edge; ✕ on its left and Other on
-    /// its right stand `apart` from the digits.
+    /// Every key is a black square this tall; the task's is as wide as its text, up to `taskMax`.
+    static let square: CGFloat = 53, squareGap: CGFloat = 8, inset: CGFloat = 12
+    static let taskMax: CGFloat = 420, hintWidth: CGFloat = 24
+    /// The black tray the keys sit in, this far from its edge; ✕ on its left and Other on
+    /// its right stand `apart` from the task.
     static let tray: CGFloat = 8, apart: CGFloat = 32, otherWidth: CGFloat = 84
     /// Clear space over the orb, and between it and the squares.
     static let top: CGFloat = 12, gap: CGFloat = 12, orb: CGFloat = 36
@@ -34,20 +37,32 @@ final class JarvisModel: ObservableObject {
     /// Only a failure takes a text block, on two lines: the line itself is spoken, not shown.
     static let headerWidth: CGFloat = 240
 
+    static func taskWidth(_ task: String) -> CGFloat {
+        let text = ceil((task as NSString).size(withAttributes: [.font: labelFont]).width)
+        return min(text + 2 * inset + squareGap + hintWidth, taskMax)
+    }
     var itemsWidth: CGFloat {
-        CGFloat(options.count) * (Self.square + Self.squareGap) - Self.squareGap + Self.apart + Self.otherWidth
+        let task = self.task.map(Self.taskWidth) ?? 0
+        let other = briefing ? 0 : Self.otherWidth
+        return task + other + (task > 0 && other > 0 ? Self.apart : 0)
     }
     var fieldWidth: CGFloat { max(itemsWidth, 360) }
-    var width: CGFloat {
-        2 * Self.tray + Self.square + Self.apart + (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0)
-            + (typing ? fieldWidth : itemsWidth)
+    var rest: CGFloat {
+        (failure != nil ? Self.headerWidth + 2 * Self.inset + Self.squareGap : 0) + (typing ? fieldWidth : itemsWidth)
     }
+    var width: CGFloat { 2 * Self.tray + Self.square + (rest > 0 ? Self.apart + rest : 0) }
     var height: CGFloat { Self.top + Self.orb + Self.gap + Self.square + 2 * Self.tray }
 
     static func check(_ expect: (CGFloat, CGFloat, String) -> Void) {
         let m = JarvisModel()
-        m.options = Array(repeating: JarvisOption(label: "x", keyword: "y"), count: JarvisOptions.limit)
-        expect(m.width, 2 * tray + square + apart + 6 * square + 5 * squareGap + apart + otherWidth, "jarvis: ✕, six digits and Other fill their tray")
+        m.task = "Run the tests"
+        expect(m.width, 2 * tray + square + apart + taskWidth("Run the tests") + apart + otherWidth,
+               "jarvis: ✕, the task and Other fill their tray")
+        m.task = String(repeating: "long words ", count: 60)
+        expect(taskWidth(m.task!), taskMax, "jarvis: a long task wraps at the cap")
+        m.task = nil
+        m.briefing = true
+        expect(m.width, 2 * tray + square, "jarvis: the briefing shows ✕ alone")
     }
 }
 
@@ -118,10 +133,10 @@ private final class JarvisHost: NSHostingView<JarvisView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// The orb under the notch and the options bar under it, in one window.
+/// The orb under the notch and the task bar under it, in one window.
 @MainActor
 final class JarvisPanel {
-    enum Action { case pick(Int), type, submit(String), close, rearm }
+    enum Action { case take, type, submit(String), close, rearm }
 
     let model = JarvisModel()
     private lazy var window: JarvisWindow = {
@@ -199,31 +214,24 @@ final class JarvisPanel {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let real = NSScreen.screens.lazy.map { notch(of: $0) }.first { $0.notched }
         let notchWidth = real?.width ?? 185
-        let a = JarvisOption(label: "Re-render the thumbnails at 2x with sips -Z 800 (my pick)", keyword: "sips -Z 800")
-        let b = JarvisOption(label: "Crop them in public/thumbs/", keyword: "public/thumbs/")
-        let open = JarvisOption(label: "Open portfolio", keyword: "~/self/portfolio", opens: true)
-        let more = [JarvisOption(label: "Revert Hooks.swift", keyword: "Hooks.swift"),
-                    JarvisOption(label: "Relance ./recon.sh --date 2026-09-27 pour vérifier.", keyword: "./recon.sh --date 2026-09-27"),
-                    JarvisOption(label: "Wait for the other session", keyword: "portfolio")]
+        let task = "Run ./test-stop-hook.sh, then commit and push the Jarvis rework"
         func speaking(_ level: Double) -> (JarvisModel) -> Void {
-            { $0.options = [a, b, open]; $0.orb.set(.preparing); $0.orb.frame(level: level, speaking: true) }
+            { $0.task = task; $0.orb.set(.preparing); $0.orb.frame(level: level, speaking: true) }
         }
         typealias Scene = (name: String, dark: Bool, notched: Bool, clock: Double, setup: (JarvisModel) -> Void)
         let scenes: [Scene] = [
             ("1-live-dark", true, true, 2, speaking(0.5)),
-            ("3-live-dark", true, true, 2, { speaking(0.6)($0); $0.queued = 2 }),
             ("3-live-light", false, true, 2, { speaking(0.6)($0); $0.queued = 2 }),
-            ("6-passive-dark", true, true, 2, { $0.options = [a, b] + more + [open]; $0.live = false }),
-            ("6-passive-light", false, true, 2, { $0.options = [a, b] + more + [open]; $0.live = false }),
-            ("typing-dark", true, true, 2, { $0.options = [a, b, open]; $0.typing = true; $0.draft = "also bump the version" }),
-            ("typing-light", false, true, 2, { $0.options = [a, b, open]; $0.typing = true; $0.draft = "also bump the version" }),
-            ("novoice-dark", true, true, 2, { $0.options = [a, open]; $0.orb.set(.silent) }),
-            ("error-light", false, true, 2, { $0.options = [a, open]; $0.orb.set(.silent)
+            ("short-dark", true, true, 2, { $0.task = "Run the tests"; $0.live = false }),
+            ("long-dark", true, true, 2, { $0.task = String(repeating: "Check the render of the crons column ", count: 4); $0.live = false }),
+            ("notask-dark", true, true, 2, { $0.live = false }),
+            ("briefing-dark", true, true, 2, { $0.briefing = true; $0.orb.set(.preparing); $0.orb.frame(level: 0.5, speaking: true) }),
+            ("typing-dark", true, true, 2, { $0.task = task; $0.typing = true; $0.draft = "also bump the version" }),
+            ("novoice-dark", true, true, 2, { $0.task = task; $0.orb.set(.silent) }),
+            ("error-light", false, true, 2, { $0.task = task; $0.orb.set(.silent)
                 $0.failure = "Didn't reach portfolio: the session moved on. Your answer is on the clipboard." }),
             ("nonotch-dark", true, false, 2, speaking(0.4)),
             ("orb-phase-a", true, true, 0, speaking(0.3)),
-            ("orb-phase-b", true, true, 1.4, speaking(0.3)),
-            ("orb-phase-c", true, true, 2.9, speaking(0.3)),
             ("orb-loud", true, true, 1.4, speaking(1)),
         ]
         for scene in scenes {
@@ -302,7 +310,7 @@ struct JarvisView: View {
             Square(width: JarvisModel.square, help: "Close (esc)", action: { model.act(.close) }) {
                 Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
             }
-            Dash()
+            if model.rest > 0 { Dash() }
             if let failure = model.failure {
                 Text(failure)
                     .font(Font(JarvisModel.failureFont))
@@ -316,14 +324,23 @@ struct JarvisView: View {
             if model.typing {
                 TypingField(model: model)
             } else {
-                Group {
-                    ForEach(Array(model.options.enumerated()), id: \.offset) { i, option in
-                        Square(width: JarvisModel.square, help: "\(option.label)\n\(option.keyword)",
-                               action: { model.act(.pick(i + 1)) }) {
-                            Text("\(i + 1)").font(.system(size: JarvisModel.digitSize, weight: .semibold).monospacedDigit())
+                if let task = model.task {
+                    Square(width: JarvisModel.taskWidth(task), help: "\(task) (tab)", action: { model.act(.take) }) {
+                        HStack(spacing: JarvisModel.squareGap) {
+                            Text(task)
+                                .font(Font(JarvisModel.labelFont))
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("tab")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.45))
+                                .frame(width: JarvisModel.hintWidth)
                         }
+                        .padding(.horizontal, JarvisModel.inset)
                     }
-                    Dash()
+                    if !model.briefing { Dash() }
+                }
+                if !model.briefing {
                     Square(width: JarvisModel.otherWidth, help: "\(JarvisModel.other) (0)",
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
@@ -335,12 +352,12 @@ struct JarvisView: View {
         .frame(width: model.width, height: JarvisModel.square + 2 * JarvisModel.tray, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12 + JarvisModel.tray).fill(JarvisModel.fill))
         .contentShape(Rectangle())
-        // A click between the squares says his attention is here: the digits come back.
+        // A click between the keys says his attention is here: the keys come back.
         .onTapGesture { model.act(.rearm) }
     }
 }
 
-/// The short dash that sets ✕ and Other apart from the digits.
+/// The short dash that sets ✕ and Other apart from the task.
 private struct Dash: View {
     var body: some View {
         Capsule().fill(.white.opacity(0.35)).frame(width: 8, height: 2)
@@ -348,7 +365,7 @@ private struct Dash: View {
     }
 }
 
-/// One outlined key in the tray: a digit, Other or ✕.
+/// One outlined key in the tray: the task, Other or ✕.
 private struct Square<Label: View>: View {
     let width: CGFloat
     let help: String
@@ -369,7 +386,7 @@ private struct Square<Label: View>: View {
     }
 }
 
-/// After 0 the field takes the squares' place, so the answer is typed where the options were.
+/// After 0 the field takes the keys' place, so the answer is typed where the task was.
 private struct TypingField: View {
     @ObservedObject var model: JarvisModel
     @FocusState private var focused: Bool
