@@ -661,56 +661,44 @@ struct TodoColumn: View {
 /// last session he spoke up for. The second comes from his log, not from `Jarvis`, which keeps
 /// its state to itself.
 struct JarvisBlock: View {
-    let on: Bool
-    let muted: Bool
+    @Binding var on: Bool
 
     /// Electric blue, brighter than CRONS' and TODO's. It breathed a glow once; that glow was a
     /// shadow over a group of layers, animated for as long as the panel was up (28-09).
     static let tint = Color(red: 0.0, green: 0.66, blue: 1.0)
 
-    private static let clock: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f
-    }()
-    private static let day: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "d MMM"
-        return f
-    }()
+    var body: some View {
+        Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6), bodyGap: 17) {
+            EmptyView()
+        } trailing: {
+            OnOffSwitch(on: $on)
+        } content: {
+            EmptyView()
+        }
+    }
+}
+
+/// On | Off, the selected word in colour: green for on, red for off. No ground, no border.
+struct OnOffSwitch: View {
+    @Binding var on: Bool
 
     var body: some View {
-        HubColumn(title: "JARVIS", count: 0, tint: Self.tint, fill: Self.tint.darkened(0.6),
-                  badgeText: line, collapsed: true) { EmptyView() }
+        HStack(spacing: 0) {
+            segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
+            segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
+        }
     }
 
-    private var line: Text {
-        let state = !on ? Text("off").foregroundColor(.white.opacity(0.45))
-            : muted ? Text("muted").foregroundColor(LedgerTint.ongoing)
-            : Text("on").foregroundColor(SessionState.ready.tint)
-        guard let last = Self.lastAsk() else { return state }
-        let when = Calendar.current.isDateInToday(last.at)
-            ? Self.clock.string(from: last.at) : Self.day.string(from: last.at)
-        return state + Text(" · last \(last.project) \(when)").foregroundColor(.white.opacity(0.45))
-    }
-
-    /// The last line of `jarvis-log.jsonl`, read from its last 4 KB: one line per ask, and the
-    /// log is never trimmed.
-    static func lastAsk() -> (project: String, at: Date)? {
-        let path = (Hooks.home as NSString).appendingPathComponent("jarvis-log.jsonl")
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { try? handle.close() }
-        let end = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: end > 4096 ? end - 4096 : 0)
-        guard let data = try? handle.readToEnd(),
-              let line = String(decoding: data, as: UTF8.self)
-                  .split(separator: "\n").last,
-              let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-              let project = entry["project"] as? String,
-              let stamp = entry["at"] as? String,
-              let at = ISO8601DateFormatter().date(from: stamp) else { return nil }
-        return (project, at)
+    private func segment(_ label: String, selected: Bool, tint: Color,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: selected ? .bold : .medium, design: .monospaced))
+                .foregroundStyle(selected ? tint : .white.opacity(0.45))
+                .padding(.horizontal, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
