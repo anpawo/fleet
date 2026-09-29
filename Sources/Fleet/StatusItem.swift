@@ -23,8 +23,6 @@ final class StatusItemController {
     private var shown: NSColor?
     /// Same idea for the muted look, which takes the dot away.
     private var shownMuted: Bool?
-    /// And for the count of todos due today, which sits beside the plane.
-    private var shownDue: Int?
 
     init(controller: AppController) {
         self.controller = controller
@@ -81,18 +79,6 @@ final class StatusItemController {
         if shownMuted != muted {
             shownMuted = muted
             dot.isHidden = muted
-        }
-        // A number beside the plane while something is due today or overdue, nothing at all
-        // otherwise: the bar is the one place that can say "there is something to do" on a
-        // day the panel never comes up.
-        let due = controller.hub.dueToday
-        if shownDue != due, let button = item.button {
-            shownDue = due
-            button.title = due > 0 ? " \(due)" : ""
-            button.imagePosition = due > 0 ? .imageLeading : .imageOnly
-            button.toolTip = due > 0
-                ? "Fleet — \(due) due today, click for the panel"
-                : "Fleet — click for the panel, right-click for settings"
         }
         let colour = NSColor(MemoryStrip.loadTint(ram))
         guard shown != colour else { return }

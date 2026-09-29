@@ -678,7 +678,7 @@ struct JarvisBlock: View {
     }
 }
 
-/// On | Off, the selected word in colour: green for on, red for off. No ground, no border.
+/// On | Off, the selected word in colour: green for on, red for off.
 struct OnOffSwitch: View {
     @Binding var on: Bool
 
@@ -687,6 +687,9 @@ struct OnOffSwitch: View {
             segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
             segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
         }
+        // The chip the CRONS verdict sits on, round both words at once.
+        .padding(.horizontal, -6)
+        .titleGround()
     }
 
     private func segment(_ label: String, selected: Bool, tint: Color,

@@ -804,10 +804,6 @@ final class HubStore: ObservableObject {
         refresh()
     }
 
-    /// How many todos are due today or already overdue — what the menu bar shows so a day
-    /// with something on it is visible without opening the panel.
-    var dueToday: Int { todos.filter { $0.bucket == .today }.count }
-
     /// A block with nothing in it folds to its heading line, like MEMORY, and gives its room to
     /// the prioritized block under it (EPITECH, TODO). Only once loaded: a column that has not
     /// answered yet is not an empty one.
