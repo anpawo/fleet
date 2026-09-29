@@ -352,7 +352,7 @@ struct JarvisView: View {
                     if !model.briefing { Dash() }
                 }
                 if !model.briefing {
-                    Square(width: JarvisModel.otherWidth, key: "⌫ - Delete", help: JarvisModel.other,
+                    Square(width: JarvisModel.otherWidth, key: "⌫ - Del", help: JarvisModel.other,
                            action: { model.act(.type) }) {
                         Text("Other").font(.system(size: 17, weight: .semibold))
                     }
