@@ -651,8 +651,8 @@ struct TodoColumn: View {
     }
 }
 
-/// JARVIS, over CRONS: whether he is listening, and which machine his voice speaks on. At rest
-/// the heading line alone, On | Off in full; under the pointer the VOICE row unrolls, every word
+/// JARVIS, over CRONS: whether he debriefs the sessions that finish, and which machine his voice
+/// speaks on. At rest the heading line alone, the debrief's On | Off in full; under the pointer the VOICE row unrolls, every word
 /// a switch, and the topics he can be asked about, over what he found on the last one. Each
 /// choice keeps its own place on the line, so a word's column says which machine.
 struct JarvisBlock: View {
@@ -673,7 +673,13 @@ struct JarvisBlock: View {
         Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
         } trailing: {
-            OnOffSwitch(on: $on)
+            HStack(spacing: 8) {
+                Text("SESSION DEBRIEF")
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(0.45))
+                OnOffSwitch(on: $on)
+            }
         } content: {
             if hovered {
                 VStack(alignment: .leading, spacing: 5) {

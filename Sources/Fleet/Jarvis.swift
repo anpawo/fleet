@@ -301,8 +301,7 @@ final class Jarvis {
         }
     }
 
-    /// A topic from the JARVIS block: said, and shown there. Found with Jarvis off, it is
-    /// only shown.
+    /// A topic from the JARVIS block: said, and shown there, session debrief on or off.
     func talk(about topic: JarvisTopic) {
         guard !controller.jarvisReading.contains(topic) else { return }
         controller.jarvisReading.insert(topic)
@@ -314,7 +313,6 @@ final class Jarvis {
                 let facts = try await topic.facts(hub: self.controller.hub, sessions: sessions)
                 let found = try await Claude.topic(topic.label, facts: facts)
                 self.controller.jarvisFound = JarvisFinding(topic: topic, lines: found.show.isEmpty ? [found.say] : found.show)
-                guard self.active else { return }
                 let ask = JarvisAsk(sid: "topic-" + topic.rawValue, hookPid: getpid(), claudePid: 0, cwd: NSHomeDirectory())
                 self.queue.insert(Item(ask: ask, project: topic.label, line: found.say, briefing: true, requested: true), at: 0)
                 self.panel.model.queued = self.queue.count
@@ -603,10 +601,11 @@ final class Jarvis {
         log(item, "released", detail: reason)
     }
 
+    /// A topic asked for from the JARVIS block is said whatever the debrief switch says.
     private func releaseAll(_ reason: String) {
-        queue.forEach { release($0, reason) }
-        queue = []
-        if let item = current {
+        queue.filter { !$0.requested }.forEach { release($0, reason) }
+        queue.removeAll { !$0.requested }
+        if let item = current, !item.requested {
             release(item, reason)
             dismiss()
         }

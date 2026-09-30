@@ -80,7 +80,7 @@ struct ControlCenterView: View {
             status
             section("WHEN IT APPEARS") {
                 idlePicker
-                row("Jarvis") {
+                row("Session debrief") {
                     menu([true, false], label: { $0 ? "On" : "Off" },
                          selection: $controller.jarvisOn)
                 }
