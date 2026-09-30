@@ -30,6 +30,61 @@ enum JarvisPlace: String, CaseIterable {
     }
 }
 
+/// What Marius can ask Jarvis about from the JARVIS block. Each gathers its facts — from what
+/// Fleet already holds, or from a headless turn that runs the skill — and Jarvis says them.
+enum JarvisTopic: String, CaseIterable, Identifiable {
+    case mail, agenda, todos, sessions, epitech, s14
+
+    var id: Self { self }
+    var label: String { self == .s14 ? "S14" : rawValue.uppercased() }
+    var icon: String {
+        switch self {
+        case .mail: "envelope.fill"
+        case .agenda: "calendar"
+        case .todos: "checklist"
+        case .sessions: "terminal.fill"
+        case .epitech: "graduationcap.fill"
+        case .s14: "building.columns.fill"
+        }
+    }
+
+    /// The turn run with Marius's setup, for what Fleet does not hold itself.
+    var skill: String? {
+        switch self {
+        case .epitech:
+            "Use the epitech-scan skill on Marius's Epitech platforms, and report what is due soon and what is new."
+        case .s14:
+            "Use the mo-mail skill for today's update of the S14 Middle Office mailbox. Then read the last run of " +
+            "recon V3 — the lines after the last line starting with \"--- \" in ~/.local/state/recon-v3.log — and " +
+            "say whether both books reconciled."
+        case .agenda:
+            "List Marius's Google Calendar events for today and tomorrow, with their times, Paris time."
+        default: nil
+        }
+    }
+
+    @MainActor
+    func facts(hub: HubStore, sessions: [Session]) async throws -> String {
+        let facts: String = switch self {
+        case .mail:
+            hub.mail.map { m in
+                "\(m.gist) — from \(m.sender), importance \(m.importance)/3, \(m.state)" +
+                (m.starred ? ", starred" : "") + (m.summary.isEmpty ? "" : ": \(m.summary)")
+            }.joined(separator: "\n")
+        case .todos: Jarvis.openTodos(hub.todos).joined(separator: "\n")
+        case .sessions: Jarvis.briefingLines(sessions).joined(separator: "\n")
+        default: try await Claude.report(skill ?? "")
+        }
+        return facts.isEmpty ? "(nothing)" : facts
+    }
+}
+
+/// What Jarvis found on the last topic asked for, as the JARVIS block shows it.
+struct JarvisFinding {
+    let topic: JarvisTopic
+    let lines: [String]
+}
+
 /// Jarvis: when a session with a terminal ends its turn, the Stop hook holds and writes an
 /// ask; a headless Claude reads the session and says what it did and what it should do next,
 /// Fleet shows that one task, and writes it back as the hook's answer when taken. Switched
@@ -46,6 +101,8 @@ final class Jarvis {
         var task: String?
         /// The switch-on briefing: no hook behind it, nothing to answer.
         var briefing = false
+        /// A topic Marius clicked: he is at the Fleet panel, waiting for it.
+        var requested = false
         var key: String { "\(ask.sid):\(ask.hookPid)" }
     }
 
@@ -243,6 +300,31 @@ final class Jarvis {
         }
     }
 
+    /// A topic from the JARVIS block: said, and shown there. Found with Jarvis off, it is
+    /// only shown.
+    func talk(about topic: JarvisTopic) {
+        guard !controller.jarvisReading.contains(topic) else { return }
+        controller.jarvisReading.insert(topic)
+        let sessions = controller.sessions
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.controller.jarvisReading.remove(topic) }
+            do {
+                let facts = try await topic.facts(hub: self.controller.hub, sessions: sessions)
+                let found = try await Claude.topic(topic.label, facts: facts)
+                self.controller.jarvisFound = JarvisFinding(topic: topic, lines: found.show.isEmpty ? [found.say] : found.show)
+                guard self.active else { return }
+                let ask = JarvisAsk(sid: "topic-" + topic.rawValue, hookPid: getpid(), claudePid: 0, cwd: NSHomeDirectory())
+                self.queue.insert(Item(ask: ask, project: topic.label, line: found.say, briefing: true, requested: true), at: 0)
+                self.panel.model.queued = self.queue.count
+                self.present()
+            } catch {
+                NSLog("Fleet: jarvis could not read \(topic.label) — \(error)")
+                self.controller.jarvisFound = JarvisFinding(topic: topic, lines: ["Couldn't read it: \(error.localizedDescription)"])
+            }
+        }
+    }
+
     /// Why this ask goes back empty at once, if it does.
     private func releaseReason(for ask: JarvisAsk) -> String? {
         if !active { return "off" }
@@ -283,7 +365,8 @@ final class Jarvis {
     // MARK: - On screen
 
     private func present() {
-        guard current == nil, !queue.isEmpty, Date() >= nextShowAt, !controller.isPanelVisible else { return }
+        guard current == nil, !queue.isEmpty, Date() >= nextShowAt,
+              !controller.isPanelVisible || queue[0].requested else { return }
         // Away: no voice to an empty room. The hook keeps holding; the item shows on return.
         guard IdleWatcher.idleSeconds() < 60 else { return }
         let item = queue.removeFirst()

@@ -306,7 +306,9 @@ struct OverlayView: View {
                 GeometryReader { space in
                     let free = space.size.height - Self.blockGap
                     VStack(alignment: .leading, spacing: Self.blockGap) {
-                        JarvisBlock(on: $controller.jarvisOn, voice: $controller.jarvisVoice)
+                        JarvisBlock(on: $controller.jarvisOn, voice: $controller.jarvisVoice,
+                                    reading: controller.jarvisReading, found: controller.jarvisFound,
+                                    talk: controller.jarvisTalk)
                         CronColumn(title: "CRONS", jobs: controller.launchd.jobs,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 2))

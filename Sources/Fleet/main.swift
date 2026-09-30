@@ -375,6 +375,38 @@ if CommandLine.arguments.contains("--jarvis-brief") {
     RunLoop.main.run()
 }
 
+// `--jarvis-topic <topic>`: what a JARVIS block button gathers, what Jarvis would say, and the
+// lines the block would show — without the panel or the voice.
+if let flag = CommandLine.arguments.firstIndex(of: "--jarvis-topic") {
+    let name = flag + 1 < CommandLine.arguments.count ? CommandLine.arguments[flag + 1] : ""
+    guard let topic = JarvisTopic(rawValue: name) else {
+        print("usage: Fleet --jarvis-topic <\(JarvisTopic.allCases.map(\.rawValue).joined(separator: "|"))>")
+        exit(2)
+    }
+    Task { @MainActor in
+        let start = Date()
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        let hub = HubStore()
+        hub.refresh()
+        while !hub.loaded, hub.failure == nil, Date().timeIntervalSince(start) < 10 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        do {
+            let facts = try await topic.facts(hub: hub, sessions: registry.refresh())
+            print(String(format: "facts in %.1f s:\n", Date().timeIntervalSince(start)) + facts + "\n")
+            let found = try await Claude.topic(topic.label, facts: facts)
+            print(String(format: "said, at %.1f s:\n", Date().timeIntervalSince(start)) + found.say + "\n")
+            print("shown:\n" + found.show.map { "- " + $0 }.joined(separator: "\n"))
+            exit(0)
+        } catch {
+            print("\(topic.label) failed: \(error)")
+            exit(1)
+        }
+    }
+    RunLoop.main.run()
+}
+
 // The EPITECH block without the panel: the modules under way and the rendus still ahead.
 if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     // An optional path, so a state.json that says something this one does not — a dead session,
@@ -822,6 +854,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         }
 
+        // `FLEET_JARVIS_FOUND="line|line"` draws the JARVIS block's box of what he found, which
+        // otherwise takes a click and a skill run. With `FLEET_HOVER=jarvis`, since it unrolls.
+        if let lines = ProcessInfo.processInfo.environment["FLEET_JARVIS_FOUND"] {
+            controller.jarvisFound = JarvisFinding(topic: .todos, lines: lines.components(separatedBy: "|"))
+        }
         // `--cmd` draws the panel as it looks with ⌘ held: the todo column's ✕s are otherwise
         // impossible to see in a render, since nobody is holding a key.
         if CommandLine.arguments.contains("--cmd") {

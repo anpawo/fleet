@@ -228,6 +228,12 @@ final class AppController: ObservableObject {
         }
     }
 
+    /// The topics Jarvis is reading for the JARVIS block, and what he found last.
+    @Published var jarvisReading: Set<JarvisTopic> = []
+    @Published var jarvisFound: JarvisFinding?
+
+    func jarvisTalk(about topic: JarvisTopic) { jarvis?.talk(about: topic) }
+
     /// See `Settings.jarvisVoice`.
     @Published var jarvisVoice = Settings.jarvisVoice {
         didSet { Settings.jarvisVoice = jarvisVoice }

@@ -653,10 +653,14 @@ struct TodoColumn: View {
 
 /// JARVIS, over CRONS: whether he is listening, and which machine his voice speaks on. At rest
 /// the heading line alone, On | Off in full; under the pointer the VOICE row unrolls, every word
-/// a switch. Each choice keeps its own place on the line, so a word's column says which machine.
+/// a switch, and the topics he can be asked about, over what he found on the last one. Each
+/// choice keeps its own place on the line, so a word's column says which machine.
 struct JarvisBlock: View {
     @Binding var on: Bool
     @Binding var voice: JarvisPlace
+    var reading: Set<JarvisTopic> = []
+    var found: JarvisFinding?
+    var talk: (JarvisTopic) -> Void = { _ in }
 
     /// Seeded from `FLEET_HOVER`, like CRONS', so a render can show the switches.
     @State private var hovered = ProcessInfo.processInfo.environment["FLEET_HOVER"] == "jarvis"
@@ -672,13 +676,84 @@ struct JarvisBlock: View {
             OnOffSwitch(on: $on)
         } content: {
             if hovered {
-                // No voice server on the S14 PC yet.
-                JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
-                               choices: [.mac, .windows], open: hovered) { voice = $0 }
-                    .transition(.opacity)
+                VStack(alignment: .leading, spacing: 5) {
+                    // No voice server on the S14 PC yet.
+                    JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
+                                   choices: [.mac, .windows], open: hovered) { voice = $0 }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3), spacing: 5) {
+                        ForEach(JarvisTopic.allCases) { topic in
+                            JarvisTopicButton(topic: topic, reading: reading.contains(topic)) { talk(topic) }
+                        }
+                    }
+                    if let found { JarvisFound(found: found) }
+                }
+                .transition(.opacity)
             }
         }
         .onHover { inside in withAnimation(TodoColumn.unroll) { hovered = inside } }
+    }
+}
+
+/// A topic to ask Jarvis about. Its icon pulses while he reads it.
+struct JarvisTopicButton: View {
+    let topic: JarvisTopic
+    let reading: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: topic.icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(JarvisBlock.tint.lightened(0.35))
+                    .symbolEffect(.pulse, isActive: reading)
+                    .frame(width: 14)
+                Text(topic.label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(reading ? 0.45 : 0.8))
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(.white.opacity(0.07), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(reading)
+        .help(reading ? "Jarvis is reading it" : "Have Jarvis read \(topic.label.lowercased()) and say it")
+    }
+}
+
+/// What Jarvis found on the last topic asked for: its name, then his lines.
+struct JarvisFound: View {
+    let found: JarvisFinding
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(found.topic.label)
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1)
+                .foregroundStyle(JarvisBlock.tint.lightened(0.35))
+            ForEach(Array(found.lines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .strokeBorder(.white.opacity(0.07), lineWidth: 1))
     }
 }
 
