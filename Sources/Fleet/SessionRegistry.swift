@@ -299,7 +299,18 @@ final class SessionRegistry {
         let sessionID = ((transcriptPath as NSString).lastPathComponent as NSString)
             .deletingPathExtension
         guard let hook = Hooks.record(sessionID: sessionID) else { return heuristic }
+        return Self.ranked(hook, heuristic: heuristic, info: info, cpu: cpu, now: now)
+    }
+
+    /// The hook against the transcript, once both are in hand — see `state(for:)`.
+    static func ranked(_ hook: Hooks.Record, heuristic: SessionState, info: TranscriptInfo?,
+                       cpu: Double, now: Date) -> SessionState {
         if let said = info?.lastWord, said > hook.at.addingTimeInterval(2) { return heuristic }
+        // A prompt typed during a turn is queued: its UserPromptSubmit fires as it is typed, before
+        // that turn's Stop, and it starts the next turn a few ms after the Stop with no hook of
+        // its own — inside the grace, which held a thinking session at READY until it first wrote
+        // (30-09, s14: 42 ms after the Stop, then 15 s of thinking).
+        if hook.state != .running, let asked = info?.lastPromptAt, asked > hook.at { return heuristic }
 
         // A `running` hook is the better evidence right up until the turn it announced dies
         // without ever reaching `Stop`. A request that errors out — a usage limit, a dropped

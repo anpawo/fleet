@@ -17,6 +17,7 @@ enum SelfCheck {
 
         subagents(expect)
         cutLine(expect)
+        queuedPrompt(expect)
         ghosts(expect)
         ports(expect)
         reels(expect)
@@ -246,6 +247,30 @@ enum SelfCheck {
         expect(found[52860] ?? 0, 8768, "recon-web's port comes off its pid")
         expect(found[51900] ?? 0, 1055, "a process on two ports shows the lower one")
         expect(found[1] ?? 0, 0, "a pid that listens on nothing has no port")
+    }
+
+    // MARK: - Hooks against the transcript
+
+    /// A prompt typed during a turn is queued: its hook fires as it is typed, the turn's Stop
+    /// then says ready, and the queued prompt starts 42 ms later with no hook of its own.
+    private static func queuedPrompt(_ expect: (Int, Int, String) -> Void) {
+        let path = NSTemporaryDirectory() + "fleet-selftest-queued-\(getpid()).jsonl"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let stop = Date().addingTimeInterval(-10)
+        func stamp(_ d: Date) -> String {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f.string(from: d)
+        }
+        try? (#"{"type":"user","timestamp":"\#(stamp(stop.addingTimeInterval(0.042)))","cwd":"/tmp","message":{"content":[{"type":"text","text":"why does the bar move"}]}}"# + "\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let info = TranscriptStore().info(for: path)
+        let ready = Hooks.Record(state: .ready, at: Date(timeIntervalSince1970: floor(stop.timeIntervalSince1970)), pids: [])
+        expect(SessionRegistry.ranked(ready, heuristic: .running, info: info, cpu: 0, now: Date()) == .running ? 1 : 0, 1,
+               "a queued prompt starting just after the Stop is work, not ready")
+        let before = Hooks.Record(state: .ready, at: Date(timeIntervalSince1970: floor(stop.timeIntervalSince1970) + 1), pids: [])
+        expect(SessionRegistry.ranked(before, heuristic: .running, info: info, cpu: 0, now: Date()) == .ready ? 1 : 0, 1,
+               "and a Stop after the prompt still reads ready")
     }
 
     // MARK: - Sub-agents
