@@ -1169,7 +1169,8 @@ struct SessionTile: View {
                 // workflow pill beside a sub-agent count used to shrink one and break the
                 // other over two lines, and eat the folder name.
                 ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 7) {
+                    // 5, not 7: at 7 the folder and both pills missed one line by ~4 pt (30-09).
+                    HStack(alignment: .top, spacing: 5) {
                         if !grouped { folder }
                         Spacer(minLength: 6)
                         // Served first and at full size. The folder's frame measures at its
