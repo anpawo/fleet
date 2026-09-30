@@ -389,7 +389,8 @@ if let flag = CommandLine.arguments.firstIndex(of: "--jarvis-topic") {
         _ = registry.refresh()
         let hub = HubStore()
         hub.refresh()
-        while !hub.loaded, hub.failure == nil, Date().timeIntervalSince(start) < 10 {
+        while !hub.loaded || hub.reelsFetchedAt == .distantPast, hub.failure == nil,
+              Date().timeIntervalSince(start) < 10 {
             try? await Task.sleep(for: .milliseconds(100))
         }
         do {

@@ -33,7 +33,7 @@ enum JarvisPlace: String, CaseIterable {
 /// What Marius can ask Jarvis about from the JARVIS block. Each gathers its facts — from what
 /// Fleet already holds, or from a headless turn that runs the skill — and Jarvis says them.
 enum JarvisTopic: String, CaseIterable, Identifiable {
-    case mail, agenda, todos, sessions, epitech, s14
+    case mail, agenda, todos, sessions, epitech, s14, reels
 
     var id: Self { self }
     var label: String { self == .s14 ? "S14" : rawValue.uppercased() }
@@ -45,6 +45,7 @@ enum JarvisTopic: String, CaseIterable, Identifiable {
         case .sessions: "terminal.fill"
         case .epitech: "graduationcap.fill"
         case .s14: "building.columns.fill"
+        case .reels: "film"
         }
     }
 
@@ -72,6 +73,17 @@ enum JarvisTopic: String, CaseIterable, Identifiable {
                 (m.starred ? ", starred" : "") + (m.summary.isEmpty ? "" : ": \(m.summary)")
             }.joined(separator: "\n")
         case .todos: Jarvis.openTodos(hub.todos).joined(separator: "\n")
+        // The Reels Fleet has analysed, the ones not watched yet first, then the newest.
+        case .reels:
+            "Instagram Reels Marius sent from his phone, analysed and fact-checked by Fleet " +
+            "(title — author, verdict, theme: summary → what came of it):\n" +
+            hub.reels.filter { !$0.summary.isEmpty }
+                .sorted { ($0.seen ? 1 : 0, $1.createdAt) < ($1.seen ? 1 : 0, $0.createdAt) }
+                .prefix(10)
+                .map { r in
+                    "\(r.title) — @\(r.author), \(r.verdict)" + (r.category.isEmpty ? "" : ", \(r.category)")
+                        + (r.seen ? "" : ", not watched") + ": \(r.summary)" + (r.outcome.isEmpty ? "" : " → \(r.outcome)")
+                }.joined(separator: "\n")
         case .sessions: Jarvis.briefingLines(sessions).joined(separator: "\n")
         default: try await Claude.report(skill ?? "")
         }
