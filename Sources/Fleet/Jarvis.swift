@@ -16,12 +16,18 @@ struct JarvisAsk: Decodable {
     var silent: Bool?
 }
 
-/// One of Marius's two machines, as a part of Jarvis is on it. The raw value is what
-/// `jarvis-speak.sh` takes as `JARVIS_SPEAKER`.
+/// One of Marius's machines, as a part of Jarvis is on it. The raw value is what
+/// `jarvis-speak.sh` takes as `JARVIS_SPEAKER`; `windows` is his own PC.
 enum JarvisPlace: String, CaseIterable {
-    case mac, windows
+    case mac, s14, windows
 
-    var label: String { self == .mac ? "Mac" : "Windows" }
+    var label: String {
+        switch self {
+        case .mac: "mac.mr"
+        case .s14: "win.s14"
+        case .windows: "win.mr"
+        }
+    }
 }
 
 /// Jarvis: when a session with a terminal ends its turn, the Stop hook holds and writes an

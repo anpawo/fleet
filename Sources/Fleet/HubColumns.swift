@@ -651,10 +651,9 @@ struct TodoColumn: View {
     }
 }
 
-/// JARVIS, over CRONS: whether he is listening, and which machine each part of him is on —
-/// the voice that speaks, the brain that reads the sessions. At rest the heading line alone,
-/// On | Off in full; under the pointer the rows unroll, every word a switch. Each choice keeps
-/// its own place on the line, so a word's column says which machine.
+/// JARVIS, over CRONS: whether he is listening, and which machine his voice speaks on. At rest
+/// the heading line alone, On | Off in full; under the pointer the VOICE row unrolls, every word
+/// a switch. Each choice keeps its own place on the line, so a word's column says which machine.
 struct JarvisBlock: View {
     @Binding var on: Bool
     @Binding var voice: JarvisPlace
@@ -666,15 +665,6 @@ struct JarvisBlock: View {
     /// shadow over a group of layers, animated for as long as the panel was up (28-09).
     static let tint = Color(red: 0.0, green: 0.66, blue: 1.0)
 
-    /// The brain Jacqueline wore on the S14 graph before Claude's mark (Lucide's `brain`, s14
-    /// dc6ba0c^). AppKit draws the SVG as a vector; a template, so it takes the row's tint.
-    static let brain: NSImage = {
-        let image = NSImage(data: Data(##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>"##.utf8))!
-        image.size = NSSize(width: 12, height: 12)
-        image.isTemplate = true
-        return image
-    }()
-
     var body: some View {
         Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
@@ -682,15 +672,10 @@ struct JarvisBlock: View {
             OnOffSwitch(on: $on)
         } content: {
             if hovered {
-                VStack(spacing: 5) {
-                    JarvisPlaceRow(icon: Image(systemName: "speaker.wave.2.fill"), label: "VOICE",
-                                   place: voice, open: hovered) { voice = $0 }
-                    // His Claude calls run where Fleet runs: nothing on the PC can think yet.
-                    JarvisPlaceRow(icon: Image(nsImage: JarvisBlock.brain).renderingMode(.template),
-                                   label: "BRAIN", place: .mac, choices: [.mac],
-                                   open: hovered) { _ in }
-                }
-                .transition(.opacity)
+                // No voice server on the S14 PC yet.
+                JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
+                               choices: [.mac, .windows], open: hovered) { voice = $0 }
+                    .transition(.opacity)
             }
         }
         .onHover { inside in withAnimation(TodoColumn.unroll) { hovered = inside } }
@@ -699,7 +684,7 @@ struct JarvisBlock: View {
 
 /// One part of Jarvis and the machine it is on.
 struct JarvisPlaceRow: View {
-    let icon: Image
+    let icon: String
     let label: String
     let place: JarvisPlace
     /// The machines this part can be moved to. The others are drawn, struck out.
@@ -709,7 +694,7 @@ struct JarvisPlaceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            icon
+            Image(systemName: icon)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(JarvisBlock.tint.lightened(0.35))
                 .frame(width: 15)
