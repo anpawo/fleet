@@ -16,6 +16,7 @@ enum SelfCheck {
         }
 
         subagents(expect)
+        cutLine(expect)
         ghosts(expect)
         ports(expect)
         reels(expect)
@@ -248,6 +249,41 @@ enum SelfCheck {
     }
 
     // MARK: - Sub-agents
+
+    /// A cold read starts `transcriptTailBytes` from the end, inside a line, and that line was in
+    /// neither the head nor the tail. When it was the notification ending an agent, the tile
+    /// counted the agent until the next restart (30-09: epitech, SUB-AGENTS 1 while READY).
+    private static func cutLine(_ expect: (Int, Int, String) -> Void) {
+        let root = NSTemporaryDirectory() + "fleet-selftest-cut-\(getpid())"
+        let session = root + "/session.jsonl"
+        let agents = root + "/session/subagents"
+        try? FileManager.default.createDirectory(atPath: agents, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try? #"{"agentType":"general-purpose","description":"Fares","toolUseId":"toolu_cut"}"#
+            .write(toFile: agents + "/agent-c.meta.json", atomically: true, encoding: .utf8)
+        try? "".write(toFile: agents + "/agent-c.jsonl", atomically: true, encoding: .utf8)
+
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let ended = #"{"type":"user","timestamp":"\#(stamp)","message":{"content":"<task-notification>\n<tool-use-id>toolu_cut</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"# + "\n"
+        var text = #"{"type":"assistant","timestamp":"\#(stamp)","message":{"id":"m1","content":[{"type":"tool_use","id":"toolu_cut","name":"Agent","input":{"description":"Fares"}}]}}"# + "\n"
+            + #"{"type":"user","timestamp":"\#(stamp)","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_cut","content":[{"type":"text","text":"Async agent launched successfully."}]}]}}"# + "\n"
+            + ended
+        // After it, exactly the tail's size less half of it: the cold read starts mid-notification.
+        func filler(_ n: Int) -> String {
+            #"{"type":"assistant","timestamp":"\#(stamp)","message":{"id":"p","content":[{"type":"text","text":""#
+                + String(repeating: "x", count: n) + #""}]}}"# + "\n"
+        }
+        let overhead = filler(0).utf8.count
+        var rest = Config.transcriptTailBytes - ended.utf8.count / 2
+        while rest > 4000 + 2 * overhead {
+            text += filler(4000)
+            rest -= filler(4000).utf8.count
+        }
+        text += filler(rest - overhead)
+        try? text.write(toFile: session, atomically: true, encoding: .utf8)
+        expect(TranscriptStore().info(for: session)?.unfinishedAgentIDs.count ?? -1, 0,
+               "a notification cut by a cold read's start still ends its agent")
+    }
 
     /// A transcript with an agent launched into the background, written the way Claude Code
     /// writes one: the call is answered at once, the agent's own file lives in a sibling

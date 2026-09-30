@@ -303,14 +303,16 @@ final class TranscriptStore {
         var lines = complete.split(separator: UInt8(ascii: "\n"))
         // A cold read starting mid-file opens on a fragment; a resumed one starts on a boundary.
         if resumable == nil, start > 0, !lines.isEmpty {
-            lines.removeFirst()
+            let fragment = lines.removeFirst()
             // A shell sent to the background hours ago is still out when nothing since has
             // ended it, and that "since" can be megabytes: a Fleet restarted with the start
             // past the tail read the session as finished. Only the lines that start or end
             // one are worth the head of the file, and they say so in fixed words. The same
             // for an agent (28-09: video-code READY with one working, its spawn 2 MB back).
             try? handle.seek(toOffset: 0)
-            let head = (try? handle.read(upToCount: Int(start))) ?? Data()
+            // With the line the start cuts, whole: dropped from both sides, it once was the
+            // notification that had ended an agent, counted out until Fleet restarted (30-09).
+            let head = ((try? handle.read(upToCount: Int(start))) ?? Data()) + fragment
             for raw in head.split(separator: UInt8(ascii: "\n"))
             where Self.delegationMarks.contains(where: { raw.range(of: $0) != nil }) {
                 if let obj = try? JSONSerialization.jsonObject(with: Data(raw)) as? [String: Any] {
