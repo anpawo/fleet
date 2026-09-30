@@ -670,7 +670,7 @@ struct JarvisBlock: View {
     static let tint = Color(red: 0.0, green: 0.66, blue: 1.0)
 
     var body: some View {
-        Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
+        Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6), bodyGap: 14) {
             EmptyView()
         } trailing: {
             OnOffSwitch(on: $on, label: "Session Debrief")
