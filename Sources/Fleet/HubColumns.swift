@@ -713,10 +713,9 @@ struct JarvisTopicButton: View {
                     .tracking(1)
                     .foregroundStyle(.white.opacity(reading ? 0.45 : 0.8))
                     .lineLimit(1)
-                    .fixedSize()
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .padding(.vertical, 7)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
