@@ -673,13 +673,7 @@ struct JarvisBlock: View {
         Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
         } trailing: {
-            HStack(spacing: 8) {
-                Text("SESSION DEBRIEF")
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1)
-                    .foregroundStyle(.white.opacity(0.45))
-                OnOffSwitch(on: $on)
-            }
+            OnOffSwitch(on: $on, label: "SESSION DEBRIEF")
         } content: {
             if hovered {
                 VStack(alignment: .leading, spacing: 5) {
@@ -824,9 +818,23 @@ struct JarvisPlaceRow: View {
 /// On | Off, the selected word in colour: green for on, red for off.
 struct OnOffSwitch: View {
     @Binding var on: Bool
+    /// What is switched, inside the chip before the two words; a click on it toggles.
+    var label: String?
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            if let label {
+                Button { on.toggle() } label: {
+                    Text(label)
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.leading, 6)
+                        .padding(.trailing, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
             segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
             segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
         }
