@@ -228,6 +228,11 @@ final class AppController: ObservableObject {
         }
     }
 
+    /// See `Settings.jarvisVoice`.
+    @Published var jarvisVoice = Settings.jarvisVoice {
+        didSet { Settings.jarvisVoice = jarvisVoice }
+    }
+
     /// A `didSet` does not run for the value a property is declared with, and `--render` never
     /// calls `start()`: the names kept from the last run reach the tiles here or not at all.
     init() { Session.labels = Self.names(in: labels) }

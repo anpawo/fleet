@@ -651,35 +651,112 @@ struct TodoColumn: View {
     }
 }
 
-/// JARVIS, over CRONS: a heading line and nothing under it — whether he is listening, and the
-/// last session he spoke up for. The second comes from his log, not from `Jarvis`, which keeps
-/// its state to itself.
+/// JARVIS, over CRONS: whether he is listening, and which machine each part of him is on —
+/// the voice that speaks, the brain that reads the sessions. Words at rest; under the pointer
+/// every word becomes a switch, the other choices beside it. Each choice keeps its own place
+/// on the line, so nothing moves when they appear and a word's column says which machine.
 struct JarvisBlock: View {
     @Binding var on: Bool
+    @Binding var voice: JarvisPlace
+
+    /// Seeded from `FLEET_HOVER`, like CRONS', so a render can show the switches.
+    @State private var hovered = ProcessInfo.processInfo.environment["FLEET_HOVER"] == "jarvis"
 
     /// Electric blue, brighter than CRONS' and TODO's. It breathed a glow once; that glow was a
     /// shadow over a group of layers, animated for as long as the panel was up (28-09).
     static let tint = Color(red: 0.0, green: 0.66, blue: 1.0)
 
     var body: some View {
-        Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6), bodyGap: 17) {
+        Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
         } trailing: {
-            OnOffSwitch(on: $on)
+            OnOffSwitch(on: $on, open: hovered)
         } content: {
-            EmptyView()
+            VStack(spacing: 5) {
+                JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
+                               open: hovered) { voice = $0 }
+                // His Claude calls run where Fleet runs: nothing on the PC can think yet.
+                JarvisPlaceRow(icon: "brain.head.profile", label: "BRAIN", place: .mac,
+                               choices: [.mac], open: hovered) { _ in }
+            }
         }
+        .onHover { inside in withAnimation(TodoColumn.unroll) { hovered = inside } }
     }
 }
 
-/// On | Off, the selected word in colour: green for on, red for off.
+/// One part of Jarvis and the machine it is on.
+struct JarvisPlaceRow: View {
+    let icon: String
+    let label: String
+    let place: JarvisPlace
+    /// The machines this part can be moved to. The others are drawn, struck out.
+    var choices = JarvisPlace.allCases
+    let open: Bool
+    let move: (JarvisPlace) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(JarvisBlock.tint.lightened(0.35))
+                .frame(width: 15)
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1)
+                .foregroundStyle(.white.opacity(0.45))
+            Spacer(minLength: 6)
+            HStack(spacing: 12) {
+                ForEach(JarvisPlace.allCases, id: \.self) { choice in
+                    word(choice)
+                }
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(.white.opacity(open ? 0.28 : 0), lineWidth: 1))
+            .padding(.horizontal, -7)
+            .padding(.vertical, -3)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .strokeBorder(.white.opacity(0.07), lineWidth: 1))
+    }
+
+    @ViewBuilder private func word(_ choice: JarvisPlace) -> some View {
+        let selected = choice == place
+        let offered = choices.contains(choice)
+        Button { move(choice) } label: {
+            Text(choice.label)
+                .font(.system(size: 11, weight: selected ? .bold : .medium, design: .monospaced))
+                .strikethrough(!offered)
+                .foregroundStyle(selected ? JarvisBlock.tint.lightened(0.35)
+                                          : .white.opacity(offered ? 0.45 : 0.2))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(selected || open ? 1 : 0)
+        .allowsHitTesting(open && offered && !selected)
+        .help(offered ? "" : "Not built: nothing on this machine can do it yet")
+    }
+}
+
+/// On | Off, the selected word in colour: green for on, red for off. Closed, the selected
+/// word alone.
 struct OnOffSwitch: View {
     @Binding var on: Bool
+    var open = true
 
     var body: some View {
         HStack(spacing: 0) {
-            segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
-            segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
+            if open || on {
+                segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
+            }
+            if open || !on {
+                segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
+            }
         }
         // The chip the CRONS verdict sits on, round both words at once.
         .padding(.horizontal, -6)

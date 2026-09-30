@@ -16,6 +16,14 @@ struct JarvisAsk: Decodable {
     var silent: Bool?
 }
 
+/// One of Marius's two machines, as a part of Jarvis is on it. The raw value is what
+/// `jarvis-speak.sh` takes as `JARVIS_SPEAKER`.
+enum JarvisPlace: String, CaseIterable {
+    case mac, windows
+
+    var label: String { self == .mac ? "Mac" : "Windows" }
+}
+
 /// Jarvis: when a session with a terminal ends its turn, the Stop hook holds and writes an
 /// ask; a headless Claude reads the session and says what it did and what it should do next,
 /// Fleet shows that one task, and writes it back as the hook's answer when taken. Switched
@@ -561,6 +569,7 @@ final class Jarvis {
         // launchd hands Fleet a bare PATH; the script needs ffmpeg, jq and media-control.
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         env["JARVIS_LEVELS"] = levelsPath
+        env["JARVIS_SPEAKER"] = controller.jarvisVoice.rawValue
         let argv: [UnsafeMutablePointer<CChar>?] = ([Self.speakScript, line] as [String]).map { strdup($0) } + [nil]
         let envp: [UnsafeMutablePointer<CChar>?] = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer { (argv + envp).forEach { free($0) } }

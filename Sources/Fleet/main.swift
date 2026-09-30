@@ -357,7 +357,8 @@ if CommandLine.arguments.contains("--jarvis-brief") {
         let voice = Process()
         voice.executableURL = URL(fileURLWithPath: NSHomeDirectory() + "/self/jarvis/tools/jarvis-speak.sh")
         voice.arguments = [text]
-        voice.environment = ProcessInfo.processInfo.environment.merging(["JARVIS_LEVELS": levels]) { $1 }
+        voice.environment = ProcessInfo.processInfo.environment.merging(
+            ["JARVIS_LEVELS": levels, "JARVIS_SPEAKER": Settings.jarvisVoice.rawValue]) { $1 }
         let spoken = Date()
         try? voice.run()
         var heard = false

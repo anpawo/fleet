@@ -76,6 +76,12 @@ enum Settings {
         set { UserDefaults.standard.set(newValue, forKey: "jarvisOn") }
     }
 
+    /// The machine whose speakers Jarvis speaks through, and no other. The Mac unless set.
+    static var jarvisVoice: JarvisPlace {
+        get { JarvisPlace(rawValue: UserDefaults.standard.string(forKey: "jarvisVoice") ?? "") ?? .mac }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "jarvisVoice") }
+    }
+
     private static func chord(forKey key: String) -> Chord? {
         let parts = (UserDefaults.standard.string(forKey: key) ?? "").split(separator: ":")
         guard parts.count == 2, let code = UInt16(parts[0]), let mods = UInt32(parts[1])
