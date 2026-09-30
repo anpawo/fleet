@@ -652,9 +652,9 @@ struct TodoColumn: View {
 }
 
 /// JARVIS, over CRONS: whether he is listening, and which machine each part of him is on —
-/// the voice that speaks, the brain that reads the sessions. Words at rest; under the pointer
-/// every word becomes a switch, the other choices beside it. Each choice keeps its own place
-/// on the line, so nothing moves when they appear and a word's column says which machine.
+/// the voice that speaks, the brain that reads the sessions. At rest the heading line alone,
+/// On | Off in full; under the pointer the rows unroll, every word a switch. Each choice keeps
+/// its own place on the line, so a word's column says which machine.
 struct JarvisBlock: View {
     @Binding var on: Bool
     @Binding var voice: JarvisPlace
@@ -670,14 +670,17 @@ struct JarvisBlock: View {
         Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
         } trailing: {
-            OnOffSwitch(on: $on, open: hovered)
+            OnOffSwitch(on: $on)
         } content: {
-            VStack(spacing: 5) {
-                JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
-                               open: hovered) { voice = $0 }
-                // His Claude calls run where Fleet runs: nothing on the PC can think yet.
-                JarvisPlaceRow(icon: "brain.head.profile", label: "BRAIN", place: .mac,
-                               choices: [.mac], open: hovered) { _ in }
+            if hovered {
+                VStack(spacing: 5) {
+                    JarvisPlaceRow(icon: "speaker.wave.2.fill", label: "VOICE", place: voice,
+                                   open: hovered) { voice = $0 }
+                    // His Claude calls run where Fleet runs: nothing on the PC can think yet.
+                    JarvisPlaceRow(icon: "brain.head.profile", label: "BRAIN", place: .mac,
+                                   choices: [.mac], open: hovered) { _ in }
+                }
+                .transition(.opacity)
             }
         }
         .onHover { inside in withAnimation(TodoColumn.unroll) { hovered = inside } }
@@ -743,20 +746,14 @@ struct JarvisPlaceRow: View {
     }
 }
 
-/// On | Off, the selected word in colour: green for on, red for off. Closed, the selected
-/// word alone.
+/// On | Off, the selected word in colour: green for on, red for off.
 struct OnOffSwitch: View {
     @Binding var on: Bool
-    var open = true
 
     var body: some View {
         HStack(spacing: 0) {
-            if open || on {
-                segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
-            }
-            if open || !on {
-                segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
-            }
+            segment("On", selected: on, tint: SessionState.ready.tint) { on = true }
+            segment("Off", selected: !on, tint: SessionState.running.tint) { on = false }
         }
         // The chip the CRONS verdict sits on, round both words at once.
         .padding(.horizontal, -6)
