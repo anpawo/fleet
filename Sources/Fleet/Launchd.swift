@@ -219,7 +219,7 @@ enum Launchd {
         "s14.hermes-map": "Serves the Hermes dependency map.",
         "s14.recon-journal": "Serves the S14 recon journal.",
         "s14.recon-v1": "Runs Bas's V1 recon in a sandbox on mo-recon, hourly, on the latest trade date.",
-        "s14.recon-v3": "Runs V3 on both books, hourly, and opens the two reports in Excel.",
+        "s14.recon-v3": "Runs V3 on both books every 4 hours, and opens the two reports in Excel.",
         "s14.recon-web": "Serves the S14 recon browser.",
         "s14.mcp-renew": "Renews the scient MCP token before its 24 h run out.",
         "s14.mirror-check": "Checks that Bas's 18:00 S: → M: recon mirror ran, and says so on Matrix when it did not.",
