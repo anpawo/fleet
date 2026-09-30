@@ -673,7 +673,7 @@ struct JarvisBlock: View {
         Block(title: "JARVIS", tint: Self.tint, fill: Self.tint.darkened(0.6)) {
             EmptyView()
         } trailing: {
-            OnOffSwitch(on: $on, label: "SESSION DEBRIEF")
+            OnOffSwitch(on: $on, label: "Session Debrief")
         } content: {
             if hovered {
                 VStack(alignment: .leading, spacing: 5) {
@@ -826,8 +826,7 @@ struct OnOffSwitch: View {
             if let label {
                 Button { on.toggle() } label: {
                     Text(label)
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(1)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.45))
                         .padding(.leading, 6)
                         .padding(.trailing, 4)
