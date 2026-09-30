@@ -132,6 +132,7 @@ final class Jarvis {
     private var levelBuffer = ""
     private var level = 0.0
     private var heardLevel = false
+    private var heardAt: Date?
     private var waitingForVoice = false
     private var orbTimer: Timer?
     private var lastFrame = Date()
@@ -449,7 +450,11 @@ final class Jarvis {
             reveal()
         }
         // A voice that never ends would hold the session forever: the timeout runs from its end.
-        if voice > 0, now.timeIntervalSince(shownAt) > 30 { stopVoice() }
+        // 30 s from its first sound; 60 before one, since with the PC away the Mac loads its own
+        // clone first, 36 s cold (30/09).
+        if voice > 0, heardAt.map({ now.timeIntervalSince($0) > 30 }) ?? (now.timeIntervalSince(shownAt) > 60) {
+            stopVoice()
+        }
         if live, !typing {
             let idle = min(Self.idle(.keyDown), Self.idle(.leftMouseDown), Self.idle(.rightMouseDown))
             // 50 ms of slack: a digit Jarvis accepted reaches the HID clock before its hotkey
@@ -653,6 +658,7 @@ final class Jarvis {
         levelBuffer = ""
         level = 0
         heardLevel = false
+        heardAt = nil
 
         var env = ProcessInfo.processInfo.environment
         // launchd hands Fleet a bare PATH; the script needs ffmpeg, jq and media-control.
@@ -707,6 +713,7 @@ final class Jarvis {
             let marker = "lavfi.astats.Overall.RMS_level="
             if let last = lines.last(where: { $0.contains(marker) }),
                let db = Double(last.components(separatedBy: marker)[1].trimmingCharacters(in: .whitespaces)) {
+                if !heardLevel { heardAt = now }
                 heardLevel = true
                 levelTarget = db.isFinite ? min(max((db + 50) / 40, 0), 1) : 0
             }
