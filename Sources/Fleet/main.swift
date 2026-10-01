@@ -439,6 +439,17 @@ if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     exit(0)
 }
 
+// `--fix <alert>` sends the headless Claude a click on that ALERT chip sends, and prints its
+// verdict — the one way to watch a fix happen. The whole report is in /tmp/fleet-fix.log.
+if let i = CommandLine.arguments.firstIndex(of: "--fix"), i + 1 < CommandLine.arguments.count {
+    let alert = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        print(await Fixer.run(alert, crons: Launchd.jobs()))
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 // `--empty-terminals` lists the windows nobody ever typed in and the terminal apps with no
 // shell left in them, without closing anything. `--close` does close them, which is what the
 // panel's own sweep does every five minutes.
@@ -886,6 +897,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
                 controller.launchd.simulate(CommandLine.arguments[h + 1], hung: hung)
             }
         }
+        // `--fixing <alert>`: that ALERT chip as it is while a headless Claude is out on it.
+        if let f = CommandLine.arguments.firstIndex(of: "--fixing"), f + 1 < CommandLine.arguments.count {
+            controller.fixer.simulate(CommandLine.arguments[f + 1])
+        }
 
         // `--open <directory>` draws a group unfolded. It is the one state a render cannot
         // otherwise reach — nothing opens a group but a click — and it is the state whose
@@ -1016,7 +1031,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
-    "--deferred", "--empty-terminals", "--epitech", "--fake", "--focus", "--hung", "--idle", "--install-hooks", "--jarvis-brief", "--open",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--jarvis-brief", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--reels-run", "--render", "--render-jarvis", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",

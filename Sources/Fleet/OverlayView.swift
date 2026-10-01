@@ -286,7 +286,8 @@ struct OverlayView: View {
                 // room above this line, so the bar has somewhere to hang.
                 .overlay(alignment: .top) {
                     if !AlertsBlock.alerts(controller.hub, crons: controller.launchd.jobs).isEmpty {
-                        AlertsBlock(hub: controller.hub, crons: controller.launchd.jobs)
+                        AlertsBlock(hub: controller.hub, fixer: controller.fixer,
+                                    crons: controller.launchd.jobs)
                             // As wide as the fleet's frame: the bar's pane reaches 13pt past
                             // its content either side.
                             .frame(width: fleetFrameWidth - 26)

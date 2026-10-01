@@ -1849,6 +1849,7 @@ struct ModuleCard: View {
 /// line of furniture you stop seeing, and the day it turns red you would not notice it had.
 struct AlertsBlock: View {
     @ObservedObject var hub: HubStore
+    @ObservedObject var fixer: Fixer
     /// The routines, only to name the ones whose last run ended badly.
     var crons: [Launchd.Job] = []
 
@@ -1944,11 +1945,27 @@ struct AlertsBlock: View {
             // its words either side. The 3 makes the name's own gap to the first chip 22 too.
             HStack(spacing: 22) {
                 ForEach(Self.alerts(hub, crons: crons), id: \.self) { name in
-                    Text(name)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(SessionState.running.tint)
-                        .lineLimit(1)
+                    // A click sends a headless Claude after it — see `Fixer`.
+                    Button { fixer.fix(name, crons: crons) } label: {
+                        HStack(spacing: 5) {
+                            if fixer.fixing(name) {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .controlSize(.mini)
+                                    .colorMultiply(SessionState.running.tint)
+                            }
+                            Text(name)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(SessionState.running.tint)
+                                .lineLimit(1)
+                        }
                         .titleGround()
+                    }
+                    .buttonStyle(.plain)
+                    // Not `disabled`, which greys the name: the wifi is not a Claude's to fix.
+                    .allowsHitTesting(!Self.networkLines.contains(name))
+                    .help(fixer.fixing(name) ? "A headless Claude is on it"
+                                             : "Send a headless Claude to fix it")
                 }
             }
             .padding(.leading, 3)
@@ -1961,8 +1978,10 @@ struct AlertsBlock: View {
         }
         // The whole bar, frame and names included. It has nothing else to say, so the pulse
         // is all of it — except when the wifi is what is wrong, which is not something to be
-        // called over.
-        .blinking(!Self.alerts(hub, crons: crons).allSatisfy(Self.networkLines.contains))
+        // called over. Nor when a Claude is already on every line of it.
+        .blinking(!Self.alerts(hub, crons: crons).allSatisfy {
+            Self.networkLines.contains($0) || fixer.fixing($0)
+        })
     }
 }
 

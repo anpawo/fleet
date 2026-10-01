@@ -135,6 +135,13 @@ enum SelfCheck {
                                             Launchd.judge("s14.web", resident, (nil, 1), age: nil)])
         expect(lines == ["s14.x hung 2h", "s14.x"], true,
                "ALERT: the hung one with its age, the failed one by name, nothing else (got \(lines))")
+
+        expect(Fixer.subject("s14.x hung 2h") == "s14.x", true,
+               "a fix is filed under the routine, not under its age")
+        expect(Fixer.prompt("s14.x hung 2h", crons: [stuck]).contains("LaunchAgents/s14.x.plist"), true,
+               "a routine's fixer is pointed at its plist")
+        expect(Fixer.prompt("edsquare", crons: [stuck]).contains("never discord.mjs"), true,
+               "an Epitech reader's fixer is told to leave Discord alone")
     }
 
     /// The retry state machine, on labels launchd does not have, with the kickstart counted

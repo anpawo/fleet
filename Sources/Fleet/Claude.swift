@@ -432,11 +432,18 @@ enum Claude {
                       tags: Array(tags.prefix(6)))
     }
 
+    // MARK: - Fixing
+
+    /// A whole session rather than a turn, for `Fixer`: his setup, every tool, half an hour.
+    static func unattended(_ prompt: String) async throws -> String {
+        try await run(prompt: prompt, model: answerModel, timeout: 1800, unattended: true)
+    }
+
     // MARK: - Running the binary
 
     private static func run(prompt: String, model: String, system: String? = nil,
                             tools: [String] = [], timeout: TimeInterval = Self.timeout,
-                            lean: Bool = false) async throws -> String {
+                            lean: Bool = false, unattended: Bool = false) async throws -> String {
         guard let binary = binaryPath() else { throw Failure.notInstalled }
 
         let process = Process()
@@ -462,6 +469,17 @@ enum Claude {
         // directory it starts in, and starting in a real project would drop a stray session
         // into that project's history — which Fleet itself would then display as a tile.
         process.currentDirectoryURL = FileManager.default.temporaryDirectory
+        if unattended {
+            // The flag his own headless runs carry (the Epitech scan's `run.sh`): nothing is
+            // allowed by default in a headless turn, and nobody is there to allow it.
+            process.arguments! += ["--dangerously-skip-permissions"]
+            // ~/self is no project's history and has every project under it, each CLAUDE.md
+            // loaded as the session reads into it.
+            process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/self")
+            // launchd hands Fleet a bare PATH; what it fixes runs on node, python and brew.
+            process.environment = ProcessInfo.processInfo.environment.merging(
+                ["PATH": "/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]) { $1 }
+        }
 
         let out = Pipe()
         let err = Pipe()

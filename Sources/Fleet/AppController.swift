@@ -189,6 +189,9 @@ final class AppController: ObservableObject {
     /// find the last one already done rather than start one of its own while it is drawing.
     let launchd = LaunchdStore()
 
+    /// The headless Claudes out on a line of ALERT — see `Fixer`.
+    let fixer = Fixer()
+
     /// Frees memory before the machine starts swapping itself to a standstill, and names what
     /// it will not touch. See `Reaper` for the rule it applies.
     let reaper = Reaper()
@@ -276,6 +279,9 @@ final class AppController: ObservableObject {
         // that gave back.
         reaper.onReaped = { [weak self] summary in
             self?.notifier.announce(title: "Fleet freed some memory", body: summary)
+        }
+        fixer.report = { [weak self] title, verdict in
+            self?.notifier.announce(title: title, body: verdict, opening: Fixer.log)
         }
         // The machine has stopped keeping up: the sessions hear about it, you do not — see
         // `fluidityChanged`.
