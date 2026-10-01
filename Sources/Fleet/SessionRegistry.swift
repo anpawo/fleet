@@ -66,6 +66,14 @@ final class SessionRegistry {
                 case .unknown: break
                 }
             }
+            // A prompt typed while the SessionStart hooks are still running is held: no hook
+            // fires and no transcript is written until they finish, and one that hangs holds
+            // it for its whole timeout (01-10: patch-check.sh, 60 s of READY on a session
+            // showing its spinner). The screen is the only place that turn is written down.
+            if state == .ready, now.timeIntervalSince(proc.startedAt) < Config.startupWindow,
+               screens.verdict(proc, now: now, recheck: Config.terminalReadInterval) == .working {
+                state = .running
+            }
             sessions.append(Session(
                 proc: proc,
                 transcript: info,
@@ -444,10 +452,12 @@ final class TerminalWatch {
     /// they come due again a second later, and the answer changes on the scale of seconds.
     func startPass() { readThisPass = false }
 
-    func verdict(_ proc: ClaudeProcess, now: Date) -> Verdict {
+    /// `recheck` is how long an inconclusive answer is kept: short for a session still starting,
+    /// where the spinner can come up at any second and the asking stops by itself.
+    func verdict(_ proc: ClaudeProcess, now: Date,
+                 recheck: TimeInterval = Config.terminalRecheckInterval) -> Verdict {
         if let last = seen[proc.pid] {
-            let interval = last.verdict == .unknown ? Config.terminalRecheckInterval
-                                                    : Config.terminalReadInterval
+            let interval = last.verdict == .unknown ? recheck : Config.terminalReadInterval
             if now.timeIntervalSince(last.at) < interval { return last.verdict }
             if readThisPass { return last.verdict }
         } else if readThisPass {
@@ -500,8 +510,11 @@ final class TerminalWatch {
         // The spinner line, which is the elapsed time and the token counter: "(9m 59s · ↓ 4.8k
         // tokens)". Matched on the counter rather than the word in front of it — that word is
         // a different one every time, by design.
+        // Or, before any request has gone out, the hooks it is waiting on: "(running
+        // SessionStart hooks… 6/7 · 10s)" — all a prompt held behind them has to show.
         if tail.contains("esc to interrupt")
-            || (tail.contains("tokens)") && (tail.contains("\u{2193}") || tail.contains("\u{2191}"))) {
+            || (tail.contains("tokens)") && (tail.contains("\u{2193}") || tail.contains("\u{2191}")))
+            || tail.range(of: #"\(running \w+ hooks?…"#, options: .regularExpression) != nil {
             return .working
         }
         return .unknown

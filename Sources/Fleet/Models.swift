@@ -67,6 +67,10 @@ enum Config {
     /// terminal every four seconds for that hour buys nothing.
     static let terminalReadInterval: TimeInterval = 4
     static let terminalRecheckInterval: TimeInterval = 30
+    /// How long after launch a READY session's screen is read as well. Twice the longest
+    /// SessionStart hook timeout (60 s): past it the hooks are over, a prompt fires its own
+    /// hook, and a fresh session left idle stops costing a read every four seconds.
+    static let startupWindow: TimeInterval = 120
 
     /// How long a finished todo stays in `done` before Fleet files it away under `past`.
     ///

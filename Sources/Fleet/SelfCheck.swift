@@ -18,6 +18,7 @@ enum SelfCheck {
         subagents(expect)
         cutLine(expect)
         queuedPrompt(expect)
+        heldPrompt(expect)
         ghosts(expect)
         ports(expect)
         reels(expect)
@@ -260,6 +261,21 @@ enum SelfCheck {
 
     /// A prompt typed during a turn is queued: its hook fires as it is typed, the turn's Stop
     /// then says ready, and the queued prompt starts 42 ms later with no hook of its own.
+    /// A first prompt held behind the SessionStart hooks: the screen of 01-10, when one of them
+    /// hung for its 60 s timeout and the tile said READY throughout.
+    private static func heldPrompt(_ expect: (Bool, Bool, String) -> Void) {
+        let box = """
+        ────────────────
+        ❯
+        ────────────────
+          fleet | Opus 5.5 – xhigh | 0% token – 1M | @main – up to date
+          ▸▸ bypass permissions on (shift+tab to cycle)
+        """
+        let held = "❯ fleet should have a way\n\n+ Marinating… (running SessionStart hooks… 6/7 · 10s)\n\n" + box
+        expect(TerminalWatch.read(held) == .working, true, "a prompt held behind SessionStart hooks is work")
+        expect(TerminalWatch.read(box) == .unknown, true, "the same screen with no spinner says nothing")
+    }
+
     private static func queuedPrompt(_ expect: (Int, Int, String) -> Void) {
         let path = NSTemporaryDirectory() + "fleet-selftest-queued-\(getpid()).jsonl"
         defer { try? FileManager.default.removeItem(atPath: path) }
