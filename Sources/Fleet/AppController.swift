@@ -201,7 +201,6 @@ final class AppController: ObservableObject {
     private let awake = AwakeHold()
     private var overlay: OverlayWindowController?
     private var controlCenter: ControlCenterController?
-    private var jarvis: Jarvis?
     private var statusItem: StatusItemController?
     private var timer: Timer?
     /// When the last tick actually ran, and the interval it was due after. How far apart those
@@ -221,25 +220,6 @@ final class AppController: ObservableObject {
             Settings.popupsOff = popupsOff
             statusItem?.update(off: popupsOff)
         }
-    }
-
-    /// See `Settings.jarvisOn`.
-    @Published var jarvisOn = Settings.jarvisOn {
-        didSet {
-            Settings.jarvisOn = jarvisOn
-            if jarvisOn, !oldValue { jarvis?.brief() }
-        }
-    }
-
-    /// The topics Jarvis is reading for the JARVIS block, and what he found last.
-    @Published var jarvisReading: Set<JarvisTopic> = []
-    @Published var jarvisFound: JarvisFinding?
-
-    func jarvisTalk(about topic: JarvisTopic) { jarvis?.talk(about: topic) }
-
-    /// See `Settings.jarvisVoice`.
-    @Published var jarvisVoice = Settings.jarvisVoice {
-        didSet { Settings.jarvisVoice = jarvisVoice }
     }
 
     /// A `didSet` does not run for the value a property is declared with, and `--render` never
@@ -293,8 +273,6 @@ final class AppController: ObservableObject {
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
-        jarvis = Jarvis(controller: self)
-        jarvis?.start()
     }
 
     /// `--render`: populate the panel without any window, for offscreen image rendering.

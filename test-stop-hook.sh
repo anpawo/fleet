@@ -74,7 +74,7 @@ check "a press older than its window"                     quiet "$(run PreToolUs
 machine true ''
 check "no press at all"                                   quiet "$(run UserPromptSubmit running)"
 
-# Jarvis: a Stop held until Fleet answers. Each Stop fires the way test-restart.sh fires one —
+# Jarvis: a Stop held until Jarvis, an app of its own, answers. Each Stop fires the way test-restart.sh fires one —
 # the hook under a stand-in claude under a stand-in fish that FLEET_SHELL names — in a session
 # of its own, so no terminal is attached whoever runs this. The settings changed since the
 # session started, so a Stop that falls through to the normal flow relaunches the session.

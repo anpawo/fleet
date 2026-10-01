@@ -319,95 +319,6 @@ if CommandLine.arguments.contains("--todos") {
     RunLoop.main.run()
 }
 
-// `--jarvis-brief`: the switch-on briefing on the live sessions, timed, then spoken — the
-// Claude read, the first sound and the end of the voice, each from the start.
-if CommandLine.arguments.contains("--jarvis-brief") {
-    Task { @MainActor in
-        let start = Date()
-        func at() -> String { String(format: "%5.1f s", Date().timeIntervalSince(start)) }
-        let registry = SessionRegistry()
-        _ = registry.refresh()
-        let sessions = registry.refresh()
-        let hub = HubStore()
-        hub.refresh()
-        while !hub.loaded, hub.failure == nil, Date().timeIntervalSince(start) < 10 {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        let todos = Jarvis.openTodos(hub.todos)
-        print("\(at())  \(sessions.count) sessions, \(todos.count) open todos")
-        let text: String
-        do {
-            text = try await Claude.briefing(sessions: Jarvis.briefingLines(sessions), todos: todos)
-        } catch {
-            print("briefing failed: \(error)"); exit(1)
-        }
-        print("\(at())  briefing written (\(text.split(separator: " ").count) words):\n\n\(text)\n")
-        if let ready = sessions.first(where: { $0.state == .ready }) {
-            let t = Date()
-            let conversation = ready.steps.map { $0.text }.joined(separator: "\n")
-            if let next = try? await Claude.nextTask(project: Session.project(for: ready.cwd),
-                                                     conversation: conversation, todos: todos) {
-                print(String(format: "next task for %@, read in %.1f s: %@ → %@\n",
-                             Session.project(for: ready.cwd), Date().timeIntervalSince(t),
-                             next.line, next.task ?? "none"))
-            }
-        }
-        let levels = NSTemporaryDirectory() + "jarvis-brief-levels.log"
-        FileManager.default.createFile(atPath: levels, contents: nil)
-        let voice = Process()
-        voice.executableURL = URL(fileURLWithPath: NSHomeDirectory() + "/self/jarvis/tools/jarvis-speak.sh")
-        voice.arguments = [text]
-        voice.environment = ProcessInfo.processInfo.environment.merging(
-            ["JARVIS_LEVELS": levels, "JARVIS_SPEAKER": Settings.jarvisVoice.rawValue]) { $1 }
-        let spoken = Date()
-        try? voice.run()
-        var heard = false
-        while voice.isRunning {
-            if !heard, let log = try? String(contentsOfFile: levels, encoding: .utf8), log.contains("RMS_level=") {
-                heard = true
-                print(String(format: "\(at())  first sound, %.1f s after the voice started", Date().timeIntervalSince(spoken)))
-            }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        print("\(at())  voice ended (exit \(voice.terminationStatus))")
-        exit(0)
-    }
-    RunLoop.main.run()
-}
-
-// `--jarvis-topic <topic>`: what a JARVIS block button gathers, what Jarvis would say, and the
-// lines the block would show — without the panel or the voice.
-if let flag = CommandLine.arguments.firstIndex(of: "--jarvis-topic") {
-    let name = flag + 1 < CommandLine.arguments.count ? CommandLine.arguments[flag + 1] : ""
-    guard let topic = JarvisTopic(rawValue: name) else {
-        print("usage: Fleet --jarvis-topic <\(JarvisTopic.allCases.map(\.rawValue).joined(separator: "|"))>")
-        exit(2)
-    }
-    Task { @MainActor in
-        let start = Date()
-        let registry = SessionRegistry()
-        _ = registry.refresh()
-        let hub = HubStore()
-        hub.refresh()
-        while !hub.loaded || hub.reelsFetchedAt == .distantPast, hub.failure == nil,
-              Date().timeIntervalSince(start) < 10 {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        do {
-            let facts = try await topic.facts(hub: hub, sessions: registry.refresh())
-            print(String(format: "facts in %.1f s:\n", Date().timeIntervalSince(start)) + facts + "\n")
-            let found = try await Claude.topic(topic.label, facts: facts)
-            print(String(format: "said, at %.1f s:\n", Date().timeIntervalSince(start)) + found.say + "\n")
-            print("shown:\n" + found.show.map { "- " + $0 }.joined(separator: "\n"))
-            exit(0)
-        } catch {
-            print("\(topic.label) failed: \(error)")
-            exit(1)
-        }
-    }
-    RunLoop.main.run()
-}
-
 // The EPITECH block without the panel: the modules under way and the rendus still ahead.
 if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
     // An optional path, so a state.json that says something this one does not — a dead session,
@@ -559,16 +470,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
                 .write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             print("wrote \(CommandLine.arguments[i + 1]) \(view.bounds.size)")
         }
-        exit(0)
-    }
-}
-
-// `--render-jarvis <dir>`: Jarvis's capsule and options in every state, as PNGs, offscreen.
-if let i = CommandLine.arguments.firstIndex(of: "--render-jarvis"),
-   i + 1 < CommandLine.arguments.count {
-    MainActor.assumeIsolated {
-        _ = NSApplication.shared
-        JarvisPanel.render(to: CommandLine.arguments[i + 1])
         exit(0)
     }
 }
@@ -866,11 +767,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         }
 
-        // `FLEET_JARVIS_FOUND="line|line"` draws the JARVIS block's box of what he found, which
-        // otherwise takes a click and a skill run. With `FLEET_HOVER=jarvis`, since it unrolls.
-        if let lines = ProcessInfo.processInfo.environment["FLEET_JARVIS_FOUND"] {
-            controller.jarvisFound = JarvisFinding(topic: .todos, lines: lines.components(separatedBy: "|"))
-        }
         // `--cmd` draws the panel as it looks with ⌘ held: the todo column's ✕s are otherwise
         // impossible to see in a render, since nobody is holding a key.
         if CommandLine.arguments.contains("--cmd") {
@@ -1031,9 +927,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
-    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--jarvis-brief", "--open",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
-    "--live", "--reels-run", "--render", "--render-jarvis", "--render-settings", "--route", "--scan", "--screen",
+    "--live", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]

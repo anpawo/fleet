@@ -695,9 +695,10 @@ enum Hooks {
     printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
         "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
 
-    # Jarvis: at the end of a turn, Fleet asks out loud what this session should do next, and
-    # the answer comes back as the reason of a Stop block, which Claude Code hands the session
-    # as its next instruction. Only while Fleet keeps `jarvis.on` fresh, so a Fleet that died
+    # Jarvis, an app of its own since 01-10: at the end of a turn it asks out loud what this
+    # session should do next, and the answer comes back as the reason of a Stop block, which
+    # Claude Code hands the session as its next instruction. This hold is all of it that is left
+    # in Fleet, since only a Stop hook can do it. Only while `jarvis.on` is kept fresh, so one that died
     # never leaves a turn hanging; never twice in one turn; and only for a session someone sits
     # at: a tty rules out `claude -p`, Fleet's own calls and launchd routines. FLEET_TEST_TTY
     # stands in for that tty and is set by test-stop-hook.sh only, which has no terminal.
