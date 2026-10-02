@@ -59,6 +59,16 @@ enum ProcessScanner {
         // a script — not a conversation you can pick back up. It usually has no tty, but an
         // app launched from a terminal hands its own down to every child, tty included.
         if verdict, args.contains("-p") || args.contains("--print") { verdict = false }
+        // Nor is a claude started from inside another one — a test session a tool call drives
+        // through a pty (02-10: a NEEDS YOU tile for a terminal nobody sits at). The walk ends
+        // by itself at `login`, which is root's and unreadable: a session of yours has only
+        // its shell on the way there.
+        var up = pid_t(bsd.pbi_ppid)
+        for _ in 0..<12 where verdict {
+            guard up > 1, let above = bsdInfo(up) else { break }
+            if isClaudeCodePath(executablePath(up)) { verdict = false }
+            up = pid_t(above.pbi_ppid)
+        }
         claudeVerdicts[pid] = (started, verdict)
         // Bounded by the process table: a machine that has churned through thousands of shells
         // would otherwise keep a row for every one of them.
