@@ -851,7 +851,7 @@ struct GroupTile: View {
     /// One size, open or folded. The name only moves: a title that also shrank was a second
     /// thing happening in an animation that is already a card growing.
     private static let nameSize: CGFloat = 31
-    /// Roughly the name's line height, to centre it on the folded card's 30% mark.
+    /// Roughly the name's line height, to centre it on the folded card's 33% mark.
     private static let nameLine: CGFloat = 37
 
     /// What the open card keeps clear inside its border, past the gap the cards already have
@@ -875,7 +875,7 @@ struct GroupTile: View {
                     // A line each says it, and the ones past the fourth are scrolled to.
                     folded
                         .padding(.horizontal, 12)
-                        .padding(.top, 12 + SessionTile.height * 0.30 + Self.nameLine / 2 + 16)
+                        .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 16)
                         .padding(.bottom, 12)
                 }
 
@@ -929,7 +929,7 @@ struct GroupTile: View {
     }
 
     /// Where the name's own line starts, measured from the top of the folded card.
-    static let titleTop: CGFloat = 12 + SessionTile.height * 0.30 - nameLine / 2
+    static let titleTop: CGFloat = 12 + SessionTile.height * 0.33 - nameLine / 2
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
     /// centring it on the folded card needs a number before anything is drawn.
@@ -1127,9 +1127,9 @@ struct SessionTile: View {
 
     @State private var hovering = false
 
-    /// Fixed so the name's 30% line is the same on every tile, whatever the history under it.
+    /// Fixed so the name's 33% line is the same on every tile, whatever the history under it.
     static let height: CGFloat = 186
-    /// Roughly the name's line height at its font size, to centre it on that 30% mark.
+    /// Roughly the name's line height at its font size, to centre it on that 33% mark.
     /// Tracks `name`'s point size — if one moves the other has to.
     private static let nameLine: CGFloat = 37
 
@@ -1137,9 +1137,9 @@ struct SessionTile: View {
         Button(action: onSelect) {
             ZStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
-                    // The name sits with its centre 30% down the tile, so every tile's name
+                    // The name sits with its centre 33% down the tile, so every tile's name
                     // lands on the same line however much history is under it.
-                    Spacer().frame(height: Self.height * 0.30 - Self.nameLine / 2)
+                    Spacer().frame(height: Self.height * 0.33 - Self.nameLine / 2)
                     name
                     // The space above flexes and the space below is fixed, so the history sits
                     // low in the tile — anchored near the bottom edge rather than centred
@@ -1162,31 +1162,23 @@ struct SessionTile: View {
                 // whatever the spacers said.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                // Pills side by side while the row fits, stacked in the corner when it
-                // doesn't — never shrunk: every pill is the same size on every tile. A long
-                // workflow pill beside a sub-agent count used to shrink one and break the
+                // Pills side by side while the two of them fit the tile, stacked in the corner
+                // when they don't — never shrunk: every pill is the same size on every tile. A
+                // long workflow pill beside a sub-agent count used to shrink one and break the
                 // other over two lines, and eat the folder name.
-                ViewThatFits(in: .horizontal) {
-                    // 5, not 7: at 7 the folder and both pills missed one line by ~4 pt (30-09).
-                    HStack(alignment: .top, spacing: 5) {
-                        if !grouped { folder }
-                        Spacer(minLength: 6)
-                        // Served first and at full size. The folder's frame measures at its
-                        // text but lays out at its 110pt cap, so this line passed the fit and
-                        // then squeezed the pills: BACKGROUND-TASK shrunk to 70% (28-09).
-                        Group { subagentPill; statePill }
-                            .fixedSize()
-                            .layoutPriority(1)
-                    }
-                    HStack(alignment: .top, spacing: 7) {
-                        if !grouped { folder }
-                        Spacer(minLength: 6)
-                        // First served here too: the folder's 110pt cap cut BACKGROUND-TASK
-                        // to "BACKGROU…SK" beside it (28-09). The folder truncates instead.
+                HStack(alignment: .top, spacing: 5) {
+                    // The folder gives way, down to nothing: the fit used to count it and a
+                    // 16 pt gap, and "~" beside two pills stacked them for half a point (02-10).
+                    if !grouped { folder.frame(minWidth: 0, maxWidth: .infinity, alignment: .leading) }
+                    // Served first and at full size: the folder's 110pt cap squeezed the pills
+                    // — BACKGROUND-TASK shrunk to 70%, then cut to "BACKGROU…SK" (28-09).
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 5) { subagentPill; statePill }.fixedSize()
                         VStack(alignment: .trailing, spacing: 4) { subagentPill; statePill }
-                            .layoutPriority(1)
                     }
+                    .layoutPriority(1)
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
             }
             .frame(height: Self.height, alignment: .top)
