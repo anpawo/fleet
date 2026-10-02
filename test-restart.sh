@@ -86,6 +86,49 @@ wait
 check "idle session reached by the patcher's sweep" "$SID --model fable"
 unset BIN
 
+# Claude Code no longer hands the binary to its hooks: it is read off the process. The stand-in
+# becomes a version file, with `claude` on PATH pointing at it, as the native install lays them out.
+V="$FAKE/share/claude/versions"
+mkdir -p "$V" "$FAKE/.local/bin"
+mv "$FAKE/claude" "$V/1.0.0"
+cp "$V/1.0.0" "$V/1.0.1"
+ln -s "$V/1.0.0" "$FAKE/claude"
+ln -s "$V/1.0.0" "$FAKE/.local/bin/claude"
+touch -t 202001010000 "$V/1.0.0"
+touch -h -t 202001010000 "$FAKE/.local/bin/claude"
+fire SessionStart start
+fire Stop ready;                 check "binary read off the process, untouched: left alone" kept
+touch -t "$(date -v+2M +%Y%m%d%H%M.%S)" "$V/1.0.0"
+fire Stop ready;                 check "binary read off the process, patched since: relaunched" "$SID --model fable"
+touch -t 202001010000 "$V/1.0.0"
+ln -sfn "$V/1.0.1" "$FAKE/.local/bin/claude"
+touch -h -t "$(date -v+2M +%Y%m%d%H%M.%S)" "$FAKE/.local/bin/claude"
+fire Stop ready;                 check "claude points at a newer version since: relaunched" "$SID --model fable"
+ln -sfn "$V/1.0.0" "$FAKE/.local/bin/claude"
+touch -h -t 202001010000 "$FAKE/.local/bin/claude"
+
+# A mod is read once, at launch, like the `env` entry that names it.
+mkdir -p "$FAKE/mod/hooks" "$FAKE/mod/.claude-plugin/types"
+echo one > "$FAKE/mod/hooks/register.tsx"
+fire SessionStart start
+printf '{"model":"fable","modelSettings":{"claude-opus-5-5":{"effortLevel":"xhigh"}},"env":{"CLAUDE_CODE_PLUGIN_DIRS":"~/mod"}}' \
+    > "$FAKE/.claude/settings.json"
+fire Stop ready;                 check "a mod named in settings since the session started: relaunched" "$SID --model fable"
+fire SessionStart start
+echo types > "$FAKE/mod/.claude-plugin/types/index.d.ts"
+fire Stop ready;                 check "the types Claude Code writes into a mod: left alone" kept
+echo two > "$FAKE/mod/hooks/register.tsx"
+fire Stop ready;                 check "mod edited since the session started: relaunched" "$SID --model fable"
+# The sessions that did not make the edit fire no hook for it: another session's turn ending does.
+fire SessionStart start
+LIFE=4 fire Stop ready &
+sleep 1
+echo three > "$FAKE/mod/hooks/register.tsx"
+printf '{"session_id":"99999999-2222-3333-4444-555555555555","hook_event_name":"Stop"}' |
+    HOME="$FAKE" sh "$HOOK" ready >/dev/null
+wait
+check "idle session reached when another session's turn ends after a mod edit" "$SID --model fable"
+
 echo "fish: $FISHFN"
 if command -v fish >/dev/null; then
     mkdir -p "$FAKE/bin"

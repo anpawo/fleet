@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 14
+    static let version = 15
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -435,7 +435,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 14
+    # fleet-hook-version: 15
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -445,17 +445,25 @@ enum Hooks {
     state="${1:-}"
     dir="$HOME/.claude/fleet/state"
 
-    # A session runs on the settings and the binary it had at launch: the model never changes
-    # under a live process, `--resume` brings the old one back, and a display patch replaces
-    # the binary on disk, not the one running. The settings are recorded at start, so a later
-    # edit of settings.json can be told apart from them; the binary is compared with the time
-    # the process started.
+    # A session runs on the settings, the mods and the binary it had at launch: the model never
+    # changes under a live process, `--resume` brings the old one back, `env` and the mods it
+    # names are read once, and a display patch or an update replaces the binary on disk, not the
+    # one running. Settings and mods are recorded at start, so a later edit can be told apart
+    # from them; the binary is compared with the time the process started.
     settings="$HOME/.claude/settings.json"
     cfg() {
-        for k in model modelSettings outputStyle; do
+        for k in model modelSettings outputStyle env; do
             # xml1, not json: plutil refuses to print a bare string as JSON.
             plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
         done
+        # Each mod by content. Not .claude-plugin/types: Claude Code rewrites it at every load,
+        # and one session starting would then relaunch all the others.
+        plutil -extract env.CLAUDE_CODE_PLUGIN_DIRS raw -o - "$settings" 2>/dev/null | tr ':' '\\n' |
+            while read -r d; do
+                case $d in '~'*) d=$HOME${d#'~'} ;; esac
+                [ -d "$d" ] || continue
+                find -L "$d" -type f ! -path '*/.claude-plugin/types/*' -print0 | sort -z | xargs -0 cat | cksum
+            done
     }
 
     # Either is out of date for session $1: it is ended if it is still idle a second later, and
@@ -469,11 +477,17 @@ enum Hooks {
         read -r cl sh bin < "$dir/$1.shell"
         # still that session's claude, not a pid handed to something else since
         [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$sh" ] || return 0
-        if [ "$(cfg)" = "$(cat "$dir/$1.cfg" 2>/dev/null)" ]; then
+        if [ "${now:=$(cfg)}" = "$(cat "$dir/$1.cfg" 2>/dev/null)" ]; then
             [ -n "${bin:-}" ] || return 0
             age=$(ps -o etime= -p "$cl" 2>/dev/null | awk -F'[-:]' '{ n = NF; s = $n + $(n-1) * 60
                 if (n > 2) s += $(n-2) * 3600; if (n > 3) s += $(n-3) * 86400; print s }')
-            [ "$(stat -f %m "$bin" 2>/dev/null || echo 0)" -gt $(( $(date +%s) - ${age:-0} )) ] || return 0
+            began=$(( $(date +%s) - ${age:-0} ))
+            # An update leaves the old version's file alone and points `claude` at a new one. The
+            # link's own date, so that a session started some other way is not ended at every turn.
+            link="$HOME/.local/bin/claude"; to=$(readlink "$link" 2>/dev/null)
+            [ "$(stat -f %m "$bin" 2>/dev/null || echo 0)" -gt "$began" ] ||
+                { [ "${to##*/}" != "${bin##*/}" ] && [ "$(stat -f %m "$link" 2>/dev/null || echo 0)" -gt "$began" ]; } ||
+                return 0
         fi
         model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
         /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
@@ -487,13 +501,13 @@ enum Hooks {
 
     # An idle session fires no hook, so the display patcher calls this once it has replaced the
     # binary: every session gets the check its own Stop would give it.
-    if [ "$state" = "sweep" ]; then
+    sweep() {
         for f in "$dir"/*.shell; do
             [ -f "$f" ] || continue
             s=${f##*/}; relaunch "${s%.shell}"
         done
-        exit 0
-    fi
+    }
+    [ "$state" = "sweep" ] && { sweep; exit 0; }
 
     input=$(cat)
 
@@ -522,8 +536,11 @@ enum Hooks {
             esac
             p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); n=$((n + 1))
         done
+        # Hooks stopped receiving CLAUDE_CODE_EXECPATH with 2.1.286: the binary is read off the process.
         [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$FLEET_SHELL" ] &&
-            mkdir -p "$dir" && echo "$cl $FLEET_SHELL ${CLAUDE_CODE_EXECPATH:-}" > "$dir/$sid.shell"
+            bin=${CLAUDE_CODE_EXECPATH:-$(/usr/sbin/lsof -a -p "$cl" -d txt -Fn 2>/dev/null |
+                sed -n 's|^n\\(.*/claude/versions/[^/]*\\)$|\\1|p' | head -1)} &&
+            mkdir -p "$dir" && echo "$cl $FLEET_SHELL $bin" > "$dir/$sid.shell"
     fi
     [ "$state" = "start" ] && exit 0
     [ "$state" = "config" ] && { relaunch "$sid"; exit 0; }
@@ -746,7 +763,13 @@ enum Hooks {
         esac
     fi
 
-    [ "$state" = "ready" ] && relaunch "$sid"
+    # A mod edited on disk raises no event in the sessions that did not edit it: the first turn to
+    # end once the settings or the mods have moved gives every session its check.
+    if [ "$state" = "ready" ]; then
+        now=$(cfg)
+        if [ "$now" = "$(cat "$dir/.cfg" 2>/dev/null)" ]; then relaunch "$sid"
+        else printf '%s\\n' "$now" > "$dir/.cfg"; sweep; fi
+    fi
     exit 0
 
     """
