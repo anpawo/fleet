@@ -328,4 +328,10 @@ enum ProcessScanner {
         }
         return nil
     }
+
+    /// How many processes sit directly under this one. Under a terminal emulator that is its
+    /// surfaces: each tab or split is one `login`.
+    static func childCount(of pid: pid_t) -> Int {
+        parentMap().values.filter { $0 == pid }.count
+    }
 }

@@ -141,12 +141,21 @@ enum TerminalFocus {
     /// the one the session runs in — and a mismatch is answered with nil rather than a guess:
     /// this is the second opinion that overrides "waiting for you", and another window's screen
     /// would silence a question that really is on yours.
+    ///
+    /// Unless the terminal has a single process under it: one surface, so the session found
+    /// under that terminal can only be on it, and no directory is needed. It is not always
+    /// there — `AXDocument` is what a shell reported at its last prompt, and a window opened
+    /// straight onto `claude` never showed one (11-10: a spawned session four minutes into a
+    /// thought sat under NEEDS YOU, its spinner on a screen refused for want of a directory).
     private static func contents(cwd: String, viaAccessibility pid: pid_t) -> String? {
         guard Desktop.accessibilityTrusted(prompt: false),
-              let window = Desktop.focusedWindow(of: AXUIElementCreateApplication(pid)),
-              let document = string(window, kAXDocumentAttribute),
-              let surface = URL(string: document)?.standardizedFileURL.path,
-              surface == URL(fileURLWithPath: cwd).standardizedFileURL.path else { return nil }
+              let window = Desktop.focusedWindow(of: AXUIElementCreateApplication(pid)) else {
+            return nil
+        }
+        let surface = string(window, kAXDocumentAttribute)
+            .flatMap { URL(string: $0)?.standardizedFileURL.path }
+        guard surface == URL(fileURLWithPath: cwd).standardizedFileURL.path
+                || ProcessScanner.childCount(of: pid) == 1 else { return nil }
         return screenText(in: window)
     }
 
