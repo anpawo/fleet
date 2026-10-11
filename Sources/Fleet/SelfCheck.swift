@@ -71,6 +71,23 @@ enum SelfCheck {
         expect(heights.count == 4 && zip(heights, heights.dropFirst()).allSatisfy { $1 - $0 >= 11.499 }
                && callouts.allSatisfy { $0.length >= 10 && $0.length <= 34 }, true,
                "money: names that would touch part, each further out along its own radius")
+
+        let passing = Money.months(csv: """
+        date,amount,category,merchant
+        2026-08-10,-250.00,Loan repayment,A
+        2026-08-12,-30.00,Train,C
+        2026-08-28,260.00,"Parents, loan instalment cover",B
+        2026-09-10,-250.00,Loan repayment,A
+        2026-09-20,100.00,"Parents, loan instalment cover",B
+        2026-10-10,-250.00,Loan repayment,A
+        2026-10-11,-5.00,Train,C
+        """).months
+        expect(passing.map(\.spent) == [[.transport: 5], [.loan: 150], [.transport: 30]], true,
+               "money: a debit a credit was sent to cover is not spent, past what the credit paid")
+        expect(passing.map(\.covered) == [[:], [.loan: 100], [.loan: 250]], true,
+               "money: what a cover paid, never more than the debit")
+        expect(passing.map(\.awaited) == [[.loan: 250], [:], [:]], true,
+               "money: in the newest month a debit whose cover is still to come waits apart")
     }
 
     // MARK: - Reels

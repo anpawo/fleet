@@ -83,7 +83,16 @@ enum Money {
     struct Month: Identifiable, Equatable {
         /// `2026-10`.
         let id: String
+        /// What the month cost, by kind: its debits, less what somebody else paid of them.
         var spent: [Kind: Double] = [:]
+        /// What a credit sent for the purpose paid of the month's debits, by kind. A loan's
+        /// instalment and the transfer that covers it are money passing through the account,
+        /// not spending (asked 2026-10-12) — see `months`.
+        var covered: [Kind: Double] = [:]
+        /// In the newest month only: a debit of a kind earlier months had covered, whose own
+        /// cover is not in yet. Kept out of `spent` meanwhile: the month's figure would
+        /// otherwise carry an instalment for the weeks its cover takes to come.
+        var awaited: [Kind: Double] = [:]
         var total: Double { spent.values.reduce(0, +) }
 
         /// Each kind's part of what was spent, in whole percent that add up to 100: rounded
@@ -151,17 +160,39 @@ enum Money {
     /// The months of an export, newest first, and the day of its newest line. Only a debit is
     /// spending — a credit is not money spent backwards — and not a debit that only moved to
     /// savings: it left the account without being spent.
+    ///
+    /// One credit does count, against a debit: a cover, by the word in its category ("loan
+    /// instalment cover"), pays for the kind that category names, in its own month. That
+    /// much of the kind is `covered` and not spent; what a cover did not reach stays spent.
     static func months(csv: String) -> (months: [Month], latest: String?) {
         var months: [String: Month] = [:]
+        var covers: [String: [Kind: Double]] = [:]
         var latest: String?
         for line in csv.split(whereSeparator: \.isNewline).dropFirst() {
             let row = fields(line, 7)
             guard row.count >= 3, row[0].count == 10, let amount = Double(row[1]), amount != 0 else { continue }
             latest = max(latest ?? row[0], row[0])
-            guard amount < 0, !row[2].localizedCaseInsensitiveContains("saving") else { continue }
             let id = String(row[0].prefix(7))
             let kind = Kind(category: row[2], bankCode: row.count > 6 ? row[6] : "")
-            months[id, default: Month(id: id)].spent[kind, default: 0] -= amount
+            if amount > 0 {
+                guard row[2].localizedCaseInsensitiveContains("cover") else { continue }
+                covers[id, default: [:]][kind, default: 0] += amount
+            } else if !row[2].localizedCaseInsensitiveContains("saving") {
+                months[id, default: Month(id: id)].spent[kind, default: 0] -= amount
+            }
+        }
+        let newest = months.keys.max()
+        for id in months.keys {
+            for (kind, paid) in months[id]?.spent ?? [:] {
+                let cover = min(paid, covers[id]?[kind] ?? 0)
+                if cover > 0 {
+                    months[id]?.covered[kind] = cover
+                    months[id]?.spent[kind] = paid > cover ? paid - cover : nil
+                } else if id == newest, covers.contains(where: { $0.key < id && $0.value[kind] != nil }) {
+                    months[id]?.awaited[kind] = paid
+                    months[id]?.spent[kind] = nil
+                }
+            }
         }
         return (months.values.sorted { $0.id > $1.id }, latest)
     }
@@ -395,6 +426,29 @@ private struct MoneyMonth: View {
                 .frame(width: Self.pie, height: Self.pie)
                 .padding(.top, over - radius)
             }
+            ForEach(Money.Kind.allCases.filter { month.covered[$0] != nil || month.awaited[$0] != nil },
+                    id: \.self) { kind in through(kind) }
         }
+    }
+
+    /// What went through the account without being the month's own: a debit somebody else's
+    /// transfer paid. Under the pie and no slice of it — it is no part of what the month
+    /// cost — and one line, so that the instalment has not simply vanished.
+    private func through(_ kind: Money.Kind) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 7, weight: .semibold))
+                .foregroundStyle(kind.tint)
+            Text(kind.title)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(Money.euros(month.covered[kind] ?? month.awaited[kind] ?? 0))
+                .font(.system(size: 9, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.75))
+            Text(month.covered[kind] != nil ? "covered, not counted" : "cover awaited, not counted")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.35))
+        }
+        .lineLimit(1)
     }
 }
