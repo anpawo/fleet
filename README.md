@@ -220,7 +220,9 @@ The specific things it refuses to do:
 - **Stops dead on sleep.** All timers are torn down on sleep or display-off and rebuilt on wake.
 - **No live blur.** The panel backdrop is a flat scrim — a full-screen material would be
   continuous GPU work on a window whose entire purpose is to save power.
-- Runs as a `Background` / `LowPriorityIO` LaunchAgent, so the scheduler treats it accordingly.
+- Runs as an `Interactive` LaunchAgent: the process that sleeps between ticks is also the one
+  that draws the panel, and as `Background` every thread of it ran at priority 4. Only the
+  hourly Reels job is `Background` / `LowPriorityIO`.
 
 While the panel is actually on screen it refreshes every 3 seconds. That's the only period where
 it does meaningful work, and it ends as soon as you click.

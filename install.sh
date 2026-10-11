@@ -42,6 +42,12 @@ launchctl kill SIGTERM "gui/$UID/$LABEL" 2>/dev/null || true
 mkdir -p "$DEST"
 rsync -a --delete dist/Fleet.app/ "$DEST/"
 
+# Interactive, not Background: the process type covers every thread, the one that draws the
+# panel included. As Background they all ran at priority 4, on the efficiency cores and behind
+# every session on the machine: a fold cost 9 ms of CPU a frame against 0.9 (`--bench-panel`
+# under `taskpolicy -b`), and a tick came seconds late, which Fleet then read as the machine
+# struggling (2026-10-12). LowPriorityIO went with it, since the tick reads its files on that
+# same thread.
 echo "==> Writing $PLIST"
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST.new" <<PLIST_EOF
@@ -60,9 +66,7 @@ cat > "$PLIST.new" <<PLIST_EOF
 	<key>KeepAlive</key>
 	<true/>
 	<key>ProcessType</key>
-	<string>Background</string>
-	<key>LowPriorityIO</key>
-	<true/>
+	<string>Interactive</string>
 	<key>StandardErrorPath</key>
 	<string>/tmp/fleet.log</string>
 </dict>
