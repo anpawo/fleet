@@ -13,7 +13,7 @@ enum Money {
     /// What a payment was for. Nine: the export names eighteen categories, and eighteen
     /// percentages a month are a statement, not a glance. A colour belongs to its kind in
     /// every month; its place does not, a month ranks its own — so two colours a colour-blind
-    /// eye confuses can sit side by side, and the name beside the dot is what says which.
+    /// eye confuses can sit side by side, and the name its arrow points to is what says which.
     enum Kind: CaseIterable {
         case food, transport, shopping, clothes, leisure, subscriptions, health, loan, other
 
@@ -65,6 +65,16 @@ enum Money {
         }
     }
 
+    /// A slice's name beside the pie — see `Month.callouts`.
+    struct Callout {
+        let kind: Kind
+        /// The middle of the slice, in turns clockwise from twelve o'clock.
+        let turn: Double
+        /// The name's height, down from the pie's centre.
+        var y: Double
+        var right: Bool { turn < 0.5 }
+    }
+
     struct Month: Identifiable, Equatable {
         /// `2026-10`.
         let id: String
@@ -91,6 +101,35 @@ enum Money {
             let shares = shares
             return Kind.allCases.filter { (shares[$0] ?? 0) > 0 }
                 .sorted { (spent[$0] ?? 0) > (spent[$1] ?? 0) }
+        }
+
+        /// Where each slice's name goes: level with the middle of its rim, on its side of the
+        /// pie. Two that would touch part the way the ranking runs — down the right side, up
+        /// the left — so it is the small slices crowding twelve o'clock that give way; past
+        /// `reach`, the room there is, the push comes back the other way.
+        func callouts(radius: Double, line: Double, reach: Double) -> [Callout] {
+            let kinds = ranked
+            let whole = kinds.reduce(0) { $0 + (spent[$1] ?? 0) }
+            var turned = 0.0
+            var out = kinds.map { kind in
+                let part = (spent[kind] ?? 0) / whole
+                defer { turned += part }
+                let turn = turned + part / 2
+                return Callout(kind: kind, turn: turn, y: -radius * cos(2 * .pi * turn))
+            }
+            for right in [true, false] {
+                let side = out.indices.filter { out[$0].right == right }
+                let away = right ? 1.0 : -1.0
+                for (before, index) in zip(side, side.dropFirst()) {
+                    out[index].y = away * max(away * out[index].y, away * out[before].y + line)
+                }
+                guard let last = side.last, away * out[last].y > reach else { continue }
+                out[last].y = away * reach
+                for (after, index) in zip(side.reversed(), side.reversed().dropFirst()) {
+                    out[index].y = away * min(away * out[index].y, away * out[after].y - line)
+                }
+            }
+            return out
         }
 
         var name: String {
@@ -266,13 +305,19 @@ struct MoneyColumn: View {
 /// paid where is not the question, how the month splits is).
 ///
 /// The kinds are the month's own ranking — see `Month.ranked`: the pie turns from twelve
-/// o'clock in the order its legend reads down.
+/// o'clock, the largest first. Each slice has an arrow out to its name and no legend beside
+/// the pie (asked 2026-10-11, with the larger pie): the name is read where the slice is.
 private struct MoneyMonth: View {
     let month: Money.Month
 
+    private static let pie: CGFloat = 96
+    /// The room over and under the pie, for a name pushed past its rim.
+    private static let spill: CGFloat = 14
+    /// From the rim to where the names start.
+    private static let gap: CGFloat = 16
+
     var body: some View {
         let kinds = month.ranked
-        let shares = month.shares
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(month.name)
@@ -283,34 +328,46 @@ private struct MoneyMonth: View {
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.55))
             }
-            HStack(spacing: 14) {
+            // The arrow in the slice's colour, the name in the panel's own grey: the colour says
+            // which, the text stays text.
+            Canvas { context, size in
+                let radius = Self.pie / 2
+                let centre = CGPoint(x: size.width / 2, y: Self.spill + radius)
+                for callout in month.callouts(radius: radius, line: 11.5, reach: radius + Self.spill - 6) {
+                    let side: CGFloat = callout.right ? 1 : -1
+                    let angle = 2 * .pi * callout.turn
+                    let rim = CGPoint(x: centre.x + (radius + 1) * sin(angle),
+                                      y: centre.y - (radius + 1) * cos(angle))
+                    let tip = CGPoint(x: centre.x + side * (radius + Self.gap), y: centre.y + callout.y)
+                    let back = atan2(rim.y - tip.y, rim.x - tip.x)
+                    var arrow = Path()
+                    arrow.move(to: rim)
+                    arrow.addLine(to: tip)
+                    for barb in [-0.5, 0.5] {
+                        arrow.move(to: tip)
+                        arrow.addLine(to: CGPoint(x: tip.x + 4 * cos(back + barb),
+                                                  y: tip.y + 4 * sin(back + barb)))
+                    }
+                    context.stroke(arrow, with: .color(callout.kind.tint),
+                                   style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                    context.draw(Text(callout.kind.title)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.white.opacity(0.5)),
+                                 at: CGPoint(x: tip.x + side * 4, y: tip.y),
+                                 anchor: callout.right ? .leading : .trailing)
+                }
+            }
+            .frame(height: Self.pie + 2 * Self.spill)
+            .background(alignment: .top) {
                 // The inset is the ground showing between two slices: neighbours change with
                 // the month, and two close colours side by side still read as two.
                 Chart(kinds, id: \.self) { kind in
                     SectorMark(angle: .value("Spent", month.spent[kind] ?? 0), angularInset: 1)
                         .foregroundStyle(kind.tint)
                 }
-                .frame(width: 76, height: 76)
-                VStack(spacing: 3) {
-                    ForEach(kinds, id: \.self) { kind in share(kind, shares[kind] ?? 0) }
-                }
+                .frame(width: Self.pie, height: Self.pie)
+                .padding(.top, Self.spill)
             }
         }
-    }
-
-    /// The name in the panel's own grey beside a dot of the colour: the colour says which, the
-    /// text stays text.
-    private func share(_ kind: Money.Kind, _ percent: Int) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(kind.tint).frame(width: 6, height: 6)
-            Text(kind.title)
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.5))
-            Spacer(minLength: 4)
-            Text("\(percent)%")
-                .font(.system(size: 10, weight: .medium).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .lineLimit(1)
     }
 }

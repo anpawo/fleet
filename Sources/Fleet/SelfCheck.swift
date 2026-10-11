@@ -59,6 +59,17 @@ enum SelfCheck {
         expect(read.months.last?.shares[.food] == 100, true, "money: one kind alone is the whole month")
         expect(read.months.first?.ranked == [.loan, .clothes, .transport, .shopping], true,
                "money: a month's kinds the largest first, one that reads 0% left out")
+        // One large slice and five small ones that end at twelve o'clock, where their names
+        // would sit on top of one another.
+        let crowded = Money.Month(id: "2026-10", spent: [.food: 62, .transport: 12, .leisure: 9,
+                                                         .clothes: 8, .subscriptions: 6, .health: 3])
+        let callouts = crowded.callouts(radius: 48, line: 11.5, reach: 56)
+        expect(callouts.filter(\.right).map(\.kind) == [.food] && callouts.count == 6, true,
+               "money: a slice's name on its side of the pie")
+        let left = callouts.filter { !$0.right }.map(\.y)
+        expect(zip(left, left.dropFirst()).allSatisfy { $0 - $1 >= 11.499 }
+               && left.allSatisfy { abs($0) <= 56 }, true,
+               "money: names that would touch part, inside the room there is")
     }
 
     // MARK: - Reels
