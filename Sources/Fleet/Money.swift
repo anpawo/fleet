@@ -70,9 +70,14 @@ enum Money {
         let kind: Kind
         /// The middle of the slice, in turns clockwise from twelve o'clock.
         let turn: Double
-        /// The name's height, down from the pie's centre.
-        var y: Double
+        /// How far past the rim its arrow runs, along the slice's own radius.
+        var length: Double
         var right: Bool { turn < 0.5 }
+
+        /// A point of that radius, from the pie's centre: `past` the rim, y down.
+        func point(radius: Double, past: Double) -> (x: Double, y: Double) {
+            ((radius + past) * sin(2 * .pi * turn), -(radius + past) * cos(2 * .pi * turn))
+        }
     }
 
     struct Month: Identifiable, Equatable {
@@ -103,30 +108,34 @@ enum Money {
                 .sorted { (spent[$0] ?? 0) > (spent[$1] ?? 0) }
         }
 
-        /// Where each slice's name goes: level with the middle of its rim, on its side of the
-        /// pie. Two that would touch part the way the ranking runs — down the right side, up
-        /// the left — so it is the small slices crowding twelve o'clock that give way; past
-        /// `reach`, the room there is, the push comes back the other way.
-        func callouts(radius: Double, line: Double, reach: Double) -> [Callout] {
+        /// Each slice's arrow: straight out of the middle of its rim, along its own radius
+        /// (asked 2026-10-12 — aimed at wherever its name had room, every arrow left the pie
+        /// at an angle of its own). `reach` long, and longer for a name that would touch the
+        /// one before it: a quarter of the pie at a time, from the horizontal towards twelve
+        /// or six o'clock, where a longer arrow lifts a name clear — so the small slices
+        /// crowding twelve o'clock stack up over the pie.
+        ///
+        /// ponytail: no arrow past `longest`, the room there is. Three slices under 2% side by
+        /// side at three or nine o'clock would still touch; part them sideways if a month
+        /// ever draws that.
+        func callouts(radius: Double, reach: Double, line: Double, longest: Double) -> [Callout] {
             let kinds = ranked
             let whole = kinds.reduce(0) { $0 + (spent[$1] ?? 0) }
             var turned = 0.0
             var out = kinds.map { kind in
                 let part = (spent[kind] ?? 0) / whole
                 defer { turned += part }
-                let turn = turned + part / 2
-                return Callout(kind: kind, turn: turn, y: -radius * cos(2 * .pi * turn))
+                return Callout(kind: kind, turn: turned + part / 2, length: reach)
             }
-            for right in [true, false] {
-                let side = out.indices.filter { out[$0].right == right }
-                let away = right ? 1.0 : -1.0
-                for (before, index) in zip(side, side.dropFirst()) {
-                    out[index].y = away * max(away * out[index].y, away * out[before].y + line)
-                }
-                guard let last = side.last, away * out[last].y > reach else { continue }
-                out[last].y = away * reach
-                for (after, index) in zip(side.reversed(), side.reversed().dropFirst()) {
-                    out[index].y = away * min(away * out[index].y, away * out[after].y - line)
+            func lift(_ index: Int) -> Double { abs(cos(2 * .pi * out[index].turn)) }
+            for quarter in 0 ..< 4 {
+                var floor = -Double.infinity
+                for index in out.indices.filter({ min(3, Int(out[$0].turn * 4)) == quarter })
+                    .sorted(by: { lift($0) < lift($1) }) {
+                    if (radius + out[index].length) * lift(index) < floor + line {
+                        out[index].length = min(longest, (floor + line) / lift(index) - radius)
+                    }
+                    floor = (radius + out[index].length) * lift(index)
                 }
             }
             return out
@@ -306,18 +315,28 @@ struct MoneyColumn: View {
 ///
 /// The kinds are the month's own ranking — see `Month.ranked`: the pie turns from twelve
 /// o'clock, the largest first. Each slice has an arrow out to its name and no legend beside
-/// the pie (asked 2026-10-11, with the larger pie): the name is read where the slice is.
+/// the pie (asked 2026-10-11, with the larger pie): the name is read where the slice is, and
+/// its percentage inside it (asked 2026-10-12).
 private struct MoneyMonth: View {
     let month: Money.Month
 
     private static let pie: CGFloat = 96
-    /// The room over and under the pie, for a name pushed past its rim.
-    private static let spill: CGFloat = 14
-    /// From the rim to where the names start.
-    private static let gap: CGFloat = 16
+    /// How far past the rim an arrow runs, and the most it is stretched to part two names.
+    private static let reach: CGFloat = 10
+    private static let longest: CGFloat = 34
+    /// The least a slice takes for its percentage to fit inside it: under that, it follows
+    /// the name.
+    private static let roomy = 7
 
     var body: some View {
         let kinds = month.ranked
+        let shares = month.shares
+        let radius = Double(Self.pie) / 2
+        let callouts = month.callouts(radius: radius, reach: Self.reach, line: 11.5, longest: Self.longest)
+        // The room over and under the pie is what the names past its rim take, and no more.
+        let tips = callouts.map { $0.point(radius: radius, past: $0.length).y }
+        let over = max(radius, -(tips.min() ?? 0) + 7)
+        let under = max(radius, (tips.max() ?? 0) + 7)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(month.name)
@@ -331,17 +350,17 @@ private struct MoneyMonth: View {
             // The arrow in the slice's colour, the name in the panel's own grey: the colour says
             // which, the text stays text.
             Canvas { context, size in
-                let radius = Self.pie / 2
-                let centre = CGPoint(x: size.width / 2, y: Self.spill + radius)
-                for callout in month.callouts(radius: radius, line: 11.5, reach: radius + Self.spill - 6) {
+                let centre = CGPoint(x: size.width / 2, y: over)
+                for callout in callouts {
+                    func at(_ past: Double) -> CGPoint {
+                        let point = callout.point(radius: radius, past: past)
+                        return CGPoint(x: centre.x + point.x, y: centre.y + point.y)
+                    }
                     let side: CGFloat = callout.right ? 1 : -1
-                    let angle = 2 * .pi * callout.turn
-                    let rim = CGPoint(x: centre.x + (radius + 1) * sin(angle),
-                                      y: centre.y - (radius + 1) * cos(angle))
-                    let tip = CGPoint(x: centre.x + side * (radius + Self.gap), y: centre.y + callout.y)
-                    let back = atan2(rim.y - tip.y, rim.x - tip.x)
+                    let tip = at(callout.length)
+                    let back = atan2(centre.y - tip.y, centre.x - tip.x)
                     var arrow = Path()
-                    arrow.move(to: rim)
+                    arrow.move(to: at(1))
                     arrow.addLine(to: tip)
                     for barb in [-0.5, 0.5] {
                         arrow.move(to: tip)
@@ -350,14 +369,22 @@ private struct MoneyMonth: View {
                     }
                     context.stroke(arrow, with: .color(callout.kind.tint),
                                    style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                    context.draw(Text(callout.kind.title)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.white.opacity(0.5)),
+                    let share = shares[callout.kind] ?? 0
+                    let percent = Text("\(share)%").font(.system(size: 9, weight: .semibold).monospacedDigit())
+                    let name = Text(callout.kind.title)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
+                    context.draw(share < Self.roomy ? name + Text(" ") + percent.foregroundStyle(.white.opacity(0.85)) : name,
                                  at: CGPoint(x: tip.x + side * 4, y: tip.y),
                                  anchor: callout.right ? .leading : .trailing)
+                    // Dark on the slice's own colour: against every one of the nine it reads
+                    // better than white does.
+                    if share >= Self.roomy {
+                        context.draw(percent.foregroundStyle(.black.opacity(0.85)), at: at(-radius * 0.32))
+                    }
                 }
             }
-            .frame(height: Self.pie + 2 * Self.spill)
+            .frame(height: over + under)
             .background(alignment: .top) {
                 // The inset is the ground showing between two slices: neighbours change with
                 // the month, and two close colours side by side still read as two.
@@ -366,7 +393,7 @@ private struct MoneyMonth: View {
                         .foregroundStyle(kind.tint)
                 }
                 .frame(width: Self.pie, height: Self.pie)
-                .padding(.top, Self.spill)
+                .padding(.top, over - radius)
             }
         }
     }

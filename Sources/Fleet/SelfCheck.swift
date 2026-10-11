@@ -63,13 +63,14 @@ enum SelfCheck {
         // would sit on top of one another.
         let crowded = Money.Month(id: "2026-10", spent: [.food: 62, .transport: 12, .leisure: 9,
                                                          .clothes: 8, .subscriptions: 6, .health: 3])
-        let callouts = crowded.callouts(radius: 48, line: 11.5, reach: 56)
+        let callouts = crowded.callouts(radius: 48, reach: 10, line: 11.5, longest: 34)
         expect(callouts.filter(\.right).map(\.kind) == [.food] && callouts.count == 6, true,
                "money: a slice's name on its side of the pie")
-        let left = callouts.filter { !$0.right }.map(\.y)
-        expect(zip(left, left.dropFirst()).allSatisfy { $0 - $1 >= 11.499 }
-               && left.allSatisfy { abs($0) <= 56 }, true,
-               "money: names that would touch part, inside the room there is")
+        // The quarter up to twelve o'clock, where the small slices end: each name over the last.
+        let heights = callouts.filter { $0.turn > 0.75 }.map { -$0.point(radius: 48, past: $0.length).y }
+        expect(heights.count == 4 && zip(heights, heights.dropFirst()).allSatisfy { $1 - $0 >= 11.499 }
+               && callouts.allSatisfy { $0.length >= 10 && $0.length <= 34 }, true,
+               "money: names that would touch part, each further out along its own radius")
     }
 
     // MARK: - Reels
