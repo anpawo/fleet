@@ -8,10 +8,10 @@ import SwiftUI
 enum Money {
     static let file = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".bnp/payments.csv")
 
-    /// What a payment was for. Nine, in a fixed order: the export names eighteen categories, and
-    /// eighteen percentages a month are a statement, not a glance. A colour belongs to its kind
-    /// in every month. The order is the grid's, three a row, and was picked with the colours:
-    /// no kind sits beside or above one a colour-blind eye would take it for.
+    /// What a payment was for. Nine: the export names eighteen categories, and eighteen
+    /// percentages a month are a statement, not a glance. A colour belongs to its kind in
+    /// every month; its place does not, a month ranks its own — so two colours a colour-blind
+    /// eye confuses can sit side by side, and the name beside the dot is what says which.
     enum Kind: CaseIterable {
         case food, transport, shopping, clothes, leisure, subscriptions, health, loan, other
 
@@ -29,8 +29,8 @@ enum Money {
             }
         }
 
-        /// Checked as a set against the block's green: lightness, colour-blind separation of
-        /// each neighbour, 3:1 on the ground. Grey for what has no name of its own.
+        /// Checked as a set against the block's green: lightness, 3:1 on the ground. Grey for
+        /// what has no name of its own.
         var tint: Color {
             switch self {
             case .food: Color(red: 0.224, green: 0.529, blue: 0.898)
@@ -104,6 +104,14 @@ enum Money {
             let lost = exact.sorted { $0.share - $0.share.rounded(.down) > $1.share - $1.share.rounded(.down) }
             for entry in lost.prefix(max(0, left)) { shares[entry.kind, default: 0] += 1 }
             return shares
+        }
+
+        /// The kinds the month shows, the largest first; one that reads 0% is left out (asked
+        /// 2026-10-11, the day there were nine and a short month had six noughts).
+        var ranked: [Kind] {
+            let shares = shares
+            return Kind.allCases.filter { (shares[$0] ?? 0) > 0 }
+                .sorted { (spent[$0] ?? 0) > (spent[$1] ?? 0) }
         }
 
         var name: String {
@@ -288,8 +296,8 @@ struct MoneyColumn: View {
 
 /// One month: its name and what it cost, what each kind took of that, and its largest lines.
 ///
-/// Nine kinds in the same nine places every month, one that took nothing included: a grid that
-/// closes up over a nought moves every figure after it, and two months stop comparing by eye.
+/// The kinds are the month's own ranking — see `Month.ranked` — not nine fixed places: the same
+/// kind is not in the same cell from one month to the next.
 private struct MoneyMonth: View {
     let month: Money.Month
 
@@ -297,7 +305,7 @@ private struct MoneyMonth: View {
     private static let columns = 3
 
     var body: some View {
-        let kinds = Money.Kind.allCases
+        let kinds = month.ranked
         let shares = month.shares
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -312,8 +320,13 @@ private struct MoneyMonth: View {
             VStack(spacing: 3) {
                 ForEach(Array(stride(from: 0, to: kinds.count, by: Self.columns)), id: \.self) { start in
                     HStack(spacing: 4) {
-                        ForEach(kinds[start..<min(start + Self.columns, kinds.count)], id: \.self) { kind in
-                            share(kind, shares[kind] ?? 0)
+                        // A short last row keeps the columns of the rows above it.
+                        ForEach(start..<start + Self.columns, id: \.self) { index in
+                            if index < kinds.count {
+                                share(kinds[index], shares[kinds[index]] ?? 0)
+                            } else {
+                                Color.clear.frame(maxWidth: .infinity).frame(height: 0)
+                            }
                         }
                     }
                 }
@@ -327,18 +340,16 @@ private struct MoneyMonth: View {
     }
 
     /// The name in the panel's own grey beside a dot of the colour: the colour says which, the
-    /// text stays text. The figure is dim only when nothing at all went on the kind — a kind
-    /// that took half a percent reads 0% too, and is not nothing.
+    /// text stays text.
     private func share(_ kind: Money.Kind, _ percent: Int) -> some View {
-        let spent = month.spent[kind] ?? 0
-        return HStack(spacing: 3) {
+        HStack(spacing: 3) {
             Circle().fill(kind.tint).frame(width: 6, height: 6)
             Text(kind.title)
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.5))
             Text("\(percent)%")
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
-                .foregroundStyle(.white.opacity(spent > 0 ? 0.85 : 0.3))
+                .foregroundStyle(.white.opacity(0.85))
         }
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)

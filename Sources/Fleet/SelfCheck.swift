@@ -60,6 +60,8 @@ enum SelfCheck {
         expect(read.latest == "2026-10-04", true, "money: the day of the newest payment")
         expect(read.months.first?.shares.values.reduce(0, +) == 100, true, "money: a month's shares add up to 100")
         expect(read.months.last?.shares[.food] == 100, true, "money: one kind alone is the whole month")
+        expect(read.months.first?.ranked == [.loan, .clothes, .transport, .shopping], true,
+               "money: a month's kinds the largest first, one that reads 0% left out")
         expect(read.months.first?.payments.prefix(2).map(\.amount) == [-250.00, 20], true,
                "money: the largest lines first, a credit among them")
         expect(read.months.first?.payments.prefix(3).map(\.name) == ["Loan repayment", "Salary", "F"], true,
