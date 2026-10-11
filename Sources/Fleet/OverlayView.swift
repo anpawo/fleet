@@ -991,8 +991,11 @@ struct GroupTile: View {
     }
 
     /// The head first, top left, whatever it was touched last: it is the card you came for.
+    /// One order for the folded lines and the open cards, so the first of either is what ⌘ opens.
+    private var ordered: [Session] { sessions.sorted { a, _ in a.id == head?.id } }
+
     private var rows: [[Session]] {
-        let ordered = sessions.sorted { a, _ in a.id == head?.id }
+        let ordered = ordered
         return stride(from: 0, to: ordered.count, by: 2).map {
             Array(ordered[$0 ..< min($0 + 2, ordered.count)])
         }
@@ -1029,7 +1032,7 @@ struct GroupTile: View {
     /// ⌘ is down rather than only once the click has been spent.
     @ViewBuilder private var folded: some View {
         let rows = VStack(alignment: .leading, spacing: 3) {
-            ForEach(sessions) { session in
+            ForEach(ordered) { session in
                 let isHead = session.id == head?.id
                 HStack(spacing: 7) {
                     Circle().fill(session.state.tint).frame(width: 7, height: 7)
