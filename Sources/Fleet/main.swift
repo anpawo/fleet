@@ -1,0 +1,978 @@
+import AppKit
+import SwiftUI
+
+/// The "show the panel now" request, used by every manual trigger: opening Fleet.app from
+/// Spotlight, the `fleet` command, or a second `open` of the bundle. Distributed rather than
+/// local because the request is nearly always raised by a *different* process than the
+/// resident one that owns the panel.
+enum ShowRequest {
+    static let name = Notification.Name("com.mr.fleet.show")
+
+    static func post() {
+        DistributedNotificationCenter.default().postNotificationName(
+            name, object: nil, userInfo: nil, deliverImmediately: true)
+    }
+}
+
+/// Background agent. No dock icon; its only permanent presence is the menu bar plane, and
+/// everything else it has to say goes in the panel.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let controller = AppController()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        controller.start()
+
+
+        DistributedNotificationCenter.default().addObserver(
+            forName: ShowRequest.name, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.controller.toggleOnDemand() }
+        }
+
+        if let f = CommandLine.arguments.firstIndex(of: "--fake"),
+           f + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[f + 1]) {
+            controller.pretendFleet = DemoFleet.sessions(n)
+        }
+
+        if CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--show") {
+            controller.toggleOnDemand()
+        }
+    }
+
+    /// Launching an already-running bundle (Spotlight, Dock, `open`) arrives here instead of
+    /// starting a second process, so this is the usual path for a manual trigger.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        controller.toggleOnDemand()
+        return true
+    }
+}
+
+// `--install-hooks` points Claude Code at the state hook, which is what makes a tile's colour
+// something Claude Code reported rather than something Fleet inferred. Separate from launching
+// the app because it edits ~/.claude/settings.json, and a file the user owns is not something
+// an app should quietly rewrite the first time it starts.
+if CommandLine.arguments.contains("--install-hooks") {
+    do {
+        let path = try Hooks.install()
+        print("Installed the session-state hooks into \(path)")
+        print("  script: \(Hooks.scriptPath)")
+        print("  state:  \(Hooks.stateDirectory)/<session-id>.json")
+        print("  backup: \(path).fleet-backup")
+        print("")
+        print("Sessions already running keep the inferred state until they are restarted.")
+    } catch {
+        let why = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        print("failed: \(why)")
+        exit(1)
+    }
+    exit(0)
+}
+
+// The way back out, so installing is not a one-way door.
+if CommandLine.arguments.contains("--uninstall-hooks") {
+    do {
+        let removed = try Hooks.uninstall()
+        print(removed ? "Removed Fleet's hooks from \(Hooks.settingsPath)"
+                      : "Fleet's hooks were not installed.")
+    } catch {
+        let why = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        print("failed: \(why)")
+        exit(1)
+    }
+    exit(0)
+}
+
+// `--memory` is the reaper, out loud and with its hands tied: it prints the pressure, every
+// candidate with the verdict of both gates, and the processes it would never touch on its own.
+// Nothing is killed. This is how the rule gets checked without waiting for a real squeeze — and
+// without the panel, which is the only other place any of it is visible.
+if CommandLine.arguments.contains("--memory") {
+    MainActor.assumeIsolated {
+        let swap = MemoryPressure.swap()
+        print("pressure: \(MemoryPressure.level())")
+        print("swap:     \(byteLabel(swap.used)) of \(byteLabel(swap.total))")
+
+        // Two samples: a CPU percentage is a difference between them, so one alone says
+        // nothing — the same reason a freshly launched Fleet reaps nothing for two minutes.
+        let reaper = Reaper()
+        reaper.tick()
+        Thread.sleep(forTimeInterval: 1.5)
+        reaper.tick()               // the second sample is the one that yields a percentage
+
+        print("\ncandidates:")
+        for candidate in Reaper.candidates() {
+            let gate = Reaper.isUnused(candidate) ? "unused" : "IN USE"
+            print("  \(candidate.name) [pid \(candidate.pid)] "
+                  + "\(byteLabel(candidate.rss)) — \(gate)")
+        }
+
+        // `--memory --reap` runs it for real. Same two gates, only the pressure trigger is
+        // bypassed — this is you deciding it is time rather than the kernel saying so.
+        if CommandLine.arguments.contains("--reap") {
+            print("")
+            for candidate in Reaper.candidates() where Reaper.isUnused(candidate) {
+                guard reaper.isIdle(candidate.pid, window: 0) else {
+                    print("  skipping \(candidate.name): using CPU right now")
+                    continue
+                }
+                let sent = candidate.terminate()
+                print("  \(sent ? "killed" : "could not kill") \(candidate.name) "
+                      + "[pid \(candidate.pid)] — \(candidate.reason)")
+            }
+        }
+
+        print("\nbiggest, hands off:")
+        for hog in Reaper.topHogs(reapable: []) {
+            print("  \(hog.name) [pid \(hog.pid)] \(hog.sizeLabel)")
+        }
+        exit(0)
+    }
+}
+
+// `--scan` prints what the app currently sees and exits: a headless way to check session
+// discovery, transcript binding and state colours without waiting to go idle.
+// `--bench` times the work a visible panel repeats every second, which is the only work that
+// can stutter a scroll: everything below runs on the main actor while SwiftUI wants the frame.
+if CommandLine.arguments.contains("--bench") {
+    MainActor.assumeIsolated {
+        func time(_ name: String, _ body: () -> Void) {
+            let start = Date()
+            body()
+            print(String(format: "  %-28s %6.1f ms", (name as NSString).utf8String!,
+                         Date().timeIntervalSince(start) * 1000))
+        }
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        var sessions: [Session] = []
+        print("registry:")
+        for i in 1 ... 5 { time("refresh #\(i)") { sessions = registry.refresh() } }
+        print("\nparts (\(sessions.count) sessions):")
+        time("ProcessScanner.scan") { _ = ProcessScanner.scan() }
+        time("Reaper.candidates") { _ = Reaper.candidates() }
+        time("Reaper.topHogs") { _ = Reaper.topHogs(reapable: []) }
+        time("MemoryPressure.footprint") { _ = MemoryPressure.footprint() }
+        for session in sessions {
+            time("AX read \(session.dirName)") {
+                _ = TerminalFocus.visibleText(pid: session.proc.pid, tty: session.proc.tty,
+                                              cwd: session.proc.cwd)
+            }
+        }
+        exit(0)
+    }
+}
+
+// `--bench-panel` times the panel's own view tree, which `--bench` cannot see: the real
+// `OverlayView` in a window that is never ordered in, ticked, scrolled and hovered, in
+// main-thread CPU per step. Run it under `sample` for the call tree. What it cannot see is the
+// compositor — a window that is not on screen costs WindowServer nothing.
+if CommandLine.arguments.contains("--bench-panel") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let controller = AppController()
+        let registry = SessionRegistry()
+        controller.injectSessions(registry.refresh())
+        controller.hub.refresh()
+        let deadline = Date().addingTimeInterval(8)
+        while !controller.hub.loaded, controller.hub.failure == nil, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        let frame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered,
+                              defer: false)
+        let hosting = NSHostingView(rootView: OverlayView(controller: controller))
+        window.contentView = hosting
+        window.acceptsMouseMovedEvents = true
+
+        func cpu() -> Double {
+            var t = timespec()
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
+            return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
+        }
+        func settle() {
+            for _ in 0 ..< 3 { RunLoop.main.run(mode: .default, before: Date()) }
+            hosting.layoutSubtreeIfNeeded()
+            CATransaction.flush()
+        }
+        func time(_ name: String, steps: Int, _ body: (Int) -> Void) {
+            settle()
+            var worst = 0.0
+            let start = cpu()
+            for i in 0 ..< steps {
+                let t = cpu()
+                body(i)
+                settle()
+                worst = max(worst, cpu() - t)
+            }
+            print(String(format: "  %-34s %7.2f ms/step   worst %7.2f ms",
+                         (name as NSString).utf8String!, (cpu() - start) / Double(steps), worst))
+        }
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        func move(to point: CGPoint) {
+            guard let event = NSEvent.mouseEvent(with: .mouseMoved, location: point,
+                                                 modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber, context: nil,
+                                                 eventNumber: 0, clickCount: 0, pressure: 0) else { return }
+            window.sendEvent(event)
+        }
+
+        let first = cpu()
+        settle()
+        print("panel: \(controller.sessions.count) sessions, \(controller.hub.todos.count) todos, "
+              + "\(controller.hub.mail.count) mail")
+        // What each scrolling block was actually laid out at, which is what its frame is drawn
+        // round. A height of nothing is a block that came up empty; a height equal to the cap
+        // on a short list is a frame running off the bottom of the screen.
+        for scroller in scrollViews(hosting) {
+            print(String(format: "  %-34s %7.1f pt of %7.1f", ("scroller" as NSString).utf8String!,
+                         scroller.frame.height, scroller.documentView?.frame.height ?? 0))
+        }
+        print(String(format: "  %-34s %7.2f ms", ("first layout" as NSString).utf8String!,
+                     cpu() - first))
+
+        // What the compositor is handed. A shadow with no path and a mask are each an
+        // offscreen pass, every frame the layer under them moves.
+        var layers = 0, shadows = 0, pathless = 0, masks = 0, filtered = 0
+        var pixels = 0.0
+        func walk(_ layer: CALayer) {
+            layers += 1
+            if layer.shadowOpacity > 0 {
+                shadows += 1
+                if layer.shadowPath == nil { pathless += 1 }
+                if CommandLine.arguments.contains("--shadows") {
+                    print("    shadow \(type(of: layer)) \(Int(layer.bounds.width))x\(Int(layer.bounds.height))"
+                          + " r\(layer.shadowRadius) a\(layer.shadowColor?.alpha ?? -1)"
+                          + " path:\(layer.shadowPath != nil) sublayers:\(layer.sublayers?.count ?? 0)")
+                }
+            }
+            if layer.mask != nil { masks += 1 }
+            if !(layer.filters ?? []).isEmpty || layer.compositingFilter != nil { filtered += 1 }
+            if layer.contents != nil {
+                pixels += Double(layer.bounds.width * layer.bounds.height
+                    * layer.contentsScale * layer.contentsScale)
+            }
+            layer.sublayers?.forEach(walk)
+        }
+        hosting.layer.map(walk)
+        print("  layers \(layers), shadows \(shadows) (\(pathless) without a path), masks \(masks), "
+              + "filters \(filtered), backing \(Int(pixels / 1_000_000)) MP")
+
+        time("idle", steps: 60) { _ in }
+        time("tick (sessions republished)", steps: 150) { _ in
+            controller.injectSessions(registry.refresh())
+        }
+        // The rightmost scroll view is the todo column.
+        let scrolls = scrollViews(hosting).sorted { a, b in
+            a.convert(a.bounds, to: nil).minX < b.convert(b.bounds, to: nil).minX
+        }
+        print("  scroll views: \(scrolls.count)")
+        if let todo = scrolls.last {
+            let inWindow = todo.convert(todo.bounds, to: nil)
+            let pointer = CGPoint(x: inWindow.midX, y: inWindow.midY)
+            let range = max((todo.documentView?.frame.height ?? 0) - todo.contentSize.height, 0)
+            print("  todo scroll range: \(Int(range)) pt")
+            let scroll = { (i: Int) in
+                let y = range * (0.5 - 0.5 * cos(Double(i) / 60 * 2 * .pi))
+                todo.contentView.scroll(to: CGPoint(x: 0, y: y))
+                todo.reflectScrolledClipView(todo.contentView)
+            }
+            time("todo scroll, pointer away", steps: 120, scroll)
+            move(to: pointer)
+            time("todo scroll, pointer over column", steps: 120) { i in
+                scroll(i)
+                move(to: CGPoint(x: pointer.x + CGFloat(i % 2), y: pointer.y))
+            }
+            time("pointer sweeping the column", steps: 120) { i in
+                move(to: CGPoint(x: pointer.x, y: inWindow.minY + CGFloat(i * 4 % Int(inWindow.height))))
+            }
+            controller.modifiersChanged(.command)
+            time("same sweep, \u{2318} held", steps: 120) { i in
+                move(to: CGPoint(x: pointer.x, y: inWindow.minY + CGFloat(i * 4 % Int(inWindow.height))))
+            }
+        }
+        exit(0)
+    }
+}
+
+// The todo column as the panel would draw it, without the panel: section, due day, first line.
+if CommandLine.arguments.contains("--todos") {
+    Task { @MainActor in
+        let hub = HubStore()
+        hub.refresh()
+        while !hub.loaded, hub.failure == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        if let failure = hub.failure { print(failure); exit(1) }
+        let day = DateFormatter()
+        day.dateFormat = "dd/MM HH:mm"
+        var section: Todo.Bucket?
+        for todo in hub.todos {
+            if todo.bucket != section { section = todo.bucket; print(todo.bucket.title) }
+            let due = todo.due.map { day.string(from: $0) } ?? "    —    "
+            print("  \(due)  \(todo.title)")
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// The EPITECH block without the panel: the modules under way and the rendus still ahead.
+if let flag = CommandLine.arguments.firstIndex(of: "--epitech") {
+    // An optional path, so a state.json that says something this one does not — a dead session,
+    // a year's credits — can be put in front of the reader without touching the real file.
+    let file = flag + 1 < CommandLine.arguments.count
+        && !CommandLine.arguments[flag + 1].hasPrefix("--")
+        ? URL(fileURLWithPath: CommandLine.arguments[flag + 1]) : Epitech.file
+    guard let snapshot = Epitech.read(from: file) else {
+        print("no \(Epitech.file.path) — the scan has never run here")
+        exit(1)
+    }
+    let day = DateFormatter()
+    day.dateFormat = "dd/MM/yyyy"
+    for module in snapshot.modules {
+        print("  \(day.string(from: module.end))  \(module.name)  [\(module.code) \(module.instance)]")
+        for rendu in module.rendus {
+            print("      \(day.string(from: rendu.date))  \(rendu.title)")
+        }
+    }
+    print("\(snapshot.projectsDue) project(s) still to hand in, read \(shortAge(since: snapshot.readAt)) ago")
+    if let plan = snapshot.plan {
+        print("credits: done \(plan.banked) · to do \(plan.pending) (\(plan.ongoing) on-going, \(plan.upcoming) upcoming) · reachable \(plan.reachable)/\(plan.target) · missing \(plan.missing)")
+        for line in plan.done { print("  done   \(line.credits)  \(line.name)") }
+        for line in plan.todo { print("  to do  \(line.credits)  \(line.name)") }
+    } else {
+        print("credits: \(snapshot.credits.map { "\($0)/\(Epitech.creditsPerYear)" } ?? "unknown")")
+    }
+    print("trouble: \(snapshot.failure ?? "none")")
+    exit(0)
+}
+
+// `--fix <alert>` sends the headless Claude a click on that ALERT chip sends, and prints its
+// verdict — the one way to watch a fix happen. The whole report is in /tmp/fleet-fix.log.
+if let i = CommandLine.arguments.firstIndex(of: "--fix"), i + 1 < CommandLine.arguments.count {
+    let alert = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        print(await Fixer.run(alert, crons: Launchd.jobs()))
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// `--empty-terminals` lists the windows nobody ever typed in and the terminal apps with no
+// shell left in them, without closing anything. `--close` does close them, which is what the
+// panel's own sweep does every five minutes.
+if CommandLine.arguments.contains("--empty-terminals") {
+    let dryRun = !CommandLine.arguments.contains("--close")
+    let found = EmptyTerminals.sweep(dryRun: dryRun)
+    if found.isEmpty { print("nothing empty") }
+    for line in found { print((dryRun ? "would close  " : "closed  ") + line) }
+    exit(0)
+}
+
+// The Reels block without the panel: every Reel the phone was handed, its state, its verdict.
+if CommandLine.arguments.contains("--reels") {
+    Task { @MainActor in
+        let hub = HubStore()
+        await hub.syncReels()
+        for reel in hub.reels {
+            print("\(reel.id)  \(reel.badge.padding(toLength: 14, withPad: " ", startingAt: 0))  \(reel.label)")
+            if !reel.summary.isEmpty { print("    \(reel.summary)") }
+            if !reel.fleetError.isEmpty { print("    ! \(reel.fleetError)") }
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// `--reels-run` drains the backlog and exits: every Reel the phone could not check, then every
+// checked Reel nobody has read. This is the whole analyser — the resident app only ever reads
+// the collection to say what is in it. Run from its own LaunchAgent, `reels.scan`.
+//
+// Local, and not in the cloud: Instagram serves the video to a residential address and to
+// nothing else, the transcription is whisper.cpp on this machine's own cores, and the notes it
+// writes land in ~/self/reels-analysis. A datacenter would fail at the first step.
+if CommandLine.arguments.contains("--reels-run") {
+    Task { @MainActor in
+        let hub = HubStore()
+        hub.mayCheck = { true }
+        await hub.syncReels()
+        // Each finished check calls `syncReels` again, so the backlog drains on its own and
+        // this only has to wait for the quiet. The cap is under the cron's own interval, hourly
+        // since 22-09: a run still going past it is one Fleet calls hung — see `Launchd.allowance`.
+        let deadline = Date().addingTimeInterval(55 * 60)
+        while hub.working, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        print("\(stamp.string(from: Date())) reels: \(hub.reels.count) unread, \(hub.reelsReadToday) read today"
+              + (hub.working ? " — still working, stopped at the cap" : "")
+              + (hub.failedThisRun ? " — a check or a read failed" : ""))
+        exit(hub.failedThisRun ? 1 : 0)
+    }
+    RunLoop.main.run()
+}
+
+// `--reel-digest <shortcode>` prints what the background read would leave behind, writing nothing.
+if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
+   i + 1 < CommandLine.arguments.count {
+    let id = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        do {
+            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
+            else { print("no such reel"); exit(1) }
+            let d = try await Claude.digest(Reel(doc), themes: ReelDigest.themes(),
+                                            projects: ReelDigest.projects(), sessions: [:])
+            print("name: \(d.name ?? "-")\ngist: \(d.gist ?? "-")\nnote [\(d.theme)]: \(d.note ?? "-")\ntodo: \(d.todo ?? "-")")
+            for (name, line) in d.projects { print("project \(name): \(line)") }
+        } catch { print(error.localizedDescription); exit(1) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// `--check-reel <shortcode>` runs the whole pipeline on one document and writes the verdict,
+// the way the timer would — the one way to watch a check happen.
+if let i = CommandLine.arguments.firstIndex(of: "--check-reel"),
+   i + 1 < CommandLine.arguments.count {
+    let id = CommandLine.arguments[i + 1]
+    Task { @MainActor in
+        do {
+            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
+            else { print("no such reel"); exit(1) }
+            let reel = Reel(doc)
+            await ReelCheck.run(reel)
+            let after = try await Firestore.collection("factcheck").first(where: { $0.id == id }).map(Reel.init)
+            print(after.map { "\($0.badge)  \($0.summary)\n\($0.fleetError)" } ?? "gone")
+        } catch { print(error.localizedDescription); exit(1) }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
+// `--render-settings <path.png>` draws the settings window offscreen, controls and all. The
+// panel has `--render` for the same reason: the only honest way to look at this window is a
+// picture of it, because opening it lands it on whatever desktop is in front of you.
+if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
+   i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let view = NSHostingView(rootView: ControlCenterView(controller: AppController()))
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.frame = NSRect(origin: .zero, size: view.fittingSize)
+        view.layoutSubtreeIfNeeded()
+        if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            print("wrote \(CommandLine.arguments[i + 1]) \(view.bounds.size)")
+        }
+        exit(0)
+    }
+}
+
+if CommandLine.arguments.contains("--selftest") {
+    MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
+}
+
+if CommandLine.arguments.contains("--scan") {
+    MainActor.assumeIsolated {
+        let registry = SessionRegistry()
+        _ = registry.refresh()               // first pass seeds the CPU baseline
+        Thread.sleep(forTimeInterval: 0.6)
+        let sessions = registry.refresh()
+
+        guard !sessions.isEmpty else {
+            print("No Claude Code sessions running.")
+            exit(0)
+        }
+        print("\(sessions.count) session(s):\n")
+        for s in sessions {
+            let file = s.transcript.map { ($0.path as NSString).lastPathComponent } ?? "—"
+            print("  [\(s.state.label.padding(toLength: 9, withPad: " ", startingAt: 0))] "
+                  + "\(s.dirName)  pid=\(s.proc.pid)  tty=\(s.proc.tty)  "
+                  + String(format: "cpu=%.1f%%", s.cpuPercent))
+            print("      path:  \(s.displayPath)")
+            print("      topic: \(s.topic)")
+            print("      file:  \(file)")
+            if let t = s.transcript, t.hasPendingTool {
+                print("      pending: \(t.pendingToolNames.joined(separator: ", "))")
+            }
+            // Which of the two sources the colour above came from. A tile that looks wrong is
+            // either a hook that has not fired or an inference that is off, and they are fixed
+            // in completely different places.
+            let sessionID = ((s.transcript?.path ?? "") as NSString).lastPathComponent
+                .replacingOccurrences(of: ".jsonl", with: "")
+            if let hook = Hooks.record(sessionID: sessionID) {
+                let age = Int(Date().timeIntervalSince(hook.at))
+                print("      hook:  \(hook.state.label.lowercased()), \(age)s ago")
+            }
+            for agent in s.subagents {
+                print("      sub-agent: \(agent.kind) — \(agent.task)")
+                print("                 \(agent.step ?? "starting…")")
+            }
+            print("")
+        }
+        let threshold = Settings.idleThreshold
+        print(String(format: "idle: %.0fs (threshold %@)", IdleWatcher.idleSeconds(),
+                     threshold.isFinite ? "\(Int(threshold))s" : "never"))
+        if Hooks.isOutdated {
+            print("state hooks are from an older Fleet — sessions are still paired to their "
+                  + "transcripts by guesswork. Run `fleet --install-hooks`.")
+        } else if !Hooks.isInstalled {
+            print("state hooks not installed — colours are inferred from the transcripts. "
+                  + "Run `fleet --install-hooks`.")
+        }
+        // Two grants the panel leans on, both of which fail silently: without Accessibility a
+        // panel that opens on its own cannot take the keyboard back from whatever had it, and
+        // without notifications nothing is said when a session starts waiting on you.
+        print("accessibility: \(Desktop.accessibilityTrusted(prompt: false) ? "granted" : "DENIED")")
+        if let awake = ScreenWatcher.holdingDisplayAwake() {
+            print("display held awake by \"\(awake)\" — the idle trigger is deferred")
+        }
+        if let mic = MicWatcher.recording() {
+            print("\"\(mic)\" is recording — the idle trigger is deferred")
+        }
+        exit(0)
+    }
+}
+
+// `--parse <transcript.jsonl>` prints what one transcript parses to, without needing the
+// session that owns it to be running. The state a tile shows is mostly this parse, and a live
+// session is a poor thing to debug against: it will not hold still.
+if let i = CommandLine.arguments.firstIndex(of: "--parse"),
+   i + 1 < CommandLine.arguments.count {
+    let path = CommandLine.arguments[i + 1]
+    guard let info = TranscriptStore().info(for: path) else {
+        print("could not read \(path)")
+        exit(1)
+    }
+    print("title:    \(info.title ?? "—")")
+    print("cwd:      \(info.cwd ?? "—")")
+    print("turnOpen: \(info.turnOpen)")
+    print("pending:  \(info.pendingToolLabels.joined(separator: " | "))")
+    for agent in info.subagents {
+        let age = Int(Date().timeIntervalSince(agent.lastActivity))
+        print("sub-agent \(agent.kind) — \(agent.task)  (last wrote \(age)s ago)")
+        print("          \(agent.step ?? "starting…")")
+    }
+    print("preview:")
+    for line in info.preview.suffix(Config.railLineCount) { print("  \(line.text)") }
+    exit(0)
+}
+
+// `--windows [bundle-id]` lists a terminal's windows on the desktop you are on, and whether
+// each has that desktop to itself. The only way to check a placement from outside the app.
+if let i = CommandLine.arguments.firstIndex(of: "--windows") {
+    let bundle = i + 1 < CommandLine.arguments.count && !CommandLine.arguments[i + 1]
+        .hasPrefix("-") ? CommandLine.arguments[i + 1] : "com.apple.Terminal"
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        Desktop.accessibilityTrusted()
+        let lines = Desktop.describeWindows(ofBundle: bundle)
+        print(lines.isEmpty ? "no \(bundle) windows on this desktop"
+                            : lines.joined(separator: "\n"))
+        exit(0)
+    }
+}
+
+// `--new-desktop` does what the panel's `+` does: a terminal, on a desktop macOS makes for it.
+// `--spaces-bar` takes the other route instead — Mission Control's own `+`, pressed through the
+// Dock's accessibility tree — which is the only way to a real, empty Space and the part a macOS
+// update can move under us. Worth a flag each: they fail differently.
+if CommandLine.arguments.contains("--new-desktop") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        if CommandLine.arguments.contains("--spaces-bar") {
+            print("new desktop: \(Spaces.addDesktop(switchingTo: true) ? "ok" : "failed")")
+            exit(0)
+        }
+        print("terminal: \(TerminalLaunch.openTerminal(in: Config.projectRoot) ? "ok" : "failed")")
+        // The desktop is given asynchronously, by a poll that outlives this line.
+        RunLoop.main.run(until: Date().addingTimeInterval(6))
+        for line in Desktop.describeWindows(ofBundle: "com.apple.Terminal") { print("  \(line)") }
+        exit(0)
+    }
+}
+
+// `--start <directory> ["<prompt>"]` opens a session the way the panel does — new window, its
+// own desktop — without going through the classifier. The placement is the part that breaks,
+// and typing a sentence into the panel every time is a poor way to test a window server.
+if let i = CommandLine.arguments.firstIndex(of: "--start"),
+   i + 1 < CommandLine.arguments.count {
+    let directory = CommandLine.arguments[i + 1]
+    let prompt = i + 2 < CommandLine.arguments.count ? CommandLine.arguments[i + 2] : ""
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let ok = TerminalLaunch.startSession(in: directory, prompt: prompt)
+        print("start in \(directory): \(ok ? "ok" : "failed")")
+        // The desktop is given asynchronously — it polls for the new window. Exiting here
+        // would kill that before it ran, and the wait has to outlast the poll's own timeout or
+        // the interesting case is the one that never gets reported.
+        RunLoop.main.run(until: Date().addingTimeInterval(6))
+        for line in Desktop.describeWindows(ofBundle: "com.apple.Terminal") { print("  \(line)") }
+        exit(ok ? 0 : 1)
+    }
+}
+
+// `--route "<sentence>"` runs one sentence through the classifier and prints where it would
+// go, without starting a session or opening a window. The routing path is otherwise only
+// reachable through the panel, which is a poor way to debug a prompt.
+if let i = CommandLine.arguments.firstIndex(of: "--route"),
+   i + 1 < CommandLine.arguments.count {
+    let said = CommandLine.arguments[i + 1]
+    let done = DispatchSemaphore(value: 0)
+    Task {
+        defer { done.signal() }
+        let projects = (try? FileManager.default.contentsOfDirectory(atPath: Config.projectRoot))
+            ?? []
+        do {
+            let started = Date()
+            let route = try await Claude.classify(said, projects: projects.filter {
+                !$0.hasPrefix(".")
+            })
+            print("kind:    \(route.kind.rawValue)")
+            print("project: \(route.project.isEmpty ? "—" : route.project)")
+            print("prompt:  \(route.prompt)")
+            print(String(format: "took:    %.1fs", Date().timeIntervalSince(started)))
+        } catch {
+            let why = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            print("failed: \(why)")
+        }
+    }
+    done.wait()
+    exit(0)
+}
+
+if CommandLine.arguments.contains("--ax-probe") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        print("trusted: \(AXIsProcessTrusted())")
+        let index = CommandLine.arguments.firstIndex(of: "--ax-probe")!
+        let wanted = index + 1 < CommandLine.arguments.count
+            ? pid_t(CommandLine.arguments[index + 1]) : nil
+        guard let term = NSWorkspace.shared.runningApplications.first(where: { app in
+            if let wanted { return app.processIdentifier == wanted }
+            return app.bundleIdentifier == "com.apple.Terminal"
+        }) else { print("Terminal not running"); exit(1) }
+
+        let app = AXUIElementCreateApplication(term.processIdentifier)
+        print("probing pid \(term.processIdentifier) (\(term.bundleIdentifier ?? "?"))")
+
+        var names: CFArray?
+        let nameErr = AXUIElementCopyAttributeNames(app, &names)
+        print("app attributes: err=\(nameErr.rawValue) "
+              + "\((names as? [String] ?? []).prefix(12).joined(separator: ", "))")
+
+        var systemWide: CFTypeRef?
+        let swErr = AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
+                                                  kAXFocusedApplicationAttribute as CFString,
+                                                  &systemWide)
+        print("system-wide focused app: err=\(swErr.rawValue)")
+
+        print("all app attributes: \((names as? [String] ?? []).joined(separator: ", "))")
+
+        var value: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+        var windows = (value as? [AXUIElement]) ?? []
+        print("AXWindows: err=\(err.rawValue) count=\(windows.count)")
+
+        var focused: CFTypeRef?
+        let fErr = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString,
+                                                 &focused)
+        print("AXFocusedWindow: err=\(fErr.rawValue) present=\(focused != nil)")
+        if windows.isEmpty, let focused {
+            windows = [focused as! AXUIElement]
+        }
+
+        var main: CFTypeRef?
+        let mErr = AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &main)
+        print("AXMainWindow: err=\(mErr.rawValue) present=\(main != nil)")
+
+        for (n, window) in windows.enumerated() {
+            var title: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+            var full: CFTypeRef?
+            let fullErr = AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &full)
+            var settable: DarwinBoolean = false
+            AXUIElementIsAttributeSettable(window, "AXFullScreen" as CFString, &settable)
+            print("  [\(n)] \(title as? String ?? "?") — AXFullScreen err=\(fullErr.rawValue) "
+                  + "value=\(full as? Bool ?? false) settable=\(settable.boolValue)")
+        }
+        exit(0)
+    }
+}
+
+// `--launch <directory> [prompt]` runs the session-starting path on its own: a terminal window
+// opens, `claude` starts in it, and — with `Config.openInOwnDesktop` on — it is thrown onto a
+// desktop of its own. Speaking at the panel is otherwise the only way to reach this, and the
+// Accessibility grant it needs cannot be tested from a shell: the permission belongs to the
+// app that asks, so it has to be Fleet asking.
+if let i = CommandLine.arguments.firstIndex(of: "--launch"),
+   i + 1 < CommandLine.arguments.count {
+    let directory = (CommandLine.arguments[i + 1] as NSString).expandingTildeInPath
+    let prompt = i + 2 < CommandLine.arguments.count ? CommandLine.arguments[i + 2] : ""
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let trusted = AXIsProcessTrusted()
+        print("accessibility: \(trusted ? "granted" : "NOT granted — the window will stay on this desktop")")
+        let ok = TerminalLaunch.startSession(in: directory, prompt: prompt)
+        print("launch \(directory): \(ok ? "ok" : "failed")")
+        // Run the loop rather than sleeping on it: the fullscreen step waits for the window
+        // to be placed, and it is a main-actor task — a blocked main thread never runs it.
+        RunLoop.main.run(until: Date().addingTimeInterval(4))
+        exit(ok ? 0 : 1)
+    }
+}
+
+// `--render <path.png>` draws the panel offscreen. Useful for checking layout without waiting
+// to go idle, and for generating the screenshot in the README.
+if let i = CommandLine.arguments.firstIndex(of: "--render"),
+   i + 1 < CommandLine.arguments.count,
+   !CommandLine.arguments[i + 1].hasPrefix("--") {
+    let outPath = CommandLine.arguments[i + 1]
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        _ = registry.refresh()
+        let controller = AppController()
+        // `--fake <n>` draws a fleet of n synthetic sessions instead of the live one, which is
+        // how the grid's shape is checked at counts you do not have running.
+        if let f = CommandLine.arguments.firstIndex(of: "--fake"),
+           f + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[f + 1]) {
+            controller.injectSessions(DemoFleet.sessions(n))
+        } else {
+            controller.injectSessions(registry.refresh())
+        }
+
+        // The side columns come off the network, and an offscreen render has nobody to wait for
+        // them. Waiting by spinning the run loop rather than blocking on it: the fetch lands on
+        // the main actor, and a blocked main thread would never let it finish.
+        //
+        // A failed first fetch is retried rather than taken as the end of the wait: stopping on
+        // it drew both columns at "Loading…" after 1.3 s, one render in five (patch notes).
+        controller.hub.refresh()
+        let deadline = Date().addingTimeInterval(8)
+        while controller.hub.isConfigured,
+              !controller.hub.loaded || controller.hub.reelsFetchedAt == .distantPast,
+              Date() < deadline {
+            if controller.hub.failure != nil, !controller.hub.loaded, !controller.hub.fetching {
+                controller.hub.refresh()
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        }
+
+        // `--cmd` draws the panel as it looks with ⌘ held: the todo column's ✕s are otherwise
+        // impossible to see in a render, since nobody is holding a key.
+        if CommandLine.arguments.contains("--cmd") {
+            controller.modifiersChanged(.command)
+        }
+        // `--strain` draws the memory block in its amber state, which otherwise needs the
+        // machine to actually be on its knees.
+        if CommandLine.arguments.contains("--strain") {
+            controller.reaper.simulateStrain()
+        }
+        // `--no-mail` draws the left column the day the inbox is empty: MAIL folded, EPITECH
+        // grown into its room.
+        if CommandLine.arguments.contains("--no-mail") {
+            controller.hub.mail = []
+        }
+        // `--reel` draws the pink block a Reel being analyzed hangs over the memory.
+        if CommandLine.arguments.contains("--reel") {
+            controller.hub.checkingReel = "demo"
+        }
+        // `--hung <label>` and `--deferred <label>`: that routine's card and ALERT line as the
+        // day it hangs on a dead mount, or runs with the wifi out.
+        for (flag, hung) in [("--hung", true), ("--deferred", false)] {
+            if let h = CommandLine.arguments.firstIndex(of: flag), h + 1 < CommandLine.arguments.count {
+                controller.launchd.simulate(CommandLine.arguments[h + 1], hung: hung)
+            }
+        }
+        // `--fixing <alert>`: that ALERT chip as it is while a headless Claude is out on it.
+        if let f = CommandLine.arguments.firstIndex(of: "--fixing"), f + 1 < CommandLine.arguments.count {
+            controller.fixer.simulate(CommandLine.arguments[f + 1])
+        }
+
+        // `--open <directory>` draws a group unfolded. It is the one state a render cannot
+        // otherwise reach — nothing opens a group but a click — and it is the state whose
+        // spacing is hardest to get right, since the cards inside carry their own glow.
+        if let o = CommandLine.arguments.firstIndex(of: "--open"),
+           o + 1 < CommandLine.arguments.count {
+            controller.openGroup = CommandLine.arguments[o + 1]
+        }
+
+        // `--size <w>x<h>` frames the render. The default is a laptop screen; a screenshot for
+        // somewhere else usually wants a different shape, and cropping one out of the other
+        // moves the panel off its own centre.
+        var size = CGSize(width: 1512, height: 1100)
+        if let i = CommandLine.arguments.firstIndex(of: "--size"),
+           i + 1 < CommandLine.arguments.count {
+            let parts = CommandLine.arguments[i + 1].lowercased().split(separator: "x")
+            if parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]) {
+                size = CGSize(width: w, height: h)
+            }
+        }
+
+        // `--settings` renders the control centre instead of the panel — same reason: seeing
+        // the layout without a window opening on whatever desktop you are working on.
+        // `--live` draws the panel the way the window does — scroll views and all — by hosting
+        // it in a window that is laid out and never shown. `ImageRenderer` leaves every
+        // scroll view blank, and the layout inside one is the layout you get on screen.
+        let live = CommandLine.arguments.contains("--live")
+        let view = CommandLine.arguments.contains("--settings")
+            ? AnyView(ControlCenterView(controller: controller).frame(width: 420, height: 620))
+            : AnyView(OverlayView(controller: controller, eagerLayout: !live)
+                .frame(width: size.width, height: size.height))
+        if live {
+            let host = NSHostingView(rootView: view)
+            host.frame = CGRect(origin: .zero, size: size)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless,
+                                  backing: .buffered, defer: false)
+            window.contentView = host
+            for _ in 0 ..< 10 { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            host.layoutSubtreeIfNeeded()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                print("render failed"); exit(1)
+            }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            guard let png = rep.representation(using: .png, properties: [:]) else {
+                print("render failed"); exit(1)
+            }
+            try? png.write(to: URL(fileURLWithPath: outPath))
+            print("wrote \(outPath)")
+            exit(0)
+        }
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+
+        guard let image = renderer.nsImage,
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            print("render failed")
+            exit(1)
+        }
+        try? png.write(to: URL(fileURLWithPath: outPath))
+        print("wrote \(outPath)")
+        exit(0)
+    }
+}
+
+// `--screen <pid>` prints what Fleet can read off that session's terminal tab, and what it
+// makes of it. Two tile colours now depend on this working, and it can fail for reasons that
+// are invisible from the panel — a denied Automation permission, a terminal without tab-level
+// scripting, a `contents` property that came back empty.
+if let i = CommandLine.arguments.firstIndex(of: "--screen"),
+   i + 1 < CommandLine.arguments.count,
+   let pid = pid_t(CommandLine.arguments[i + 1]) {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        guard let session = registry.refresh().first(where: { $0.proc.pid == pid }) else {
+            print("no session with pid \(pid)")
+            exit(1)
+        }
+        guard let text = TerminalFocus.visibleText(pid: pid, tty: session.proc.tty, cwd: session.proc.cwd) else {
+            print("could not read the tab for \(session.dirName) (tty \(session.proc.tty))")
+            exit(1)
+        }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        print("--- last 12 lines on \(session.dirName) (tty \(session.proc.tty))")
+        for line in lines.suffix(12) { print("| \(line)") }
+        print("--- verdict: \(TerminalWatch.read(text))")
+        exit(0)
+    }
+}
+
+// `--focus <pid>` runs just the tab-raising path for one session and reports what happened.
+// Clicking a tile is otherwise the only way to exercise it, which makes a silent failure —
+// a missing Automation permission, usually — awkward to tell apart from a layout problem.
+if let i = CommandLine.arguments.firstIndex(of: "--focus"),
+   i + 1 < CommandLine.arguments.count,
+   let pid = pid_t(CommandLine.arguments[i + 1]) {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let registry = SessionRegistry()
+        guard let session = registry.refresh().first(where: { $0.proc.pid == pid }) else {
+            print("no session with pid \(pid)")
+            exit(1)
+        }
+        let ok = TerminalFocus.focus(session: session)
+        print("focus \(session.dirName) (tty \(session.proc.tty)): \(ok ? "ok" : "failed")")
+        // Raising the window across a desktop is asynchronous — it polls for the focused window
+        // once the app is frontmost. Exiting here would kill it before it ran, and this flag
+        // exists precisely to exercise the whole path.
+        RunLoop.main.run(until: Date().addingTimeInterval(3))
+        exit(ok ? 0 : 1)
+    }
+}
+
+// Optional override: --idle <seconds>. Persisted, like the menu's own choice — the resident
+// copy reads it on every tick, so this reaches the agent already running.
+if let i = CommandLine.arguments.firstIndex(of: "--idle"),
+   i + 1 < CommandLine.arguments.count,
+   let seconds = TimeInterval(CommandLine.arguments[i + 1]) {
+    Settings.idleThreshold = max(5, seconds)
+}
+
+// Every flag above either acted and exited or set something. One that matched nothing falls
+// through to here, and the fall-through is the whole agent starting up: a typo in a flag used
+// to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
+let knownFlags: Set<String> = [
+    "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
+    "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
+    "--live", "--money-open", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
+    "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
+    "--todos", "--uninstall-hooks", "--windows",
+]
+if let unknown = CommandLine.arguments.dropFirst().first(where: {
+    $0.hasPrefix("--") && !knownFlags.contains($0)
+}) {
+    FileHandle.standardError.write(Data("fleet: unknown option \(unknown)\n".utf8))
+    FileHandle.standardError.write(Data(("usage: fleet [" + knownFlags.sorted().joined(separator: "] [") + "]\n").utf8))
+    exit(2)
+}
+
+// If a resident copy is already running — normally the LaunchAgent one — this process exists
+// only because the user asked to see the panel. Hand the request over and get out of the way,
+// so we never end up with two agents scanning in parallel.
+if let bundleID = Bundle.main.bundleIdentifier {
+    let mine = ProcessInfo.processInfo.processIdentifier
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .map(\.processIdentifier).filter { $0 != mine }
+    // Unless this *is* launchd's copy. A `fleet` or an `open` landing in the second an install
+    // has the agent down starts a copy launchd does not own, and from then on the agent found
+    // it at every KeepAlive respawn, handed it a show request and exited — the panel toggling
+    // every ten seconds, mid-sentence, on a binary no install could replace (14/09, 44 runs).
+    // launchd's copy is the resident, so the other one goes.
+    if !others.isEmpty, ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == bundleID {
+        others.forEach { kill($0, SIGTERM) }
+        let deadline = Date().addingTimeInterval(3)
+        while others.contains(where: { kill($0, 0) == 0 }), Date() < deadline {
+            usleep(50_000)
+        }
+        others.forEach { kill($0, SIGKILL) }
+    } else if !others.isEmpty {
+        ShowRequest.post()
+        // Distributed delivery needs a turn of the run loop before we can safely exit.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        exit(0)
+    }
+}
+
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    // NSApplication does not retain its delegate.
+    objc_setAssociatedObject(app, "FleetDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+    app.run()
+}

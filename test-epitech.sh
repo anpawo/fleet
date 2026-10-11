@@ -1,0 +1,81 @@
+#!/bin/sh
+# Ce que la barre d'alerte doit dire, pour chaque forme que peuvent prendre state.json et
+# sources.json. La seule décision non évidente du fichier : un rescan qui répare le scan
+# réfute le verdict du scan, et lui seul — outlook, discord, edsquare et l'agenda n'ont pas
+# été rejoués et leur code tient toujours.
+set -e
+BIN="$(dirname "$0")/.build/release/fleet"
+[ -x "$BIN" ] || BIN="$HOME/Applications/Fleet.app/Contents/MacOS/fleet"
+DIR=$(mktemp -d)
+trap 'rm -rf "$DIR"' EXIT
+fail=0
+
+# $1 titre · $2 generatedAt · $3 sessionOk · $4 contenu de sources.json (vide = pas de fichier)
+# $5 morceau attendu dans la ligne « trouble: »
+case_is() {
+  printf '{"generatedAt":"%s","sessionOk":%s,"errors":[],"registrations":[],"deadlines":[]}\n' \
+    "$2" "$3" > "$DIR/state.json"
+  if [ -n "$4" ]; then printf '%s\n' "$4" > "$DIR/sources.json"; else rm -f "$DIR/sources.json"; fi
+  got=$("$BIN" --epitech "$DIR/state.json" 2>/dev/null | sed -n 's/^trouble: //p')
+  case "$got" in
+    *"$5"*) printf '  ok    %s\n' "$1" ;;
+    *) printf '  FAIL  %s\n        attendu: %s\n        obtenu : %s\n' "$1" "$5" "$got"; fail=1 ;;
+  esac
+}
+
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+OLD=$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ)
+
+case_is "un rescan réparateur fait taire le scan" \
+  "$NOW" true '{"at":"'"$OLD"'","scan":5,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
+  "none"
+case_is "mais pas outlook, que personne n'a rejoué" \
+  "$NOW" true '{"at":"'"$OLD"'","scan":5,"edsquare":0,"outlook":1,"discord":null,"calendar":0}' \
+  "outlook"
+case_is "un run cassé qui n'a pas été rejoué parle" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":5,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
+  "epitech scan"
+case_is "seul un 3 est un jeton mort" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":3,"discord":null,"calendar":0}' \
+  "outlook login"
+case_is "edsquare en panne se dit" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":6,"outlook":0,"discord":null,"calendar":0}' \
+  "edsquare"
+case_is "sans verdicts, l'état parle tout seul" \
+  "$NOW" false '' "epitech login"
+case_is "deux lecteurs à terre sans jeton mort, c'est le wifi" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":4,"edsquare":6,"outlook":1,"discord":null,"calendar":1}' \
+  "no network"
+case_is "un lecteur qui répond prouve que le réseau était là" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":5,"edsquare":6,"outlook":0,"discord":1,"calendar":0}' \
+  "epitech scan"
+case_is "un jeton mort parle même si tout est tombé avec lui" \
+  "$OLD" true '{"at":"'"$NOW"'","scan":0,"edsquare":6,"outlook":3,"discord":null,"calendar":1}' \
+  "outlook login"
+case_is "un run sain ne dit rien" \
+  "$NOW" true '{"at":"'"$NOW"'","scan":0,"edsquare":0,"outlook":0,"discord":null,"calendar":0}' \
+  "none"
+
+# Le grand livre des crédits : un module signé sur l'intra passe dans « done » et sort de
+# « to do » même s'il y est inscrit ; les extras du plan comptent comme atteignables ; une année
+# hors de `years` ne compte pas.
+rm -f "$DIR/sources.json"
+FUTURE=$(date -u -v+30d +%Y-%m-%dT%H:%M:%SZ)
+cat > "$DIR/state.json" <<EOF
+{"generatedAt":"$NOW","sessionOk":true,"errors":[],"deadlines":[],
+ "registrations":[
+  {"code":"G-AAA-900","instance":"PAR-1","name":"G5 - Alpha","start":"$OLD","end":"$FUTURE","credits":7},
+  {"code":"G-BBB-900","instance":"PAR-1","name":"G5 - Beta","start":"$OLD","end":"$FUTURE","credits":10}],
+ "intra":{"ok":true,"credits":38,"acquired":[
+  {"code":"G-INT-800","title":"G8 - International","credits":38,"year":2025},
+  {"code":"G-BBB-900","title":"G5 - Beta","credits":10,"year":2026},
+  {"code":"B-OLD-100","title":"B1 - Old","credits":60,"year":2022}]}}
+EOF
+echo '{"target":120,"years":[2025,2026],"extras":[{"name":"Internship","credits":30},{"name":"Sport","credits":1,"done":true}]}' \
+  > "$DIR/credit-plan.json"
+got=$("$BIN" --epitech "$DIR/state.json" 2>/dev/null | sed -n 's/^credits: //p')
+want="done 49 · to do 37 (7 on-going, 30 upcoming) · reachable 86/120 · missing 34"
+if [ "$got" = "$want" ]; then printf '  ok    le grand livre sépare fait et à faire\n'
+else printf '  FAIL  le grand livre\n        attendu: %s\n        obtenu : %s\n' "$want" "$got"; fail=1; fi
+
+[ $fail -eq 0 ] && echo "all good" || { echo "des cas cassés"; exit 1; }

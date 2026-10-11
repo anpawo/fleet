@@ -1,0 +1,815 @@
+import Foundation
+
+/// What Claude Code itself says each session is doing.
+///
+/// Everything else in Fleet *infers* state from a transcript: a tool call with no result is
+/// either work in flight or a prompt on your screen, a silence is either a model thinking or a
+/// question you have not answered, and the file looks the same either way. Those inferences are
+/// wrong often enough to matter — a session that had finished and showed red is a session you
+/// do not go back to.
+///
+/// Claude Code has the answer and will hand it over: hooks fire on the transitions themselves.
+/// `Stop` means the turn is over, `Notification` means it is blocked on you, `UserPromptSubmit`
+/// and the tool hooks mean it is working. Each one writes a single small file naming the state
+/// and when it was set, and Fleet reads that instead of guessing.
+///
+/// The transport is a file per session rather than a socket because hooks are separate short
+/// processes that must not block the session: a write to a tmpfile and a rename is the whole
+/// cost, and Fleet reads whatever is there whenever it happens to refresh.
+enum Hooks {
+
+    /// Where the hook script and the state it writes live.
+    static let home = (NSHomeDirectory() as NSString).appendingPathComponent(".claude/fleet")
+    static var scriptPath: String { (home as NSString).appendingPathComponent("session-state.sh") }
+    static var stateDirectory: String { (home as NSString).appendingPathComponent("state") }
+    static let settingsPath = (NSHomeDirectory() as NSString)
+        .appendingPathComponent(".claude/settings.json")
+
+    /// State files older than this belong to sessions that died without a `SessionEnd` — a
+    /// crash, a killed terminal — and are cleaned up rather than left to answer for a session
+    /// id that will never come back.
+    private static let staleAfter: TimeInterval = 7 * 24 * 3600
+
+    // MARK: - Reading
+
+    struct Record {
+        var state: SessionState
+        /// When the hook fired, which is what decides whether it or the transcript is the more
+        /// recent evidence.
+        var at: Date
+        /// The hook's own ancestry, nearest first, which is what ties this record to a live
+        /// process — see `SessionRegistry.bindFromHooks`. Empty for records written by a hook
+        /// script from before Fleet recorded it.
+        var pids: [pid_t]
+        /// The transcript Claude Code was writing when the hook fired. The session id names a
+        /// conversation, but only this says which *file* it is in, and `/clear` moves it.
+        var transcriptPath: String?
+    }
+
+    /// What the hooks last said about `sessionID` — the transcript's file name without its
+    /// extension, which is the same id Claude Code passes to a hook.
+    static func record(sessionID: String) -> Record? {
+        record(atPath: (stateDirectory as NSString).appendingPathComponent(sessionID + ".json"))
+    }
+
+    /// One line the session wrote about itself — `<id>.context` beside its state file. The
+    /// title Claude Code stamps is written once, early, and the last prompt says what was
+    /// asked, not what the work has become; this is the session's own word, when it gave one.
+    static func context(sessionID: String) -> String? {
+        let path = (stateDirectory as NSString).appendingPathComponent(sessionID + ".context")
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
+    }
+
+    /// Every session the hooks currently have something to say about, keyed by session id.
+    static func records() -> [String: Record] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: stateDirectory)
+        else { return [:] }
+        var out: [String: Record] = [:]
+        for name in names where name.hasSuffix(".json") {
+            let path = (stateDirectory as NSString).appendingPathComponent(name)
+            guard let record = record(atPath: path) else { continue }
+            out[(name as NSString).deletingPathExtension] = record
+        }
+        return out
+    }
+
+    private static func record(atPath path: String) -> Record? {
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = obj["state"] as? String,
+              let at = obj["at"] as? Double else { return nil }
+
+        let state: SessionState
+        switch name {
+        case "ready": state = .ready
+        case "awaiting": state = .awaitingAnswer
+        case "running": state = .running
+        default: return nil
+        }
+        let pids = ((obj["pids"] as? String) ?? "").split(separator: ",").compactMap { pid_t($0) }
+        let transcript = (obj["transcript"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return Record(state: state, at: Date(timeIntervalSince1970: at),
+                      pids: pids, transcriptPath: transcript)
+    }
+
+    /// Where Fleet tells the hooks — and through them every Claude Code session on the
+    /// machine — how the machine itself is doing.
+    static var machinePath: String { (home as NSString).appendingPathComponent("machine.json") }
+
+    /// The one thing that travels the other way: Fleet writing, the sessions reading.
+    ///
+    /// A file rather than anything cleverer for the same reason the state files are files: a
+    /// hook is a short-lived shell script that must not block a session, and `cat` is the
+    /// whole protocol. It carries a timestamp because a Fleet that dies while the machine is
+    /// thrashing would otherwise leave every session nagged forever by a file nobody updates.
+    /// The button on the panel: every Claude Code session on this machine is asked to stop
+    /// what it is doing, at its next tool call.
+    ///
+    /// Not a signal. A `SIGINT` to a session would be read by its terminal as a keystroke or
+    /// kill it outright, and the whole point is to end a *turn*, not a process. The hooks
+    /// already run inside every session and can answer `continue: false`, which is the
+    /// supported way to say stop — Claude Code halts the turn and shows the reason.
+    static func requestAgentStop() {
+        var json = (machineState() ?? [:])
+        json["stop"] = Int(Date().timeIntervalSince1970)
+        write(json)
+        NSLog("Fleet: asked every session to stop")
+    }
+
+    /// How long a press stays readable, and the same number the hook checks. It is the window
+    /// in which a session has to reach a tool call: one that makes none inside it — idle,
+    /// blocked on a permission prompt, deep in a model turn — never learns the button was
+    /// pressed at all, which is why the button reports who answered rather than claiming
+    /// everyone did.
+    static let stopWindow: TimeInterval = 300
+
+    /// A press that sessions can still answer.
+    struct StopRequest {
+        var at: Date
+        /// How many have halted on it. Each writes a `<id>.stopped` stamp naming the press it
+        /// obeyed — the only acknowledgement a hook has any way of sending back.
+        var honoured: Int
+    }
+
+    /// The press in flight, if any. Nil once its window has closed, which is what re-arms the
+    /// button; read from disk each time because the answers arrive one session at a time.
+    static func stopInFlight() -> StopRequest? {
+        guard let stamp = machineState()?["stop"] as? Int else { return nil }
+        let at = Date(timeIntervalSince1970: Double(stamp))
+        guard Date().timeIntervalSince(at) < stopWindow else { return nil }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: stateDirectory)) ?? []
+        let honoured = names.filter { name in
+            guard name.hasSuffix(".stopped") else { return false }
+            let path = (stateDirectory as NSString).appendingPathComponent(name)
+            return (try? String(contentsOfFile: path, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) == String(stamp)
+        }.count
+        return StopRequest(at: at, honoured: honoured)
+    }
+
+    private static func machineState() -> [String: Any]? {
+        guard let data = FileManager.default.contents(atPath: machinePath) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    private static func write(_ json: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        try? FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
+        try? data.write(to: URL(fileURLWithPath: machinePath), options: .atomic)
+    }
+
+    /// `pause` names, by session id, the sessions the hook holds at their next tool call until
+    /// the machine recovers — see `AppController.sessionsToPause`.
+    /// Sessions the hook is holding right now, by session id. The hook leaves a `<id>.held`
+    /// stamp for the length of the hold; one only counts while the verdict still names that
+    /// session, because a hold cut short by Esc kills the hook before it can clear its stamp.
+    static func heldSessions() -> Set<String> {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: stateDirectory),
+              names.contains(where: { $0.hasSuffix(".held") }),
+              let machine = machineState(), machine["struggling"] as? Bool == true,
+              let pause = machine["pause"] as? String else { return [] }
+        let listed = Set(pause.split(separator: ",").map(String.init))
+        return Set(names.filter { $0.hasSuffix(".held") }
+            .map { ($0 as NSString).deletingPathExtension }
+            .filter { listed.contains($0) })
+    }
+
+    static func writeMachineState(struggling: Bool, reason: String, hogs: [Hog], pause: [String] = []) {
+        // Each hog carries WHERE it works and HOW LONG it has run, so a session can tell
+        // whether the load is its own. "java 2.7 GB" is unactionable in every session;
+        // "nuit 1 core, 60 h, ~/self/finance/crypto/simu" is actionable in exactly one.
+        let names = hogs.prefix(4)
+            .map { h -> String in
+                var s = "\(h.name) \(h.sizeLabel)"
+                if h.age > 600 { s += " depuis \(h.ageLabel)" }
+                if let c = h.cwd, c != "/" {
+                    s += " dans \(c.replacingOccurrences(of: NSHomeDirectory(), with: "~"))"
+                }
+                return s
+            }
+            .joined(separator: " | ")
+        var json: [String: Any] = [
+            "struggling": struggling,
+            "reason": reason,
+            "hogs": names,
+            "pause": pause.joined(separator: ","),
+            "at": Int(Date().timeIntervalSince1970),
+        ]
+        // A stop pressed a moment ago outlives the verdict that prompted it: the machine
+        // recovering one second later must not cancel a stop the sessions have not yet read.
+        if let stop = machineState()?["stop"] as? Int,
+           Date().timeIntervalSince1970 - Double(stop) < stopWindow {
+            json["stop"] = stop
+        }
+        write(json)
+    }
+
+    /// Bumped whenever the script starts recording something Fleet relies on. An older script
+    /// still works — every field is optional on the reading side — but it costs the session
+    /// pairing the hooks are there to make exact, so it counts as not installed and the menu
+    /// offers to bring it up to date.
+    static let version = 20
+
+    /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
+    /// the state read above degrades on its own when they are not.
+    static var isInstalled: Bool { installedVersion == version && settingsMention() }
+
+    /// Installed, but written by an older Fleet: worth a different word in the menu.
+    static var isOutdated: Bool {
+        guard let installed = installedVersion else { return false }
+        return installed != version
+    }
+
+    private static var installedVersion: Int? {
+        guard FileManager.default.isExecutableFile(atPath: scriptPath),
+              let text = try? String(contentsOfFile: scriptPath, encoding: .utf8)
+        else { return nil }
+        // Absent from the scripts written before versioning existed, which are version 1.
+        guard let line = text.split(separator: "\n").first(where: {
+            $0.hasPrefix("# fleet-hook-version:")
+        }) else { return 1 }
+        return Int(line.dropFirst("# fleet-hook-version:".count).trimmingCharacters(in: .whitespaces))
+    }
+
+    private static func settingsMention() -> Bool {
+        guard let data = FileManager.default.contents(atPath: settingsPath),
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return text.contains(marker)
+    }
+
+    /// Deletes state left behind by sessions that are gone. Cheap enough to run at launch and
+    /// pointless more often than that.
+    static func prune() {
+        let cutoff = Date().addingTimeInterval(-staleAfter)
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: stateDirectory) else { return }
+        for name in names where name.hasSuffix(".json") {
+            let path = (stateDirectory as NSString).appendingPathComponent(name)
+            guard let attrs = try? fm.attributesOfItem(atPath: path),
+                  let mtime = attrs[.modificationDate] as? Date, mtime < cutoff else { continue }
+            try? fm.removeItem(atPath: path)
+        }
+    }
+
+    // MARK: - Installing
+
+    /// How Fleet's own hook entries are recognised in settings.json, so installing twice
+    /// replaces them instead of stacking another copy on every run.
+    private static let marker = "fleet/session-state.sh"
+
+    /// Which event means what. The two the whole thing is for are `Stop` — the turn is over,
+    /// which is the state Fleet used to get wrong — and `Notification`, which fires exactly
+    /// when a session is blocked on you.
+    private static let events: [(event: String, argument: String)] = [
+        ("UserPromptSubmit", "running"),
+        ("PreToolUse", "running"),
+        ("PostToolUse", "running"),
+        ("Notification", "awaiting"),
+        ("Stop", "ready"),
+        ("SessionEnd", "end"),
+        // Not states: what the session's settings were at launch, and an edit of them since —
+        // see `relaunch` in the script.
+        ("SessionStart", "start"),
+        ("ConfigChange", "config"),
+    ]
+
+    enum InstallError: LocalizedError {
+        case settingsUnreadable(String)
+        case settingsNotAnObject
+
+        var errorDescription: String? {
+            switch self {
+            case .settingsUnreadable(let why): return "Could not read ~/.claude/settings.json: \(why)"
+            case .settingsNotAnObject: return "~/.claude/settings.json is not a JSON object."
+            }
+        }
+    }
+
+    /// Writes the hook script and points Claude Code's user settings at it. Idempotent: it
+    /// rewrites its own entries and leaves every other hook alone.
+    ///
+    /// The previous settings file is copied next to itself first. This edits a file the user
+    /// did not write and cannot easily reconstruct, so there is a copy of it before we touch it.
+    @discardableResult
+    static func install() throws -> String {
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: stateDirectory, withIntermediateDirectories: true)
+        try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+
+        var settings: [String: Any] = [:]
+        if let data = fm.contents(atPath: settingsPath) {
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw InstallError.settingsNotAnObject
+            }
+            settings = obj
+            let backup = settingsPath + ".fleet-backup"
+            try? fm.removeItem(atPath: backup)
+            try? fm.copyItem(atPath: settingsPath, toPath: backup)
+        }
+
+        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
+        for (event, argument) in events {
+            // Only Fleet's own command is taken out, and the group around it is kept unless
+            // that command was all it held. Another tool registered in the same group is not
+            // Fleet's to delete — and it is a hook the user cannot know went missing.
+            var groups = (hooks[event] as? [[String: Any]]) ?? []
+            groups = groups.compactMap { withoutFleet($0) }
+            groups.append([
+                "hooks": [[
+                    "type": "command",
+                    "command": "sh \"$HOME/.claude/fleet/session-state.sh\" \(argument)",
+                    // PreToolUse is where a paused session waits for the machine, so it gets
+                    // longer than the hold the script allows itself; a timeout would only let
+                    // the tool through early. Stop is where Jarvis waits for an answer, 590 s
+                    // at most; 600 is the most Claude Code's schema is known to accept.
+                    "timeout": event == "PreToolUse" ? 900 : event == "Stop" ? 600 : 5,
+                ]],
+            ])
+            hooks[event] = groups
+        }
+        settings["hooks"] = hooks
+
+        let data = try JSONSerialization.data(
+            withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)
+        installFishFunction()
+        prune()
+        return settingsPath
+    }
+
+    static let fishFunctionPath = (NSHomeDirectory() as NSString)
+        .appendingPathComponent(".config/fish/functions/claude.fish")
+
+    /// The other half of the script's `relaunch`: the hook can end a session, only the shell
+    /// that started it can start it again in the same terminal. Written only where fish is set
+    /// up, and never over a `claude` function Fleet did not write.
+    private static func installFishFunction() {
+        let fm = FileManager.default
+        let dir = (fishFunctionPath as NSString).deletingLastPathComponent
+        guard fm.fileExists(atPath: (dir as NSString).deletingLastPathComponent) else { return }
+        if let existing = try? String(contentsOfFile: fishFunctionPath, encoding: .utf8),
+           !existing.hasPrefix(fishMarker) { return }
+        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try? fishFunction.write(toFile: fishFunctionPath, atomically: true, encoding: .utf8)
+    }
+
+    private static let fishMarker = "# Written by Fleet"
+
+    private static let fishFunction = """
+    # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
+    # Runs Claude Code, and brings a session back in this terminal, with its conversation, when
+    # Fleet's hook ended it to pick up settings a running session never rereads.
+    function claude --wraps claude
+        if contains -- -p $argv; or contains -- --print $argv
+            command claude $argv
+            return
+        end
+        set -l note ~/.claude/fleet/restart/$fish_pid
+        rm -f $note $note.why
+        env FLEET_SHELL=$fish_pid claude $argv
+        set -l code $status
+        while test -f $note
+            set -l again (cat $note)
+            set_color --bold
+            echo "Fleet is restarting this session:" (cat $note.why 2>/dev/null)
+            set_color normal
+            rm -f $note $note.why
+            env FLEET_SHELL=$fish_pid claude --resume $again
+            set code $status
+        end
+        return $code
+    end
+
+    """
+
+    /// One matcher group with Fleet's own command stripped out of it, or nil when that command
+    /// was the only thing in it. Anything else in the group survives.
+    private static func withoutFleet(_ group: [String: Any]) -> [String: Any]? {
+        var group = group
+        var commands = (group["hooks"] as? [[String: Any]]) ?? []
+        let before = commands.count
+        commands.removeAll { ($0["command"] as? String)?.contains(marker) == true }
+        guard commands.count != before else { return group }
+        guard !commands.isEmpty else { return nil }
+        group["hooks"] = commands
+        return group
+    }
+
+    /// Removes Fleet's hook entries again, leaving the rest of settings.json alone.
+    @discardableResult
+    static func uninstall() throws -> Bool {
+        let fm = FileManager.default
+        guard let data = fm.contents(atPath: settingsPath),
+              var settings = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = settings["hooks"] as? [String: Any] else { return false }
+
+        var removed = false
+        for (event, groups) in hooks {
+            guard let groups = groups as? [[String: Any]] else { continue }
+            let hadFleet = groups.contains { group in
+                ((group["hooks"] as? [[String: Any]]) ?? [])
+                    .contains { ($0["command"] as? String)?.contains(marker) == true }
+            }
+            if hadFleet { removed = true }
+            hooks[event] = groups.compactMap { withoutFleet($0) }
+        }
+        guard removed else { return false }
+        settings["hooks"] = hooks
+        let out = try JSONSerialization.data(
+            withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try out.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)
+        try? fm.removeItem(atPath: scriptPath)
+        if (try? String(contentsOfFile: fishFunctionPath, encoding: .utf8))?.hasPrefix(fishMarker) == true {
+            try? fm.removeItem(atPath: fishFunctionPath)
+        }
+        return true
+    }
+
+    /// The hook itself: POSIX sh, no interpreter to start and no dependency to install, because
+    /// it runs on every tool call of every session.
+    ///
+    /// The session id is pulled out with `sed` rather than a JSON parser for the same reason.
+    /// It is a UUID in a field Claude Code has always written, and a miss costs nothing: the
+    /// file is not updated and Fleet falls back to reading the transcript, exactly as it does
+    /// for a session that started before the hooks existed.
+    private static let script = """
+    #!/bin/sh
+    # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
+    # fleet-hook-version: 20
+    #
+    # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
+    # Code reports instead of one inferred from the transcript. Called with the state the event
+    # means: running, awaiting, ready, or end — or start and config, which only feed the
+    # relaunch below, and sweep, which the display patcher runs from outside any session.
+    set -u
+    state="${1:-}"
+    dir="$HOME/.claude/fleet/state"
+
+    # A session runs on the settings, the mods and the binary it had at launch: the model never
+    # changes under a live process, `--resume` brings the old one back, `env` and the mods it
+    # names are read once, and a display patch or an update replaces the binary on disk, not the
+    # one running. Settings and mods are recorded at start, so a later edit can be told apart
+    # from them; the binary is compared with the time the process started.
+    settings="$HOME/.claude/settings.json"
+    cfg() {
+        for k in model modelSettings outputStyle env; do
+            # xml1, not json: plutil refuses to print a bare string as JSON.
+            plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
+        done
+        # Each mod by content. Not .claude-plugin/types: Claude Code rewrites it at every load,
+        # and one session starting would then relaunch all the others.
+        plutil -extract env.CLAUDE_CODE_PLUGIN_DIRS raw -o - "$settings" 2>/dev/null | tr ':' '\\n' |
+            while read -r d; do
+                case $d in '~'*) d=$HOME${d#'~'} ;; esac
+                [ -d "$d" ] || continue
+                find -L "$d" -type f ! -path '*/.claude-plugin/types/*' -print0 | sort -z | xargs -0 cat | cksum
+            done
+    }
+
+    # Either is out of date for session $1: it is ended if it is still idle a second later, and
+    # the `claude` function Fleet puts in fish resumes it in the same terminal on the new ones.
+    # Only a session that function started is ever ended — `<id>.shell` names its claude, the
+    # fish that brings it back and its binary — so a `claude -p` job, an IDE session or a nested
+    # claude keeps what it started on. A prompt typed in that second wins; a busy session is
+    # caught at the Stop that ends its turn, and one waiting on background work or on a wake-up
+    # it scheduled (`<id>.bg`) at the first turn that ends with neither: ending it would lose them.
+    # A session closed by hand in that second is gone, and nothing brings it back.
+    relaunch() {
+        [ -f "$dir/$1.shell" ] || return 0
+        [ -f "$dir/$1.bg" ] && return 0
+        read -r cl sh bin < "$dir/$1.shell"
+        # still that session's claude, not a pid handed to something else since
+        [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$sh" ] || return 0
+        # What the fish function prints while the session is away, so the restart is no surprise.
+        why="settings.json changed"
+        if [ "${now:=$(cfg)}" = "$(cat "$dir/$1.cfg" 2>/dev/null)" ]; then
+            [ -n "${bin:-}" ] || return 0
+            age=$(ps -o etime= -p "$cl" 2>/dev/null | awk -F'[-:]' '{ n = NF; s = $n + $(n-1) * 60
+                if (n > 2) s += $(n-2) * 3600; if (n > 3) s += $(n-3) * 86400; print s }')
+            began=$(( $(date +%s) - ${age:-0} ))
+            # An update leaves the old version's file alone and points `claude` at a new one. The
+            # link's own date, so that a session started some other way is not ended at every turn.
+            link="$HOME/.local/bin/claude"; to=$(readlink "$link" 2>/dev/null)
+            if [ "$(stat -f %m "$bin" 2>/dev/null || echo 0)" -gt "$began" ]; then
+                why="the Claude Code binary was patched"
+            elif [ "${to##*/}" != "${bin##*/}" ] && [ "$(stat -f %m "$link" 2>/dev/null || echo 0)" -gt "$began" ]; then
+                why="Claude Code was updated to ${to##*/}"
+            else return 0; fi
+        # cfg ends on one `cksum` line per mod: the same without them, and it is a mod that moved.
+        elif [ "$(printf '%s\\n' "$now" | grep -v '^[0-9]* [0-9]*$')" = "$(grep -v '^[0-9]* [0-9]*$' "$dir/$1.cfg" 2>/dev/null)" ]; then
+            why="a mod was edited"
+        fi
+        model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
+        /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
+            grep -q "$1" "$2" && kill -0 "$6" || exit 0
+            mkdir -p "${3%/*}"
+            echo "$7" > "$3.why"
+            { echo "$4"; [ -z "$5" ] || { echo --model; echo "$5"; }; } > "$3"
+            kill -TERM "$6"' _ '"state":"ready"' "$dir/$1.json" \\
+            "$HOME/.claude/fleet/restart/$sh" "$1" "$model" "$cl" "$why" \\
+            >/dev/null 2>&1 </dev/null &
+    }
+
+    # An idle session fires no hook, so the display patcher calls this once it has replaced the
+    # binary: every session gets the check its own Stop would give it.
+    sweep() {
+        for f in "$dir"/*.shell; do
+            [ -f "$f" ] || continue
+            s=${f##*/}; relaunch "${s%.shell}"
+        done
+    }
+    [ "$state" = "sweep" ] && { sweep; exit 0; }
+
+    input=$(cat)
+
+    # "session_id":"<uuid>" — the same id that names the session's transcript file.
+    sid=$(printf '%s' "$input" | sed -n \\
+        's/.*"session_id"[[:space:]]*:[[:space:]]*"\\([0-9a-fA-F-]\\{8,\\}\\)".*/\\1/p' | head -1)
+    [ -n "$sid" ] || exit 0
+
+    # The payload's own "cwd": the folder the session's shell stands in.
+    cwd() { /usr/bin/perl -MJSON::PP -e 'local $/; my $in = eval { decode_json(<STDIN>) }; print $in->{cwd} // "" if ref $in eq "HASH"'; }
+
+    if [ "$state" = "end" ]; then
+        # That folder outlives the end a relaunch causes: its note is written before the kill.
+        grep -qx -- "$sid" "$HOME/.claude/fleet/restart/$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" 2>/dev/null ||
+            rm -f "$dir/$sid.cwd"
+        rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg" "$dir/$sid.ask" "$dir/$sid.answer" "$dir/$sid.shell" "$dir/$sid.bg"
+        exit 0
+    fi
+
+    [ "$state" = "start" ] && { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; }
+    [ -f "$dir/$sid.cfg" ] || { mkdir -p "$dir" && cfg > "$dir/$sid.cfg"; }
+
+    # Which process relaunch may end: the nearest claude above this hook, when its parent is the
+    # fish FLEET_SHELL names — a nested claude inherits FLEET_SHELL but not that parent. Worked
+    # out at start and whenever the shell differs, not on every tool call.
+    # Never for a payload replayed from inside a session: Claude Code hands its hooks and its
+    # tool calls the id of the session they run in, and under another id that session's claude
+    # would be ended by the next sweep, mid-turn (04-10: test-restart.sh, run from a session).
+    if [ -n "${FLEET_SHELL:-}" ] && [ "${CLAUDE_CODE_SESSION_ID:-$sid}" = "$sid" ] &&
+        { [ "$state" = "start" ] ||
+        [ "$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" != "$FLEET_SHELL" ]; }; then
+        p=$PPID; n=0; cl=
+        while [ $n -lt 4 ] && [ -n "$p" ]; do
+            case "$(ps -o comm= -p "$p" 2>/dev/null)" in
+                claude | */claude | claude.exe | */claude.exe ) cl=$p; break ;;
+            esac
+            p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); n=$((n + 1))
+        done
+        # Hooks stopped receiving CLAUDE_CODE_EXECPATH with 2.1.286: the binary is read off the process.
+        # -b: plain lsof stats every mount first and waits on each network drive that has stopped
+        # answering — 42 s with two of them, when the first prompt's hook is given 5.
+        [ -n "$cl" ] && [ "$(ps -o ppid= -p "$cl" 2>/dev/null | tr -d ' ')" = "$FLEET_SHELL" ] &&
+            bin=${CLAUDE_CODE_EXECPATH:-$(/usr/sbin/lsof -b -a -p "$cl" -d txt -Fn 2>/dev/null |
+                sed -n 's|^n\\(.*/claude/versions/[^/]*\\)$|\\1|p' | head -1)} &&
+            mkdir -p "$dir" && echo "$cl $FLEET_SHELL $bin" > "$dir/$sid.shell"
+    fi
+    # A session started again stands in the folder it was launched from, whatever folder its
+    # shell had moved to. Said to the session rather than undone for it: it knows whether Marius
+    # sent it there or a `cd` drifted, and only its own `cd` moves its shell.
+    if [ "$state" = "start" ] && [ -s "$dir/$sid.cwd" ]; then
+        was=$(cat "$dir/$sid.cwd"); here=$(printf '%s' "$input" | cwd)
+        [ -d "$was" ] && [ -n "$here" ] && [ "$was" != "$here" ] &&
+            echo "Fleet: this session was started again in $here, and its shell stood in $was when it stopped. If Marius asked for that folder, cd back to it before anything else; if the shell had only drifted there, stay."
+    fi
+    [ "$state" = "start" ] && exit 0
+    [ "$state" = "config" ] && { relaunch "$sid"; exit 0; }
+
+    # The one message that travels towards the session rather than away from it: when Fleet
+    # has decided the machine has stopped keeping up, the agent is told so in its own context,
+    # at the next tool result or prompt — and a session Fleet names as one you are not driving
+    # is held at its next tool call until the machine recovers.
+    #
+    # Rate-limited per session, because PostToolUse fires on every single tool call and an
+    # instruction repeated forty times in a row is an instruction that crowds out the work.
+    advise() {
+        machine="$HOME/.claude/fleet/machine.json"
+        [ -f "$machine" ] || return 0
+        payload=$(cat "$machine" 2>/dev/null) || return 0
+        now=$(date +%s)
+        event=$(printf '%s' "$input" | sed -n \\
+            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
+        reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
+        # Any other event means no hold is running, whatever a hold killed by Esc left behind.
+        [ "$event" = "PreToolUse" ] || rm -f "$dir/$sid.held"
+        # When you last spoke to this session, which is what exempts it from a hold.
+        [ "$event" = "UserPromptSubmit" ] && mkdir -p "$dir" && echo "$now" > "$dir/$sid.prompted"
+
+        # The panel's stop button, read ahead of every other condition in this function. A stop
+        # is something the user pressed, not a symptom of the machine: it has to outlive the
+        # machine recovering a second later, and it has to outlive a verdict Fleet has not
+        # rewritten in a while — Fleet only writes one when the machine crosses either way. The
+        # press carries its own expiry, which is the only one that means anything here.
+        #
+        # PreToolUse as well as the two events that feed the model, because `continue:false` is
+        # answered on all three — and PreToolUse is the one that ends the turn BEFORE the next
+        # tool runs rather than after it.
+        #
+        # One per session per press: the stamp records which stop this session has already
+        # honoured, so a run started after it is not cut down by a press from ten minutes ago.
+        case "$event" in PreToolUse | PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
+        stop=$(printf '%s' "$payload" | sed -n 's/.*"stop":\\([0-9]*\\).*/\\1/p' | head -1)
+        if [ -n "${stop:-}" ] && [ $((now - stop)) -lt 300 ]; then
+            honoured=0
+            [ -f "$dir/$sid.stopped" ] && honoured=$(cat "$dir/$sid.stopped" 2>/dev/null || echo 0)
+            if [ "$stop" != "$honoured" ]; then
+                mkdir -p "$dir" && echo "$stop" > "$dir/$sid.stopped"
+                printf '{"continue":false,"stopReason":"Fleet stopped this turn — the last prompt did NOT run: %s. '
+                printf 'Nothing is lost — say go when the machine has room again."}\\n' \\
+                    "${reason:-you pressed stop on the panel}"
+                return 0
+            fi
+        fi
+
+        # The hold. The tool waits here while the machine struggles, then runs as if nothing
+        # happened: no turn lost, nothing to answer. It lets go when the machine recovers, when
+        # Fleet drops this session from the list, when the verdict stops being rewritten — Fleet
+        # refreshes it every tick while it stands, so a still one is a Fleet that died — or after
+        # fourteen minutes, inside the hook's timeout; the next tool call is held again if need
+        # be. A prompt you typed after the verdict exempts the session: that is the one you want.
+        if [ "$event" = "PreToolUse" ]; then
+            pause=$(printf '%s' "$payload" | sed -n 's/.*"pause":"\\([^"]*\\)".*/\\1/p' | head -1)
+            case ",${pause:-}," in *",$sid,"*) ;; *) return 0 ;; esac
+            at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+            prompted=$(cat "$dir/$sid.prompted" 2>/dev/null || echo 0)
+            [ "${prompted:-0}" -lt "${at:-0}" ] || return 0
+            p="$payload"
+            mkdir -p "$dir" && echo "$now" > "$dir/$sid.held"
+            while :; do
+                case "$p" in *'"struggling":true'*) ;; *) break ;; esac
+                case "$p" in *"$sid"*) ;; *) break ;; esac
+                a=$(printf '%s' "$p" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+                t=$(date +%s)
+                [ $((t - ${a:-0})) -lt 60 ] && [ $((t - now)) -lt 840 ] || break
+                sleep 5
+                p=$(cat "$machine" 2>/dev/null) || break
+            done
+            rm -f "$dir/$sid.held"
+            held=$(( $(date +%s) - now ))
+            [ "$held" -ge 5 ] && printf '{"systemMessage":"Fleet: held %ss while the machine was struggling"}\\n' "$held"
+            return 0
+        fi
+
+        # Everything below is the advisory nudge, which IS a report about the machine: it only
+        # makes sense while the machine is still struggling, from a verdict recent enough to
+        # have come from a Fleet that is still running, and on the two events whose stdout
+        # Claude Code feeds back to the model.
+        case "$payload" in *'"struggling":true'*) ;; *) return 0 ;; esac
+        case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
+        at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+        [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
+
+        stamp="$dir/$sid.nudge"
+        if [ -f "$stamp" ]; then
+            last=$(cat "$stamp" 2>/dev/null || echo 0)
+            [ $((now - last)) -ge 300 ] || return 0
+        fi
+        mkdir -p "$dir" && echo "$now" > "$stamp"
+
+        hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
+        note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now, \\
+    each with how long it has run and the directory it works in: ${hogs:-unknown}. \\
+    A process whose directory is your working directory, or below it, is YOUR load — a \\
+    container mounting your repo included — and you are the only session that can free it: \\
+    stop it now, unless it is the very task the user is waiting on, in which case keep it and \\
+    start nothing else heavy. One that has run for hours is a leftover: stop it. Do not ask \\
+    the user; act, and name what you stopped in one line. If none is yours, touch nothing you \\
+    do not own and wind down: no new subagents, builds, servers or watchers, checkpoint what \\
+    is in flight, read one file at a time. Sessions the user is not driving are held by \\
+    Fleet at their next tool call and resume by themselves once memory frees up."
+        note=$(printf '%s' "$note" | tr -s ' \\n' ' ')
+        printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' \\
+            "$event" "$note"
+        printf '"systemMessage":"Fleet: machine under strain - %s"}\\n' "$reason"
+    }
+
+    # A Reel Fleet read in the background and judged relevant to this session — see
+    # `ReelDigest.tell`. Only when the machine had nothing to say: one JSON object per hook.
+    out=$(advise)
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+    elif [ -s "$dir/$sid.reel" ]; then
+        event=$(printf '%s' "$input" | sed -n \\
+            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
+        case "$event" in PostToolUse | UserPromptSubmit )
+            if mv "$dir/$sid.reel" "$dir/$sid.reel.out" 2>/dev/null; then
+                note=$(tr -d '\n' < "$dir/$sid.reel.out")
+                rm -f "$dir/$sid.reel.out"
+                printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"},' "$event" "$note"
+                printf '"systemMessage":"Fleet: passed on a saved Reel"}\n'
+            fi ;;
+        esac
+    fi
+
+    # A sub-agent's tool calls fire these hooks too, under the parent's session id — an async
+    # agent or a workflow would paint its idle parent red for as long as it runs. Only the
+    # parent's own events say what the parent is doing.
+    case "$input" in *'"agent_id"'*) exit 0 ;; esac
+
+    # Which transcript this session is writing, and which process is writing it.
+    #
+    # Fleet has to pair a live process with a file, and neither side says so outright: it
+    # matches on the working directory and on which transcript appeared just after the process
+    # started. That pairing survives until the session changes files underneath it — `/clear`
+    # and a compaction both start a new transcript in the same process — and from then on the
+    # panel reads a conversation that ended, which always looks finished.
+    #
+    # The hook is the one place both facts are known at once: the payload names the file, and
+    # the session is this script's own parent. It is usually the immediate parent, but a hook
+    # invoked through a wrapper shell would sit one further down, so a short ancestry is
+    # recorded and Fleet takes the first entry that is a session it can see. Two levels up is
+    # as far as this is worth one extra `ps`.
+    path=$(printf '%s' "$input" | sed -n \\
+        's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+    pids="$PPID"
+    up=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
+    case "${up:-}" in
+        '' | 0 | 1 | *[!0-9]* ) ;;
+        * ) pids="$pids,$up" ;;
+    esac
+
+    # A Notification is usually a permission prompt — the session is blocked on you. The other
+    # one it fires for is "you have been idle a while", which means the opposite: the turn is
+    # long over and it is waiting for a new prompt.
+    if [ "$state" = "awaiting" ]; then
+        case "$input" in
+            *"waiting for your input"*) state="ready" ;;
+        esac
+    fi
+
+    mkdir -p "$dir"
+    tmp="$dir/$sid.json.$$"
+    printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
+        "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
+
+    # Jarvis, an app of its own since 01-10: at the end of a turn it asks out loud what this
+    # session should do next, and the answer comes back as the reason of a Stop block, which
+    # Claude Code hands the session as its next instruction. This hold is all of it that is left
+    # in Fleet, since only a Stop hook can do it. Only while `jarvis.on` is kept fresh, so one that died
+    # never leaves a turn hanging; never twice in one turn; and only for a session someone sits
+    # at: a tty rules out `claude -p`, Fleet's own calls and launchd routines. FLEET_TEST_TTY
+    # stands in for that tty and is set by test-stop-hook.sh only, which has no terminal.
+    # Esc in the terminal kills this hook: the trap takes the question back.
+    jarvis_on() {
+        [ -f "$dir/jarvis.on" ] &&
+            /usr/bin/perl -e 'exit(time - (stat $ARGV[0])[9] < 10 ? 0 : 1)' "$dir/jarvis.on"
+    }
+    if [ "${1:-}" = "ready" ] && jarvis_on; then
+        tty=${FLEET_TEST_TTY:-$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d ' ')}
+        case "$tty" in '' | '??' ) ;; * )
+            ask="$dir/$sid.ask"; ans="$dir/$sid.answer"
+            rm -f "$ans"
+            trap 'rm -f "$ask" "$ask.$$"; exit 0' HUP INT TERM
+            if printf '%s' "$input" | /usr/bin/perl -MJSON::PP -e '
+                my ($ask, $hook, $claude, $sid) = @ARGV;
+                my $in = eval { decode_json(join "", <STDIN>) } or exit 1;
+                exit 1 if $in->{stop_hook_active};
+                my $json = encode_json({ sid => $sid, hook_pid => $hook + 0,
+                    claude_pid => $claude + 0, cwd => $in->{cwd} // "",
+                    transcript => $in->{transcript_path} // "",
+                    last_message => $in->{last_assistant_message} // "", at => time });
+                open(my $f, ">", "$ask.$hook") or exit 1;
+                print $f $json;
+                close($f) && rename("$ask.$hook", $ask) or exit 1;
+            ' "$ask" "$$" "$PPID" "$sid"; then
+                since=$(date +%s); n=0
+                while [ ! -f "$ans" ]; do
+                    sleep 0.25; n=$((n + 1))
+                    [ $((n % 4)) -eq 0 ] || continue
+                    jarvis_on && [ $(($(date +%s) - since)) -lt 590 ] || break
+                done
+                rm -f "$ask"
+                block=
+                [ -f "$ans" ] && block=$(/usr/bin/perl -MJSON::PP -e '
+                    local $/; my $s = <STDIN> // ""; utf8::decode($s); $s =~ s/\\s+$//;
+                    print JSON::PP->new->utf8->canonical->encode(
+                        { decision => "block", reason => $s }) if length $s;
+                ' < "$ans")
+                rm -f "$ans"
+                # The turn goes on, so there is nothing to relaunch.
+                [ -n "$block" ] && { printf '%s\\n' "$block"; exit 0; }
+            fi
+            trap - HUP INT TERM ;;
+        esac
+    fi
+
+    # A mod edited on disk raises no event in the sessions that did not edit it: the first turn to
+    # end once the settings or the mods have moved gives every session its check.
+    if [ "$state" = "ready" ]; then
+        # Stop says what the session still has in flight; the sweep has no payload, so it is kept.
+        if printf '%s' "$input" | grep -Eq '"(background_tasks|session_crons)"[[:space:]]*:[[:space:]]*\\[[[:space:]]*[^][:space:]]'
+        then : > "$dir/$sid.bg"; else rm -f "$dir/$sid.bg"; fi
+        # Where its shell stands, for the start that follows a relaunch.
+        here=$(printf '%s' "$input" | cwd); [ -n "$here" ] && printf '%s\\n' "$here" > "$dir/$sid.cwd"
+        now=$(cfg)
+        if [ "$now" = "$(cat "$dir/.cfg" 2>/dev/null)" ]; then relaunch "$sid"
+        else printf '%s\\n' "$now" > "$dir/.cfg"; sweep; fi
+    fi
+    exit 0
+
+    """
+}

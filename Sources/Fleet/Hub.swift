@@ -1,0 +1,926 @@
+import Foundation
+
+/// A triaged mail, as the phone's engine filed it. One document of the `mail` collection.
+struct Mail: Identifiable {
+    var id: String
+    /// The engine's headline for the thread — a few words, already the shortest honest version.
+    ///
+    /// Not the Gmail subject: the document has no `subject` field. `triage.mjs` has it in hand
+    /// when it writes the doc and does not keep it, so this is the closest thing to one that
+    /// exists in the collection.
+    var gist: String
+    var sender: String
+    /// Ce que le moteur a compris du mail, en une phrase ou deux. Hors de la carte au repos —
+    /// la colonne se compte d'un œil — et c'est ce que ⌘ déplie.
+    var summary: String = ""
+    /// 1–3, the engine's score. 3 is the mail you would be annoyed to have missed.
+    var importance: Int
+    var receivedAt: Date
+    var fromEmail: String
+    /// `new` — triaged and untouched — or `ongoing`, which the phone calls Seen: something you
+    /// have looked at and not finished with.
+    var state: String
+    /// Starred on the phone — either this mail specifically, or its sender by a standing rule.
+    /// Filled in against `rules` after the fetch, since one is a property of the other document.
+    var starred: Bool
+
+    init?(_ doc: Firestore.Document) {
+        // `state` is absent on everything the engine has written and nobody has touched, and
+        // the phone reads absent as "new" — so this has to, or the column shows only the mail
+        // that has already been handled.
+        let state = doc.fields["state"]?.stringValue ?? "new"
+        guard state == "new" || state == "ongoing",
+              !doc.bool("archived"),
+              !doc.bool("trashRequested") else { return nil }
+
+        // Remis à plus tard depuis le panneau : le champ n'existe que pour Fleet, et il est
+        // facultatif — un APK installé qui ne le connaît pas montre le mail, ce qui est le
+        // comportement d'avant.
+        if let until = doc.date("snoozedUntil"), until > Date() { return nil }
+
+        self.state = state
+        id = doc.id
+        gist = doc.string("gist")
+        summary = doc.string("summary")
+        // Un transfert porte le nom de la boîte qui a fait suivre, pas celui de l'expéditeur :
+        // tout le courrier @epitech.eu arrivait ici signé « Marius Rousset ». Le moteur range
+        // le vrai expéditeur à part, et le téléphone lit déjà ce couple-là — y compris pour
+        // reconnaître un favori, d'où le même choix sur les deux champs.
+        let origin = doc.string("originSender")
+        sender = origin.isEmpty ? doc.string("sender") : origin
+        importance = doc.int("importance", default: 2)
+        receivedAt = doc.date("receivedAt") ?? doc.date("createdAt") ?? .distantPast
+        let originEmail = doc.string("originEmail")
+        fromEmail = originEmail.isEmpty ? doc.string("fromEmail") : originEmail
+        starred = doc.bool("favorite")
+    }
+}
+
+/// The senders marked "always important" on the phone, from the `rules` collection.
+///
+/// Worth reading here because the engine only applies a rule to mail it triages *after* the
+/// rule was written — a sender starred this morning has a week of mail already scored as
+/// ordinary. The panel applies it to what it draws, so starring somebody takes effect on the
+/// next glance rather than on the next triage run.
+struct StarredSenders {
+    private var names: Set<String> = []
+    private var emails: Set<String> = []
+
+    init(_ docs: [Firestore.Document]) {
+        for doc in docs where doc.string("type") == "star" {
+            let name = doc.string("sender").lowercased()
+            if !name.isEmpty { names.insert(name) }
+            let email = doc.string("email").lowercased()
+            if !email.isEmpty { emails.insert(email) }
+        }
+    }
+
+    func covers(_ mail: Mail) -> Bool {
+        names.contains(mail.sender.lowercased()) || emails.contains(mail.fromEmail.lowercased())
+    }
+}
+
+/// One line of the todo list.
+///
+/// The collection's `state` is `todo`, `doing` or `done` — the phone's three tabs — plus one
+/// this panel writes and nobody displays: see `Pile.past`.
+struct Todo: Identifiable {
+    var id: String
+    var name: String
+    var state: String
+    var createdAt: Date
+    /// When it was finished. Absent on everything finished before Fleet started stamping it —
+    /// the phone writes `state` alone.
+    var doneAt: Date?
+    /// Where you dragged it to. Absent on everything nobody has dragged, which is most of the
+    /// list and everything the phone writes — see `rank`.
+    var order: Double?
+    /// The phone's date field, once it has one. Absent on everything written before it did,
+    /// which is where the parsed `due` below still earns its keep.
+    var dueAt: Date?
+    /// Whether `dueAt` names a day rather than a moment. The phone stores such a day as noon
+    /// UTC, so the hour must not be shown.
+    var dueAllDay = false
+    /// Whether the fields are the truth and the line's own text is not to be read: anything
+    /// written since the phone had a date field, or anything this Mac already went over. The
+    /// old marker was a `project` the phone no longer writes; it is still honoured on the
+    /// todos that carry it. Without this a date cleared on the phone would come straight back
+    /// from the "14/09" still at the front of the line.
+    var filed = true
+
+    /// When the phone started writing `dueAt` itself (release 6.140).
+    static let dueFieldBorn = Date(timeIntervalSince1970: 1_788_000_000)
+
+    /// The four values `state` takes. Not an enum on the model: an unknown string must survive
+    /// a round trip through here untouched, or a value the phone starts writing tomorrow gets
+    /// quietly rewritten to something else by whichever of the two is older.
+    enum Pile {
+        static let todo = "todo"
+        static let doing = "doing"
+        static let done = "done"
+        static let past = "past"
+    }
+
+    /// A todo typed into the panel, on screen before Firestore has confirmed it. The id is a
+    /// stand-in until the write comes back with the real one.
+    init(pending name: String, order: Double) {
+        id = UUID().uuidString
+        self.name = name
+        state = Pile.todo
+        createdAt = Date()
+        self.order = order
+    }
+
+    init(_ doc: Firestore.Document) {
+        id = doc.id
+        name = doc.string("name")
+        state = doc.string("state")
+        createdAt = doc.date("createdAt") ?? .distantPast
+        doneAt = doc.date("doneAt")
+        order = doc.double("order")
+        dueAt = doc.date("dueAt")
+        dueAllDay = doc.fields["dueAllDay"]?.booleanValue ?? true
+        filed = doc.fields["project"] != nil || createdAt >= Self.dueFieldBorn
+    }
+
+    /// Where the todo sits in the column, dragged or not.
+    ///
+    /// Seconds since 1970, in both cases: a todo nobody has moved ranks by the moment it was
+    /// written, which is the order the list has always been in, and a dragged one carries a
+    /// number picked between its two new neighbours. One scale for both means a drag writes one
+    /// field on one document — no renumbering of the list, and nothing to migrate for the
+    /// twenty todos that were there first.
+    var rank: Double { order ?? createdAt.timeIntervalSince1970 }
+
+    /// Still on your plate. In practice the middle pile goes unused — the phone offers it and
+    /// nothing is ever in it — so this is everything not yet finished.
+    var open: Bool { state != Pile.done && state != Pile.past }
+
+    /// When this is due: the phone's field when it has one, else read off the front of the
+    /// line — todos were written "07/09 23h42 — ATP v1" or "14/09 \u{2192} 21/10 — Part-Time"
+    /// before the field existed, and the first date is the one the row is judged on. Nil for a
+    /// line that names no day, which is most of a todo list.
+    var due: Date? { dueAt ?? (filed ? nil : parsedDue) }
+
+    /// The date at the front of the line, with its time when one follows it ("07/09 23h42")
+    /// and noon UTC when none does — the phone's convention for a day with no hour, see
+    /// `dueAllDay`.
+    var parsedDue: Date? { parsedDueParts?.date }
+
+    var parsedDueParts: (date: Date, allDay: Bool)? {
+        let words = title.split(separator: " ")
+        guard let at = words.firstIndex(where: { $0.contains("/") }),
+              case let parts = words[at].split(separator: "/"), parts.count == 2,
+              let day = Int(parts[0]), let month = Int(parts[1]),
+              (1 ... 31).contains(day), (1 ... 12).contains(month) else { return nil }
+
+        var calendar = Calendar.current
+        var components = calendar.dateComponents([.year], from: Date())
+        components.day = day
+        components.month = month
+        var allDay = true
+        if at + 1 < words.count, case let clock = words[at + 1].split(separator: "h"),
+           (1 ... 2).contains(clock.count), let hour = Int(clock[0]), (0 ... 23).contains(hour),
+           let minute = clock.count == 2 ? Int(clock[1]) : 0, (0 ... 59).contains(minute) {
+            components.hour = hour
+            components.minute = minute
+            allDay = false
+        } else {
+            calendar.timeZone = TimeZone(identifier: "UTC")!
+            components.hour = 12
+        }
+        guard let candidate = calendar.date(from: components) else { return nil }
+        // A day three months gone is next year's: "01/03" written in September is the March
+        // coming, not the one that has been and gone.
+        guard candidate.timeIntervalSinceNow < -90 * 86_400 else { return (candidate, allDay) }
+        components.year = (components.year ?? 0) + 1
+        return calendar.date(from: components).map { ($0, allDay) }
+    }
+
+    /// Which section the column files this under: how soon it is due, not what it is about.
+    /// The three boundaries are the ones `dueTint` already paints a row by, so the heading a
+    /// todo sits under and the colour of its dot can never disagree.
+    enum Bucket: Int, CaseIterable {
+        case today, week, other
+
+        var title: String {
+            switch self {
+            case .today: return "TODAY"
+            case .week: return "THIS WEEK"
+            case .other: return "OTHERS"
+            }
+        }
+    }
+
+    /// Overdue counts as today — a deadline that has passed is the most today thing on the
+    /// list. A date further out than a week goes under OTHERS with the undated: it is not
+    /// what you are doing this week, which is the only question this column answers.
+    var bucket: Bucket {
+        guard let due else { return .other }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: calendar.startOfDay(for: due)).day ?? 0
+        if days < 1 { return .today }
+        return days < 8 ? .week : .other
+    }
+
+    /// The first line only, for a row one line tall. Some todos are a whole page — a pasted
+    /// receipt, a list of refunds to chase — and rendered raw one of them fills the column.
+    /// The rest is one ⌘-click away.
+    var title: String {
+        name.split(separator: "\n", maxSplits: 1).first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+}
+
+/// What the panel shows down its sides: the mail worth reading and the list of things to do,
+/// both from the same Firestore project the phone uses.
+///
+/// Deliberately a second window onto one dataset rather than a copy of it — nothing here is
+/// stored, merged or reconciled. It is read when a panel opens and forgotten when the process
+/// ends, which is the whole reason it can be this small.
+@MainActor
+final class HubStore: ObservableObject {
+    @Published var mail: [Mail] = []
+    @Published private(set) var todos: [Todo] = []
+    /// The Epitech modules under way, from the scan's own file. Nil until the first read.
+    @Published private(set) var epitech: Epitech.Snapshot?
+    /// Why the columns are empty, when they are empty for a reason worth saying.
+    @Published private(set) var failure: String?
+    /// Whether the todo column has an empty row open at its top, waiting to be written into.
+    @Published private(set) var composing = false
+    /// What is in that row.
+    @Published var draft = ""
+    /// Whether that row holds the caret. Return is claimed by the panel window and handed to
+    /// whichever field is being typed into, and clicking back into the prompt moves that without
+    /// closing the row — so which of the two owns Return is a question about focus, not about
+    /// whether the row exists.
+    @Published var composerFocused = false
+
+    /// Whether a first answer has ever arrived — an empty inbox and an unfetched one look
+    /// identical otherwise, and only one of them is good news.
+    @Published private(set) var loaded = false
+
+    /// The panel opens on every idle stretch, which on a quiet afternoon is often. Mail is
+    /// triaged every six hours and todos come from a phone in someone's pocket; a minute of
+    /// staleness is invisible either way, and it keeps a panel that opens twice in a row from
+    /// making four round trips. Ten minutes, not one: every fetch reads the whole `mail`
+    /// collection, handled mail included, and at one a minute that alone emptied the free
+    /// tier's 50k daily reads (429 on 2026-09-23).
+    nonisolated private static let freshness: TimeInterval = 600
+
+    private var fetchedAt = Date.distantPast
+    private var inFlight: Task<Void, Never>?
+
+    var isConfigured: Bool { Firestore.isConfigured }
+
+    // MARK: - Spotlight
+
+    /// The one todo lit up this time the panel opened. The next row down on every opening, so
+    /// a line nobody reads comes round as surely as the ones at the top.
+    @Published private(set) var spotlightID: String?
+    private static let spotlightKey = "spotlightIndex"
+
+    /// A position rather than an id, and kept across launches: finishing the lit todo would
+    /// otherwise lose the place and send the rotation back to the first row, and so would a
+    /// restart. Rows added or finished shift it by one, which a rotation does not notice.
+    func advanceSpotlight() {
+        guard !todos.isEmpty else { spotlightID = nil; return }
+        let defaults = UserDefaults.standard
+        let next = defaults.object(forKey: Self.spotlightKey) == nil
+            ? 0 : (defaults.integer(forKey: Self.spotlightKey) + 1) % todos.count
+        defaults.set(next, forKey: Self.spotlightKey)
+        spotlightID = todos[next].id
+    }
+
+    // MARK: - Writing
+
+    /// The + on the TODO heading.
+    func compose() {
+        draft = ""
+        composing = true
+    }
+
+    /// Esc on the new-todo row, or the panel closing. Returns whether there was a row to close,
+    /// so an Esc with nothing open falls through to whatever else wants it.
+    @discardableResult
+    func stopComposing() -> Bool {
+        guard composing else { return false }
+        composing = false
+        composerFocused = false
+        draft = ""
+        return true
+    }
+
+    /// Return in the new-todo row. The row stays open and empty afterwards, so a list you have
+    /// in your head goes down in one sitting rather than a click per line.
+    func commitDraft() -> Bool {
+        guard composing, composerFocused else { return false }
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        guard !name.isEmpty else { return true }
+        add(name)
+        return true
+    }
+
+    /// A todo written from here, in the shape the phone writes them — `manual` and all, so a
+    /// line typed on this Mac is indistinguishable from one typed in the app.
+    ///
+    /// On screen before it is on the network, like the ✕: the panel is a glance, and a line you
+    /// just typed that is not there yet reads as a keystroke that missed. Newest last, which is
+    /// where the column's own oldest-first order puts it.
+    private func add(_ name: String) {
+        // Last, and stamped rather than left to its timestamp: a todo dragged to the bottom of
+        // the column ranks above *now*, and a new line has to land under it rather than in
+        // front of it.
+        var pending = Todo(pending: name, order: (todos.last?.rank ?? Date().timeIntervalSince1970)
+            + Self.gap)
+        if let parsed = pending.parsedDueParts {
+            pending.dueAt = parsed.date
+            pending.dueAllDay = parsed.allDay
+        }
+        todos.append(pending)
+        todos.sort(by: Self.before)
+        Task {
+            do {
+                var fields: [String: Any] = [
+                    "name": ["stringValue": name],
+                    "state": ["stringValue": Todo.Pile.todo],
+                    "manual": ["booleanValue": true],
+                    "createdAt": Firestore.timestamp(pending.createdAt),
+                    "order": ["doubleValue": pending.rank],
+                ]
+                if let due = pending.dueAt {
+                    fields["dueAt"] = Firestore.timestamp(due)
+                    fields["dueAllDay"] = ["booleanValue": pending.dueAllDay]
+                }
+                let written = try await Firestore.create(in: "todos", fields: fields)
+                // The real id, so a ✕ on the row it has just become lands on the document that
+                // exists rather than creating a second one under the stand-in id.
+                if let index = todos.firstIndex(where: { $0.id == pending.id }) {
+                    todos[index] = Todo(written)
+                }
+            } catch {
+                NSLog("Fleet: could not add todo — \(error.localizedDescription)")
+                todos.removeAll { $0.id == pending.id }
+                failure = "not saved"
+            }
+        }
+    }
+
+    /// How far apart two ranks are put when there is nothing on the far side to split against —
+    /// an hour, on a scale that is seconds. Wide enough that a drag to either end of the column
+    /// clears the list, small enough to stay legible next to the timestamps around it.
+    private static let gap: Double = 3600
+
+    /// A todo dragged to a new place in the column, ⌘ held.
+    ///
+    /// One field on one document: the moved todo is given a rank halfway between the two it now
+    /// sits between, so nothing else in the list has to be rewritten. Doubles split about two
+    /// million times at this magnitude before the midpoint stops landing between its
+    /// neighbours — a list dragged into shape for a decade never reaches it.
+    func move(_ id: String, to index: Int) {
+        guard let from = todos.firstIndex(where: { $0.id == id }), from != index else { return }
+        var moved = todos.remove(at: from)
+        let target = min(max(index, 0), todos.count)
+        let before = target > 0 ? todos[target - 1].rank : nil
+        let after = target < todos.count ? todos[target].rank : nil
+        switch (before, after) {
+        case let (before?, after?): moved.order = (before + after) / 2
+        case let (before?, nil): moved.order = before + Self.gap
+        case let (nil, after?): moved.order = after - Self.gap
+        case (nil, nil): moved.order = moved.rank
+        }
+        todos.insert(moved, at: target)
+
+        let rank = moved.rank
+        Task {
+            do {
+                try await Firestore.patch("todos/\(id)", fields: ["order": ["doubleValue": rank]])
+            } catch {
+                NSLog("Fleet: could not reorder todo \(id) — \(error.localizedDescription)")
+                // The column is claiming an order Firestore does not have. Ask for the truth.
+                refresh()
+            }
+        }
+    }
+
+    /// The ✕ on a todo. Finished, not deleted — the row leaves the column either way, and one
+    /// of the two is undoable from the phone.
+    ///
+    /// Applied here before it is applied there, and not reconciled afterwards: the panel is
+    /// about to be looked away from, and a row that hangs about for the length of a round trip
+    /// reads as a click that missed.
+    // MARK: - Editing
+
+    /// The todo whose text is open for editing, and what has been typed into it. One at a
+    /// time: the panel has one caret, and Return has to belong to something.
+    @Published private(set) var editingID: String?
+    @Published var editDraft = ""
+
+    /// The pencil on a row, ⌘ held. Opens the whole text, not the first line — a todo is
+    /// occasionally a paragraph, and editing the title of one would silently drop the rest.
+    func edit(_ todo: Todo) {
+        stopComposing()
+        editingID = todo.id
+        editDraft = todo.name
+    }
+
+    /// Esc, or the panel closing. Returns whether there was an edit to abandon.
+    @discardableResult
+    func stopEditing() -> Bool {
+        guard editingID != nil else { return false }
+        editingID = nil
+        editDraft = ""
+        return true
+    }
+
+    /// Return in an open row. Writes the one field and closes; an empty line is a cancel
+    /// rather than a todo with no name.
+    func commitEdit() -> Bool {
+        guard let id = editingID else { return false }
+        let name = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        stopEditing()
+        guard !name.isEmpty, let index = todos.firstIndex(where: { $0.id == id }),
+              todos[index].name != name else { return true }
+
+        // On screen before it is on the network, like every other write here: the panel is a
+        // glance, and a line you just corrected that snaps back reads as a keystroke that
+        // missed.
+        let previous = todos[index].name
+        todos[index].name = name
+        Task {
+            do {
+                try await Firestore.patch("todos/\(id)",
+                                          fields: ["name": ["stringValue": name]])
+            } catch {
+                NSLog("Fleet: could not rename todo \(id) — \(error.localizedDescription)")
+                if let back = todos.firstIndex(where: { $0.id == id }) {
+                    todos[back].name = previous
+                }
+            }
+        }
+        return true
+    }
+
+    /// Ce que le panneau sait faire d'un mail — le vocabulaire du téléphone, mot pour mot,
+    /// sauf `later`, qui n'existe que côté Fleet.
+    enum MailAction: String, CaseIterable {
+        case seen, done, trash, later
+
+        var label: String {
+            switch self {
+            case .seen: return "SEEN"
+            case .done: return "DONE"
+            case .trash: return "TRASH"
+            case .later: return "LATER"
+            }
+        }
+    }
+
+    /// Combien de temps « later » fait disparaître un mail : une nuit. Il revient en tête de la
+    /// pile `new`, là où il était, plutôt qu'à la corbeille.
+    private static let snooze: TimeInterval = 20 * 3600
+
+    /// Agir sur un mail depuis le panneau. La carte part tout de suite — le téléphone fait
+    /// pareil — et un refus de Firestore la ramène au prochain fetch.
+    func act(_ action: MailAction, on mail: Mail) {
+        self.mail.removeAll { $0.id == mail.id }
+        Task {
+            let fields: [String: Any]
+            switch action {
+            case .seen:
+                fields = ["state": ["stringValue": "ongoing"],
+                          "ongoingAt": Firestore.timestamp(Date())]
+            case .done:
+                fields = ["state": ["stringValue": "done"],
+                          "doneAt": Firestore.timestamp(Date())]
+            case .trash:
+                fields = ["trashRequested": ["booleanValue": true]]
+            case .later:
+                fields = ["snoozedUntil":
+                            Firestore.timestamp(Date().addingTimeInterval(Self.snooze))]
+            }
+            do {
+                try await Firestore.patch("mail/\(mail.id)", fields: fields)
+            } catch {
+                NSLog("Fleet: could not \(action.rawValue) mail \(mail.id) — \(error.localizedDescription)")
+                refresh()
+            }
+        }
+    }
+
+    func markDone(_ todo: Todo) {
+        todos.removeAll { $0.id == todo.id }
+        Task {
+            do {
+                try await Firestore.patch("todos/\(todo.id)", fields: [
+                    "state": ["stringValue": Todo.Pile.done],
+                    "doneAt": Firestore.timestamp(Date()),
+                ])
+            } catch {
+                NSLog("Fleet: could not finish todo \(todo.id) — \(error.localizedDescription)")
+                // Put it back rather than leave the panel claiming something that did not
+                // happen. The next fetch would do it too, a minute later.
+                refresh()
+            }
+        }
+    }
+
+    /// Move whatever has been done long enough out of `done` and into `past`, and put a date on
+    /// anything that has none.
+    ///
+    /// Fire and forget, on the same rhythm as the read: this is filing, not an interaction, and
+    /// nothing on screen is waiting for it. There is no engine behind `todos` — no cron, no
+    /// Action, nothing but the two apps that read it — so it happens here or it does not happen.
+    private func file(_ done: [Todo]) {
+        let now = Date()
+        for todo in done {
+            guard let doneAt = todo.doneAt else {
+                stamp(todo, doneAt: now.addingTimeInterval(-Config.todoAssumedDoneAgo))
+                continue
+            }
+            guard now.timeIntervalSince(doneAt) > Config.todoArchiveAfter else { continue }
+            Task {
+                try? await Firestore.patch("todos/\(todo.id)",
+                                           fields: ["state": ["stringValue": Todo.Pile.past]])
+                NSLog("Fleet: filed todo \(todo.id) away as past")
+            }
+        }
+    }
+
+    private func stamp(_ todo: Todo, doneAt: Date) {
+        Task {
+            try? await Firestore.patch("todos/\(todo.id)",
+                                       fields: ["doneAt": Firestore.timestamp(doneAt)])
+        }
+    }
+
+    // MARK: - Reels
+
+    /// The Reels the phone was handed, minus the ones put away — for `fleet --reels`.
+    @Published private(set) var reels: [Reel] = []
+    /// The Reels this Mac has given up on, newest first, each as ALERT names it: which Reel,
+    /// and what stopped it. The phone giving up is not in here — it gives up on most of them,
+    /// and this Mac takes them over on its next run.
+    @Published private(set) var failedRuns: [String] = []
+    /// When the resident app last started `fleet --reels-run` for work it saw waiting.
+    private var kickedAt = Date.distantPast
+    /// On in the resident app only: a render or a `fleet --reels` listing must not start a
+    /// two-minute pipeline on the way to printing something.
+    var kicksJob = false
+    /// How many the background read has been through today: all the panel says about Reels,
+    /// now that nobody reads them there.
+    @Published private(set) var reelsReadToday = 0
+    /// The Reel a check or a read is running on right now, when one is. One at a time — whisper
+    /// takes every core it is given, and two of them is the machine Fleet exists to prevent.
+    ///
+    /// The work runs in `fleet --reels-run`, not in the app that draws the panel, so the job
+    /// leaves the shortcode in a file for as long as it works, beside its pid: a job killed at
+    /// its cap never gets to take the file away, and a dead pid is what says it is stale.
+    @Published var checkingReel: String? {
+        didSet {
+            guard mayCheck(), checkingReel != oldValue else { return }
+            if let id = checkingReel {
+                try? "\(getpid()) \(id)".write(toFile: Self.checkingFile, atomically: true, encoding: .utf8)
+            } else {
+                try? FileManager.default.removeItem(atPath: Self.checkingFile)
+            }
+        }
+    }
+    private static let checkingFile = (Hooks.home as NSString).appendingPathComponent("reel-checking")
+
+    /// The Reels read in the last 24 hours, newest first: what REELS lists under the pointer.
+    @Published private(set) var readReels: [Reel] = []
+    /// The one whose context field is open, and what is being written in it.
+    @Published var contextReelID: String?
+    @Published var reelContext = ""
+    /// Whether that field holds the caret — see `composerFocused`.
+    @Published var reelContextFocused = false
+    /// A second reading, with the context, is on its way.
+    @Published private(set) var reinterpreting = false
+
+    /// From the resident app's tick: what the job is working on, if it is still alive.
+    func readCheckingReel() {
+        guard !mayCheck() else { return }
+        let parts = (try? String(contentsOfFile: Self.checkingFile, encoding: .utf8))?
+            .split(separator: " ") ?? []
+        let alive = parts.count == 2 && Int32(parts[0]).map { kill($0, 0) == 0 } == true
+        let id = alive ? String(parts[1]) : nil
+        if checkingReel != id { checkingReel = id }
+    }
+    /// Whether this process may start a check at all. Off by default, and turned on by the
+    /// one job whose business it is — `fleet --reels-run`. Every `fleet --something` builds a
+    /// store too, and none of them should start a two-minute pipeline on the way to printing
+    /// a list; the resident app leaves it off because a download and a transcription on the
+    /// machine you are working on is the wrong kind of help at an hour it chose itself.
+    var mayCheck: () -> Bool = { false }
+
+    /// Whether a check or a read failed since launch — `fleet --reels-run` exits 1 on it, which
+    /// is what turns its CRONS card red.
+    private(set) var failedThisRun = false
+
+    /// Whether a check or a read is running right now — what the drain waits on.
+    var working: Bool { reelCheck != nil }
+
+    private(set) var reelsFetchedAt = Date.distantPast
+    private var reelCheck: Task<Void, Never>?
+
+    /// From the controller's tick, panel or no panel: a Reel shared from the phone at lunch
+    /// should have its verdict by the time you sit back down.
+    func pollReelsIfDue() {
+        guard isConfigured, Date().timeIntervalSince(reelsFetchedAt) > Config.reelPoll else { return }
+        reelsFetchedAt = Date()
+        Task { await syncReels() }
+    }
+
+    /// Read the collection, show what is worth showing, and start a check on the newest Reel
+    /// nobody has managed yet. A finished check calls this again, which is how the backlog
+    /// drains one Reel at a time without a queue of its own.
+    func syncReels() async {
+        do {
+            let all = try await Firestore.collection("factcheck").map(Reel.init)
+            guard !Task.isCancelled else { return }
+            reelsFetchedAt = Date()
+            reels = all.filter { !$0.seen }.sorted(by: Reel.before)
+            // The last day's, not every Reel ever read: what REELS lists is what just came
+            // through, and the notes keep the rest (asked 2026-09-28).
+            let dayAgo = Date().addingTimeInterval(-86_400)
+            readReels = all.filter { ($0.digestedAt ?? .distantPast) > dayAgo }
+                .sorted { $0.digestedAt! > $1.digestedAt! }
+            reelsReadToday = all.filter { $0.digestedAt.map(Calendar.current.isDateInToday) ?? false }.count
+            // Put away counts as dealt with: a Reel you have already read the failure of is not
+            // news, and a bar that stays red for ever is a bar nobody looks at.
+            failedRuns = all.filter { !$0.seen && $0.givenUp }
+                .sorted { $0.createdAt > $1.createdAt }
+                .map { "reel \(String($0.label.prefix(24))): \(String($0.fleetError.prefix(40)))" }
+            // The resident app does no check itself, but it does not leave one waiting for the
+            // job's next hour either: work in sight starts the job now (asked 2026-09-27, after
+            // two Reels sat unread for an hour). `kickstart` without -k leaves a running job be.
+            if kicksJob, Date().timeIntervalSince(kickedAt) > 300,
+               all.contains(where: { $0.needsCheck || ($0.needsDigest && !digestFailed.contains($0.id)) }) {
+                kickedAt = Date()
+                let kick = Process()
+                kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                kick.arguments = ["kickstart", "gui/\(getuid())/reels.scan"]
+                try? kick.run()
+            }
+            guard reelCheck == nil, mayCheck() else { return }
+            guard let next = all.filter(\.needsCheck).max(by: { $0.createdAt < $1.createdAt }) else {
+                if let next = all.filter({ $0.needsDigest && !digestFailed.contains($0.id) })
+                    .max(by: { $0.createdAt < $1.createdAt }) {
+                    checkingReel = next.id
+                    reelCheck = Task {
+                        await digest(next)
+                        reelCheck = nil
+                        checkingReel = nil
+                        await syncReels()
+                    }
+                }
+                return
+            }
+            checkingReel = next.id
+            reelCheck = Task {
+                // A failure with tries left is the next run's work, not a run gone wrong.
+                if !(await ReelCheck.run(next)), next.fleetTries + 1 >= Reel.maxTries {
+                    failedThisRun = true
+                }
+                reelCheck = nil
+                checkingReel = nil
+                await syncReels()
+            }
+        } catch {
+            NSLog("Fleet: reels fetch failed — \(error.localizedDescription)")
+            // A run that could not read the collection did nothing, and `--reels-run` must say so.
+            failedThisRun = true
+        }
+    }
+
+    /// Reels whose background read failed since launch: not retried until the next one, or
+    /// the backlog would spin on the same broken answer.
+    private var digestFailed: Set<String> = []
+
+    /// Live sessions, `transcript id: project — topic`, for a Reel to be told to. Set by the
+    /// controller, like `mayCheck`.
+    var liveSessions: () -> [String: String] = { [:] }
+
+    /// The background read of a checked Reel: notes, project files and live sessions through
+    /// `ReelDigest`, and the rare todo here — which files the Reel away like the sparkle does.
+    private func digest(_ reel: Reel, tell: Bool = true) async {
+        do {
+            let sessions = tell ? liveSessions() : [:]
+            let digest = try await Claude.digest(reel, themes: ReelDigest.themes(),
+                                                 projects: ReelDigest.projects(), sessions: sessions)
+            await Task.detached { ReelDigest.apply(digest, reel, sessions: sessions) }.value
+            var done: [String] = []
+            if digest.note != nil { done.append("note in \(digest.theme)") }
+            done += digest.projects.map(\.0)
+            if digest.todo != nil { done.append("todo") }
+            var fields: [String: Any] = [
+                "digestedAt": Firestore.timestamp(Date()),
+                "outcome": ["stringValue": done.isEmpty ? "nothing kept" : done.joined(separator: " · ")],
+            ]
+            // The note is the line the REELS block shows. Not over one the sparkle wrote, except
+            // on a second reading, which is Marius correcting it.
+            if let note = digest.note, reel.reminder.isEmpty || !tell {
+                fields["reminder"] = ["stringValue": note]
+            }
+            try await Firestore.patch("factcheck/\(reel.id)", fields: fields)
+            if let line = digest.todo, !todos.contains(where: { $0.name.contains(reel.id) }) {
+                add(line)
+                if !reel.seen { markSeen(reel) }
+            }
+            NSLog("Fleet: reel \(reel.id) read — note \(digest.note != nil), todo \(digest.todo != nil), "
+                  + "\(digest.projects.count) project(s), \(digest.sessions.count) session(s)")
+        } catch {
+            NSLog("Fleet: could not read reel \(reel.id) — \(error.localizedDescription)")
+            digestFailed.insert(reel.id)
+            failedThisRun = true
+        }
+    }
+
+    /// Return in a Reel's context field.
+    func commitReelContext() -> Bool {
+        guard reelContextFocused, let reel = readReels.first(where: { $0.id == contextReelID })
+        else { return false }
+        let text = reelContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        reelContext = ""
+        contextReelID = nil
+        reelContextFocused = false
+        guard !text.isEmpty, !reinterpreting else { return true }
+        reinterpreting = true
+        Task {
+            await reinterpret(reel, adding: text)
+            reinterpreting = false
+            await syncReels()
+        }
+        return true
+    }
+
+    /// The Reel read again with what Marius said about it: the verdict first, then the notes,
+    /// which replace the ones the first reading left. The sessions are not told twice.
+    private func reinterpret(_ reel: Reel, adding text: String) async {
+        var reel = reel
+        reel.context = reel.context.isEmpty ? text : reel.context + "\n" + text
+        do {
+            try await Firestore.patch("factcheck/\(reel.id)", fields: ["context": ["stringValue": reel.context]])
+            if !reel.transcript.isEmpty || !reel.caption.isEmpty {
+                let verdict = try await Claude.factCheck(transcript: reel.transcript, caption: reel.caption,
+                                                         author: reel.author, context: reel.context)
+                try await Firestore.patch("factcheck/\(reel.id)", fields: ReelCheck.verdictFields(verdict))
+                reel.verdict = ReelCheck.verdictOf(verdict["verdict"])
+                reel.summary = ReelCheck.summaryOf(verdict)
+            }
+        } catch {
+            NSLog("Fleet: could not recheck reel \(reel.id) — \(error.localizedDescription)")
+        }
+        let forgotten = reel
+        await Task.detached { ReelDigest.forget(forgotten) }.value
+        await digest(reel, tell: false)
+    }
+
+    /// Put away, kept.
+    func markSeen(_ reel: Reel) {
+        Task {
+            do {
+                try await Firestore.patch("factcheck/\(reel.id)", fields: [
+                    "seen": ["booleanValue": true],
+                    "seenAt": Firestore.timestamp(Date()),
+                ])
+            } catch {
+                NSLog("Fleet: could not mark reel \(reel.id) seen — \(error.localizedDescription)")
+                await syncReels()
+            }
+        }
+    }
+
+    // MARK: - Reading
+
+    /// Called when the panel appears. Cheap to call — it does nothing at all most times.
+    func refreshIfStale(freshness: TimeInterval = HubStore.freshness) {
+        guard isConfigured,
+              inFlight == nil,
+              Date().timeIntervalSince(fetchedAt) > freshness else { return }
+        refresh()
+    }
+
+    private var epitechWritten: Date?
+
+    /// On every tick, and a read only when the scan has written since the last one. The copy
+    /// from a fetch stood until the next — six hours with the panel shut — whatever the scan
+    /// wrote under it: on 07-10 a Claude went out on "discord" after the alert had "stood ten
+    /// minutes", four of them after the catch-up run had written a 0 over it.
+    func rereadEpitechIfWritten(_ file: URL = Epitech.file) {
+        let written = Epitech.written(file)
+        guard written != epitechWritten else { return }
+        epitechWritten = written
+        epitech = Epitech.read(from: file)
+    }
+
+    /// A block with nothing in it folds to its heading line, like MEMORY, and gives its room to
+    /// the prioritized block under it (EPITECH, TODO). Only once loaded: a column that has not
+    /// answered yet is not an empty one.
+    var mailEmpty: Bool { loaded && mail.isEmpty }
+    var schoolEmpty: Bool { loaded && (epitech?.modules.isEmpty ?? true) }
+    var todoEmpty: Bool { loaded && todos.isEmpty && !composing }
+
+    /// What an empty column says before its first fetch has landed: waiting, or that the first
+    /// one failed. "Loading…" after a failure waited on something that was not coming — the
+    /// column sat there until the next refresh, and a render drew it (patch notes, --render).
+    var pending: String { failure == nil ? "Loading\u{2026}" : "Offline" }
+    /// A fetch is on its way — see `refresh`, which cancels one to start the next.
+    var fetching: Bool { inFlight != nil }
+
+    func refresh() {
+        guard isConfigured else { return }
+        inFlight?.cancel()
+        inFlight = Task { await load() }
+    }
+
+    /// How soon first, then the dated ones soonest first, then the rest in the order you left
+    /// them. A dragged row stays where it was dropped only among its undated neighbours: a
+    /// deadline is a fact, and it does not move because you dragged it.
+    static func before(_ a: Todo, _ b: Todo) -> Bool {
+        if a.bucket != b.bucket { return a.bucket.rawValue < b.bucket.rawValue }
+        switch (a.due, b.due) {
+        case let (da?, db?) where da != db: return da < db
+        case (.some, .none): return true
+        case (.none, .some): return false
+        default: break
+        }
+        return a.rank != b.rank ? a.rank < b.rank : a.id < b.id
+    }
+
+    private func load() async {
+        // Off the disk, before anything goes near the network: the Epitech block has no fetch
+        // of its own and must not be held up by — or lost with — the one the columns make.
+        epitech = Epitech.read()
+        NSLog("Fleet: epitech — \(epitech?.modules.count ?? -1) modules")
+        // Stamped on the attempt, not on the success: a fetch that fails must still close the
+        // freshness window, or an outage turns every panel opening into three more reads.
+        fetchedAt = Date()
+        do {
+            // All three at once: they are independent collections and the panel is already
+            // on screen waiting for them.
+            async let mailDocs = Firestore.collection("mail")
+            async let todoDocs = Firestore.collection("todos")
+            async let ruleDocs = Firestore.collection("rules")
+            let (mailPage, todoPage, rulePage) = try await (mailDocs, todoDocs, ruleDocs)
+            guard !Task.isCancelled else { return }
+
+            let starred = StarredSenders(rulePage)
+            let unread = mailPage.compactMap(Mail.init)
+                .map {
+                    var mail = $0
+                    mail.starred = mail.starred || starred.covers(mail)
+                    return mail
+                }
+                // Starred first, whatever the engine scored it: a standing rule about a sender
+                // is a judgement you made yourself, and it outranks a guess made by a model at
+                // four in the morning.
+                .sorted {
+                    if $0.starred != $1.starred { return $0.starred }
+                    if $0.importance != $1.importance { return $0.importance > $1.importance }
+                    return $0.receivedAt > $1.receivedAt
+                }
+
+            // New mail only. Nothing new is good news, and the block folds to its heading
+            // rather than filling up with the pile already dealt with.
+            mail = unread.filter { $0.state == "new" }
+            let all = todoPage.map(Todo.init)
+            todos = all.filter(\.open).sorted(by: Self.before)
+            // The first opening after a launch has nothing to light until this lands.
+            if spotlightID == nil { advanceSpotlight() }
+            file(all.filter { $0.state == Todo.Pile.done })
+            failure = nil
+            loaded = true
+            // Its own fetch, after the two the panel is waiting on: a verdict is not what the
+            // panel opened for, and a check it may start must not hold the columns up.
+            Task { await syncReels() }
+        } catch {
+            guard !Task.isCancelled else { return }
+            NSLog("Fleet: hub fetch failed — \(error.localizedDescription)")
+            // Whatever arrived last stays on screen. Empty piles are a claim, and the wrong
+            // one: showing this morning's inbox is a small lie, showing "nothing to read" is
+            // a large one.
+            failure = loaded ? "offline" : error.localizedDescription
+        }
+        inFlight = nil
+    }
+}
+
+/// How long ago, in the fewest characters that still say it: `3d`, `2h`, `now`. A column this
+/// narrow has no room for "3 days ago", and the exact figure never matters — the question the
+/// eye is asking is only whether this is from today.
+func shortAge(since date: Date) -> String {
+    let seconds = Date().timeIntervalSince(date)
+    guard seconds.isFinite, seconds > 0, date != .distantPast else { return "" }
+    switch seconds {
+    case ..<60: return "now"
+    case ..<3600: return "\(Int(seconds / 60))m"
+    case ..<86_400: return "\(Int(seconds / 3600))h"
+    case ..<(86_400 * 30): return "\(Int(seconds / 86_400))d"
+    case ..<(86_400 * 365): return "\(Int(seconds / (86_400 * 30)))mo"
+    default: return "\(Int(seconds / (86_400 * 365)))y"
+    }
+}
