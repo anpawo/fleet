@@ -234,7 +234,7 @@ enum Claude {
         // Sonnet with the web: the verdict rests on what it finds, not on what it remembers,
         // and a Reel is rarely about something worth Opus.
         let text = try await run(prompt: prompt, model: "sonnet", system: factCheckRules,
-                                 tools: ["WebSearch", "WebFetch"], timeout: 420)
+                                 tools: ["WebSearch", "WebFetch"], timeout: 420, sealed: true)
         guard let json = firstJSONObject(in: text),
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -312,7 +312,7 @@ enum Claude {
 
         \(facts)
         """
-        let text = try await run(prompt: prompt, model: "sonnet")
+        let text = try await run(prompt: prompt, model: "sonnet", sealed: true)
         guard let json = firstJSONObject(in: text),
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -344,7 +344,8 @@ enum Claude {
 
     // MARK: - Fixing
 
-    /// A whole session rather than a turn, for `Fixer`: his setup, every tool, half an hour.
+    /// A whole session rather than a turn, for `Fixer`: his setup, the shell and his files but
+    /// no MCP server, half an hour.
     static func unattended(_ prompt: String) async throws -> String {
         try await run(prompt: prompt, model: answerModel, timeout: 1800, unattended: true)
     }
@@ -353,15 +354,24 @@ enum Claude {
 
     private static func run(prompt: String, model: String, system: String? = nil,
                             tools: [String] = [], timeout: TimeInterval = Self.timeout,
-                            unattended: Bool = false) async throws -> String {
+                            sealed: Bool = false, unattended: Bool = false) async throws -> String {
         guard let binary = binaryPath() else { throw Failure.notInstalled }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["-p", prompt, "--model", model, "--output-format", "json"]
         if let system { process.arguments! += ["--append-system-prompt", system] }
-        // Nothing is allowed by default in a headless turn, and a fact-check with no web is
-        // a guess. Named tools only: no shell, no files.
+        if sealed {
+            // For a turn that reads what strangers wrote: a Reel, the pages its check opens.
+            // His settings start every session with permission prompts off and `--allowedTools`
+            // only adds to that, so left to them such a turn holds the shell, his files and his
+            // mail (probed 11-10-2026). `--tools` is the whole set it gets: no settings, no MCP
+            // server, and the effort his settings would have given it.
+            process.arguments! += ["--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
+                                   "--settings", #"{"effortLevel":"high"}"#,
+                                   "--tools", tools.joined(separator: ",")]
+        }
+        // A fact-check with no web is a guess: the tools named are used without asking.
         if !tools.isEmpty { process.arguments! += ["--allowedTools", tools.joined(separator: ",")] }
         // Run somewhere disposable. A headless turn writes a transcript into whatever
         // directory it starts in, and starting in a real project would drop a stray session
@@ -370,7 +380,9 @@ enum Claude {
         if unattended {
             // The flag his own headless runs carry (the Epitech scan's `run.sh`): nothing is
             // allowed by default in a headless turn, and nobody is there to allow it.
-            process.arguments! += ["--dangerously-skip-permissions"]
+            // No MCP server: a fix is shell and files, and "send nothing to anyone" holds better
+            // with no mail, calendar or drive tool in reach than as a line of the prompt.
+            process.arguments! += ["--dangerously-skip-permissions", "--strict-mcp-config"]
             // ~/self is no project's history and has every project under it, each CLAUDE.md
             // loaded as the session reads into it.
             process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/self")
