@@ -46,26 +46,19 @@ enum SelfCheck {
         2026-10-03,-2.50,Shopping,F,x,100,104
         2026-10-04,-2.50,Shopping,F,x,100,104
         2026-10-04,-3.00,Shopping,F,x,100,106
+        2026-10-05,-40.00,Own savings,G
         """
         let read = Money.months(csv: csv)
         expect(read.months.map(\.id) == ["2026-10", "2026-09"], true, "money: the newest month first")
         expect(read.months.first?.spent
                == [.transport: 4.5, .loan: 250.00, .health: 1, .clothes: 5, .shopping: 3], true,
-               "money: a month cut by kind, a credit left out, clothes by the bank's code")
-        expect(read.months.first?.payments.filter { $0.name == "F" }
-               == [Money.Payment(date: "2026-10-04", amount: -5, kind: .clothes, name: "F", count: 2),
-                   Money.Payment(date: "2026-10-04", amount: -3, kind: .shopping, name: "F")], true,
-               "money: a month's lines to one place are one line, a kind apart")
+               "money: a month cut by kind, a credit and a move to savings left out, clothes by the bank's code")
         expect(read.months.last?.spent == [.food: 10], true, "money: a quoted category keeps its comma")
-        expect(read.latest == "2026-10-04", true, "money: the day of the newest payment")
+        expect(read.latest == "2026-10-05", true, "money: the day of the newest line, spent or not")
         expect(read.months.first?.shares.values.reduce(0, +) == 100, true, "money: a month's shares add up to 100")
         expect(read.months.last?.shares[.food] == 100, true, "money: one kind alone is the whole month")
         expect(read.months.first?.ranked == [.loan, .clothes, .transport, .shopping], true,
                "money: a month's kinds the largest first, one that reads 0% left out")
-        expect(read.months.first?.payments.prefix(2).map(\.amount) == [-250.00, 20], true,
-               "money: the largest lines first, a credit among them")
-        expect(read.months.first?.payments.prefix(3).map(\.name) == ["Loan repayment", "Salary", "F"], true,
-               "money: a loan and a credit by their category, the rest by their merchant")
     }
 
     // MARK: - Reels

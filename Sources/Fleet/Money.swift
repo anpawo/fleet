@@ -1,10 +1,12 @@
+import Charts
 import SwiftUI
 
 /// What left the bank account, month by month, read off `~/.bnp/payments.csv`.
 ///
-/// Fleet only draws it. The bank has no API a routine can log in to — the login is a virtual
-/// keypad and a phone approval — so the file is written by whoever last had a live session,
-/// and the block says how old its newest payment is rather than pass a stale month for today's.
+/// Fleet only draws it: a routine outside this repository reads the bank once a day and adds
+/// the lines the file lacks. A login the bank refuses stops that routine until someone has
+/// looked, so the block says how old its newest payment is rather than pass a stale month for
+/// today's.
 enum Money {
     static let file = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".bnp/payments.csv")
 
@@ -63,33 +65,10 @@ enum Money {
         }
     }
 
-    /// What a month paid to one place, or got from it: every line of the export that has the
-    /// same name, kind and direction, as one. A credit has no kind: it was not spent on anything.
-    struct Payment: Equatable {
-        /// `2026-10-02`, the newest of them.
-        let date: String
-        /// Negative when it left the account.
-        let amount: Double
-        let kind: Kind?
-        let name: String
-        /// How many lines of the export it stands for.
-        var count = 1
-    }
-
-    /// What makes two lines of the export one `Payment`.
-    private struct Place: Hashable {
-        let name: String
-        let kind: Kind?
-        let credit: Bool
-    }
-
     struct Month: Identifiable, Equatable {
         /// `2026-10`.
         let id: String
         var spent: [Kind: Double] = [:]
-        /// A line a place (asked 2026-10-11: twenty stops at one shop were twenty lines), credits
-        /// too, the largest first whichever way it went.
-        var payments: [Payment] = []
         var total: Double { spent.values.reduce(0, +) }
 
         /// Each kind's part of what was spent, in whole percent that add up to 100: rounded
@@ -122,33 +101,19 @@ enum Money {
     }
 
     /// The months of an export, newest first, and the day of its newest line. Only a debit is
-    /// spending — a credit is not money spent backwards — but every line is kept, a place's
-    /// lines as one, for the list of the largest.
+    /// spending — a credit is not money spent backwards — and not a debit that only moved to
+    /// savings: it left the account without being spent.
     static func months(csv: String) -> (months: [Month], latest: String?) {
         var months: [String: Month] = [:]
         var latest: String?
         for line in csv.split(whereSeparator: \.isNewline).dropFirst() {
             let row = fields(line, 7)
             guard row.count >= 3, row[0].count == 10, let amount = Double(row[1]), amount != 0 else { continue }
-            let id = String(row[0].prefix(7))
-            let kind = amount < 0 ? Kind(category: row[2], bankCode: row.count > 6 ? row[6] : "") : nil
-            if let kind { months[id, default: Month(id: id)].spent[kind, default: 0] -= amount }
-            // The bank's wording for a loan instalment is the contract's number, and that is
-            // what the export has for its merchant: the category says what the line is. It
-            // does for a credit too — Salary, not the name of who pays it.
-            let named = row.count > 3 && amount < 0 && kind != .loan
-            months[id, default: Month(id: id)].payments.append(
-                Payment(date: row[0], amount: amount, kind: kind, name: named ? row[3] : row[2]))
             latest = max(latest ?? row[0], row[0])
-        }
-        for id in months.keys {
-            let places = Dictionary(grouping: months[id]?.payments ?? []) {
-                Place(name: $0.name, kind: $0.kind, credit: $0.amount > 0)
-            }
-            months[id]?.payments = places.map { place, lines in
-                Payment(date: lines.map(\.date).max() ?? "", amount: lines.reduce(0) { $0 + $1.amount },
-                        kind: place.kind, name: place.name, count: lines.count)
-            }.sorted { (abs($0.amount), $0.date, $0.name) > (abs($1.amount), $1.date, $1.name) }
+            guard amount < 0, !row[2].localizedCaseInsensitiveContains("saving") else { continue }
+            let id = String(row[0].prefix(7))
+            let kind = Kind(category: row[2], bankCode: row.count > 6 ? row[6] : "")
+            months[id, default: Month(id: id)].spent[kind, default: 0] -= amount
         }
         return (months.values.sorted { $0.id > $1.id }, latest)
     }
@@ -210,15 +175,14 @@ final class MoneyStore: ObservableObject {
 /// the question a figure raises is "against what", and last month is the answer.
 ///
 /// A month is a block of its own and not a bar (asked 2026-10-07, the day the bars shipped):
-/// what each kind took of it in percent, then its ten largest lines whichever way the money
-/// went.
+/// a pie of what each kind took of it — see `MoneyMonth`.
 struct MoneyColumn: View {
     @ObservedObject var store: MoneyStore
     var commandHeld = false
     /// Off for a render that draws no scroll view — see `CronColumn`.
     var scrolling = true
-    /// The most the block takes of its column. Four months of ten lines are taller than a
-    /// laptop's screen: they scroll under this rather than push TODO off the panel.
+    /// The most the block takes of its column. Six months of pies are taller than a laptop's
+    /// screen: they scroll under this rather than push TODO off the panel.
     var limit: CGFloat = .infinity
 
     /// Seeded from a flag so a render can show the open block, which only a pointer opens.
@@ -294,15 +258,14 @@ struct MoneyColumn: View {
     }
 }
 
-/// One month: its name and what it cost, what each kind took of that, and its largest lines.
+/// One month: its name and what it cost, and a pie of what each kind took of that (asked
+/// 2026-10-11, in place of a grid of percentages and the month's largest payments: what was
+/// paid where is not the question, how the month splits is).
 ///
-/// The kinds are the month's own ranking — see `Month.ranked` — not nine fixed places: the same
-/// kind is not in the same cell from one month to the next.
+/// The kinds are the month's own ranking — see `Month.ranked`: the pie turns from twelve
+/// o'clock in the order its legend reads down.
 private struct MoneyMonth: View {
     let month: Money.Month
-
-    private static let largest = 10
-    private static let columns = 3
 
     var body: some View {
         let kinds = month.ranked
@@ -317,23 +280,16 @@ private struct MoneyMonth: View {
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.55))
             }
-            VStack(spacing: 3) {
-                ForEach(Array(stride(from: 0, to: kinds.count, by: Self.columns)), id: \.self) { start in
-                    HStack(spacing: 4) {
-                        // A short last row keeps the columns of the rows above it.
-                        ForEach(start..<start + Self.columns, id: \.self) { index in
-                            if index < kinds.count {
-                                share(kinds[index], shares[kinds[index]] ?? 0)
-                            } else {
-                                Color.clear.frame(maxWidth: .infinity).frame(height: 0)
-                            }
-                        }
-                    }
+            HStack(spacing: 14) {
+                // The inset is the ground showing between two slices: neighbours change with
+                // the month, and two close colours side by side still read as two.
+                Chart(kinds, id: \.self) { kind in
+                    SectorMark(angle: .value("Spent", month.spent[kind] ?? 0), angularInset: 1)
+                        .foregroundStyle(kind.tint)
                 }
-            }
-            VStack(spacing: 3) {
-                ForEach(Array(month.payments.prefix(Self.largest).enumerated()), id: \.offset) { _, payment in
-                    MoneyLine(payment: payment)
+                .frame(width: 76, height: 76)
+                VStack(spacing: 3) {
+                    ForEach(kinds, id: \.self) { kind in share(kind, shares[kind] ?? 0) }
                 }
             }
         }
@@ -342,52 +298,16 @@ private struct MoneyMonth: View {
     /// The name in the panel's own grey beside a dot of the colour: the colour says which, the
     /// text stays text.
     private func share(_ kind: Money.Kind, _ percent: Int) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             Circle().fill(kind.tint).frame(width: 6, height: 6)
             Text(kind.title)
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.5))
+            Spacer(minLength: 4)
             Text("\(percent)%")
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.85))
         }
         .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// One of a month's largest lines. A credit is among them (asked 2026-10-07: "the + too"),
-/// with its sign and in the panel's green; it was not spent on anything, so it has a plus where
-/// a payment has the dot of its kind.
-private struct MoneyLine: View {
-    let payment: Money.Payment
-
-    var body: some View {
-        let credit = payment.amount > 0
-        HStack(spacing: 6) {
-            Text(payment.count > 1 ? "×\(payment.count)" : Money.day(payment.date))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.4))
-                .frame(width: 34, alignment: .trailing)
-            Group {
-                if let kind = payment.kind {
-                    Circle().fill(kind.tint)
-                } else {
-                    Image(systemName: "plus")
-                        .font(.system(size: 7, weight: .heavy))
-                        .foregroundStyle(SessionState.ready.tint)
-                }
-            }
-            .frame(width: 6, height: 6)
-            Text(payment.name)
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text((credit ? "+" : "−") + Money.euros(abs(payment.amount)))
-                .font(.system(size: 10).monospacedDigit())
-                .foregroundStyle(credit ? SessionState.ready.tint : .white.opacity(0.55))
-                .fixedSize()
-        }
     }
 }
