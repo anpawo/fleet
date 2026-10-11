@@ -741,11 +741,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         _ = registry.refresh()
         let controller = AppController()
         // `--fake <n>` draws a fleet of n synthetic sessions instead of the live one, which is
-        // how the grid's shape is checked at counts you do not have running.
+        // how the grid's shape is checked at counts you do not have running. The side columns
+        // are invented with them: nothing on such a picture is this machine's, so it can be
+        // published.
         if let f = CommandLine.arguments.firstIndex(of: "--fake"),
            f + 1 < CommandLine.arguments.count,
            let n = Int(CommandLine.arguments[f + 1]) {
             controller.injectSessions(DemoFleet.sessions(n))
+            DemoFleet.fill(controller)
         } else {
             controller.injectSessions(registry.refresh())
         }

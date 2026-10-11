@@ -153,11 +153,14 @@ final class MoneyStore: ObservableObject {
     @Published private(set) var months: [Money.Month] = []
     @Published private(set) var latest: String?
 
+    /// The real export, unless a picture of an invented one is being drawn — see
+    /// `DemoFleet.fill`. Kept, so the next tick does not read the real one back over it.
+    var file = Money.file { didSet { rereadIfWritten() } }
     private var written: Date?
 
     init() { rereadIfWritten() }
 
-    func rereadIfWritten(_ file: URL = Money.file) {
+    func rereadIfWritten() {
         let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         guard date != written || date == nil else { return }
         written = date

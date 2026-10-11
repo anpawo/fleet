@@ -629,7 +629,7 @@ final class HubStore: ObservableObject {
     /// From the controller's tick, panel or no panel: a Reel shared from the phone at lunch
     /// should have its verdict by the time you sit back down.
     func pollReelsIfDue() {
-        guard isConfigured, Date().timeIntervalSince(reelsFetchedAt) > Config.reelPoll else { return }
+        guard isConfigured, !pretending, Date().timeIntervalSince(reelsFetchedAt) > Config.reelPoll else { return }
         reelsFetchedAt = Date()
         Task { await syncReels() }
     }
@@ -812,7 +812,7 @@ final class HubStore: ObservableObject {
     /// minutes", four of them after the catch-up run had written a 0 over it.
     func rereadEpitechIfWritten(_ file: URL = Epitech.file) {
         let written = Epitech.written(file)
-        guard written != epitechWritten else { return }
+        guard written != epitechWritten, !pretending else { return }
         epitechWritten = written
         epitech = Epitech.read(from: file)
     }
@@ -831,8 +831,24 @@ final class HubStore: ObservableObject {
     /// A fetch is on its way — see `refresh`, which cancels one to start the next.
     var fetching: Bool { inFlight != nil }
 
+    /// Set by `pretend`, and never unset: nothing is fetched or read off the disk after it, so
+    /// a picture of invented columns cannot have this machine's own land on it halfway.
+    private var pretending = false
+
+    /// Invented columns, for a picture that can be published — see `DemoFleet.fill`. `school`
+    /// is a `state.json` written for the occasion.
+    func pretend(mail: [Mail], todos: [Todo], school: URL) {
+        pretending = true
+        inFlight?.cancel()
+        self.mail = mail
+        self.todos = todos.sorted(by: Self.before)
+        epitech = Epitech.read(from: school)
+        reelsFetchedAt = Date()
+        loaded = true
+    }
+
     func refresh() {
-        guard isConfigured else { return }
+        guard isConfigured, !pretending else { return }
         inFlight?.cancel()
         inFlight = Task { await load() }
     }
