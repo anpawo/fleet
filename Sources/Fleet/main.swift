@@ -164,12 +164,39 @@ if CommandLine.arguments.contains("--bench") {
     }
 }
 
+/// The panel's hosting view, keeping what each frame it rendered cost the main thread. SwiftUI
+/// renders inside `layout()`, once per frame of an animation, so this is the frame itself —
+/// which a loop around the run loop cannot time: it sees its own turns, not the frames.
+final class FrameCountingHost: NSHostingView<OverlayView> {
+    var frames: [Double] = []
+    /// The thread's CPU clock as the first frame since `frames` was emptied came out.
+    var firstFrameAt = 0.0
+
+    static func cpu() -> Double {
+        var t = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
+        return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
+    }
+
+    override func layout() {
+        let start = Self.cpu()
+        super.layout()
+        let end = Self.cpu()
+        if frames.isEmpty { firstFrameAt = end }
+        frames.append(end - start)
+    }
+}
+
 // `--bench-panel` times the panel's own view tree, which `--bench` cannot see: the real
 // `OverlayView` in a window that is never ordered in, ticked, scrolled and hovered, in
 // main-thread CPU per step. Run it under `sample` for the call tree. What it cannot see is the
 // compositor — a window that is not on screen costs WindowServer nothing.
 if CommandLine.arguments.contains("--bench-panel") {
     MainActor.assumeIsolated {
+        // The class the app's own main thread runs in. Started from a shell this one is
+        // "default", which a busy machine parks on an efficiency core: the same step then
+        // read 5 ms on one run and 15 on the next.
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
         _ = NSApplication.shared
         let controller = AppController()
         let registry = SessionRegistry()
@@ -183,15 +210,11 @@ if CommandLine.arguments.contains("--bench-panel") {
         let frame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
         let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered,
                               defer: false)
-        let hosting = NSHostingView(rootView: OverlayView(controller: controller))
+        let hosting = FrameCountingHost(rootView: OverlayView(controller: controller))
         window.contentView = hosting
         window.acceptsMouseMovedEvents = true
 
-        func cpu() -> Double {
-            var t = timespec()
-            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
-            return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
-        }
+        let cpu = FrameCountingHost.cpu
         func settle() {
             for _ in 0 ..< 3 { RunLoop.main.run(mode: .default, before: Date()) }
             hosting.layoutSubtreeIfNeeded()
@@ -265,6 +288,31 @@ if CommandLine.arguments.contains("--bench-panel") {
         time("idle", steps: 60) { _ in }
         time("tick (sessions republished)", steps: 150) { _ in
             controller.injectSessions(registry.refresh())
+        }
+        // A directory opened and folded back up. The layout is re-run at every frame of the
+        // move, so a pass that costs more than a frame is a frame dropped.
+        let byGroup = Dictionary(grouping: controller.sessions, by: \.groupKey)
+        if let group = byGroup.max(by: { $0.value.count < $1.value.count }), group.value.count > 1 {
+            @MainActor func fold(_ name: String, to target: String?) {
+                settle()
+                hosting.frames = []
+                let clicked = cpu()
+                controller.openGroup = target
+                let end = Date().addingTimeInterval(0.6)
+                while Date() < end {
+                    RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.004))
+                }
+                // The first frame is the whole panel taking the change in, and it is timed from
+                // the click: most of it is spent before `layout()` is reached.
+                // A layout that found nothing to do is not a frame.
+                let rest = hosting.frames.dropFirst().filter { $0 > 0.05 }
+                print(String(format: "  %-34s %7.2f ms/frame  worst %7.2f ms   first frame %.1f ms, %d frames",
+                             (name as NSString).utf8String!,
+                             rest.reduce(0, +) / Double(max(rest.count, 1)), rest.max() ?? 0,
+                             hosting.firstFrameAt - clicked, rest.count + 1))
+            }
+            fold("group opening (\(group.value.count) sessions)", to: group.key)
+            fold("group folding", to: nil)
         }
         // The rightmost scroll view is the todo column.
         let scrolls = scrollViews(hosting).sorted { a, b in

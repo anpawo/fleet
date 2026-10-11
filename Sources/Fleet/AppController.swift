@@ -178,7 +178,13 @@ final class AppController: ObservableObject {
     /// The one directory group showing its sessions, if any. On the controller rather than on
     /// the view: Esc and the panel chord fold it before they take the panel away, and a piece
     /// of `@State` inside `OverlayView` is not something they can reach.
-    @Published var openGroup: String?
+    @Published var openGroup: String? {
+        didSet { if let openGroup { lastGroup = openGroup } }
+    }
+
+    /// The directory the grid last had open. Survives the close so the card has somewhere to
+    /// shrink back to, whatever closed it — a click, Esc, the chord.
+    private(set) var lastGroup: String?
 
     /// The two side columns: the mail worth reading and the todo list, both from the phone's
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.

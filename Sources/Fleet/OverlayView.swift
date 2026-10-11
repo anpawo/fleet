@@ -59,10 +59,6 @@ struct OverlayView: View {
     /// What the grid takes off that height — its own padding, top and bottom.
     private static let gridPadding: CGFloat = 38
 
-    /// The directory the grid last had open. Survives the close so the card has somewhere to
-    /// shrink back to — cleared by nothing, since the next open overwrites it.
-    @State private var lastGroup: String?
-
     /// Opening a directory moves every other card at once. Cut rather than animated, the grid
     /// reads as a different grid each click.
     private static let unfold = Animation.easeOut(duration: 0.28)
@@ -476,7 +472,7 @@ struct OverlayView: View {
     /// Which card the layout is growing or shrinking, as a place in `cells`. Not the open one:
     /// the *last* one, so a directory being folded back up still has a card to shrink into.
     private var openIndex: Int? {
-        guard let name = openGroup ?? lastGroup else { return nil }
+        guard let name = openGroup ?? controller.lastGroup else { return nil }
         return cells.firstIndex { $0.id == "dir:" + name }
     }
 
@@ -520,7 +516,6 @@ struct OverlayView: View {
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   scrolling: !eagerLayout,
                                   onToggle: {
-                                      lastGroup = name
                                       withAnimation(Self.unfold) {
                                           controller.openGroup = openGroup == name ? nil : name
                                       }
