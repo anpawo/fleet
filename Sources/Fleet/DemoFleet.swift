@@ -7,14 +7,24 @@ import Foundation
 /// `--render --fake <n>`; nothing reaches this in normal operation.
 enum DemoFleet {
 
-    static func sessions(_ count: Int) -> [Session] {
+    /// What `--fake` was given: a count, or a count per directory — `4,2,1` is a group of four,
+    /// a group of two and a session alone, the groups being one more shape nobody has running.
+    static func sessions(_ argument: String) -> [Session]? {
+        let sizes = argument.split(separator: ",").compactMap { Int($0) }
+        guard let count = sizes.first else { return nil }
+        if sizes.count == 1 { return sessions(count) }
+        let folders = sizes.enumerated().flatMap { Array(repeating: $0.offset, count: max(0, $0.element)) }
+        return sessions(folders.count, folders: folders)
+    }
+
+    static func sessions(_ count: Int, folders: [Int]? = nil) -> [Session] {
         let names = ["portfolio", "atlas", "video-code", "my-hub", "fleet", "siege",
                      "orchard", "lantern", "harbour", "quarry", "meridian", "tessera"]
         let states: [SessionState] = [.ready, .running, .delegated, .awaitingAnswer, .apiError, .paused]
 
         return (0 ..< count).map { i in
             let state = states[i % states.count]
-            let name = names[i % names.count]
+            let name = names[(folders?[i] ?? i) % names.count]
             let proc = ClaudeProcess(pid: pid_t(90000 + i), ppid: 1,
                                      cwd: "/Users/\(NSUserName())/self/\(name)",
                                      tty: "/dev/ttys0\(i)", startedAt: Date().addingTimeInterval(-3600), cpuNanos: 0)

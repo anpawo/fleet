@@ -413,7 +413,7 @@ Prints every session it can see, with the transcript it bound, the state it deri
 | `--route "<sentence>"` | run one sentence through the classifier and print where it would go |
 | `--render <path.png>` | draw the panel offscreen to a PNG (how the image above was made, with `--fake 6 --live`) |
 | `--parse <file.jsonl>` | print what one transcript parses to — pending tools, sub-agents, preview |
-| `--fake <n>` | draw a fleet of n invented sessions, with `--render` or `--demo`, to see the grid at a size you don't have running; with `--render` the side columns are invented too, so the picture holds nothing of yours |
+| `--fake <n>` | draw a fleet of n invented sessions, with `--render` or `--demo`, to see the grid at a size you don't have running — or `--fake 4,2,1`, one count per directory, to see it with groups; with `--render` the side columns are invented too, so the picture holds nothing of yours |
 | `--start <dir> ["<prompt>"]` | open a session the way the panel does — new window, own desktop — without the classifier |
 | `--install-hooks` | let Claude Code report each session's state to Fleet (edits `~/.claude/settings.json`, backing it up first) |
 | `--uninstall-hooks` | take those hooks back out |

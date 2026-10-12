@@ -33,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let f = CommandLine.arguments.firstIndex(of: "--fake"),
            f + 1 < CommandLine.arguments.count,
-           let n = Int(CommandLine.arguments[f + 1]) {
-            controller.pretendFleet = DemoFleet.sessions(n)
+           let fleet = DemoFleet.sessions(CommandLine.arguments[f + 1]) {
+            controller.pretendFleet = fleet
         }
 
         if CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--show") {
@@ -810,8 +810,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         // published.
         if let f = CommandLine.arguments.firstIndex(of: "--fake"),
            f + 1 < CommandLine.arguments.count,
-           let n = Int(CommandLine.arguments[f + 1]) {
-            controller.injectSessions(DemoFleet.sessions(n))
+           let fleet = DemoFleet.sessions(CommandLine.arguments[f + 1]) {
+            controller.injectSessions(fleet)
             DemoFleet.fill(controller)
         } else {
             controller.injectSessions(registry.refresh())
