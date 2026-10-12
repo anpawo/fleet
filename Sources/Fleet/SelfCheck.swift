@@ -109,6 +109,28 @@ enum SelfCheck {
         // A name 45 wide, 9pt inside the rim of the largest pie: 10% holds it, 5% does not.
         expect(Money.arc(from: 0.4, to: 0.5, out: 115) >= 45 && Money.arc(from: 0.95, to: 1, out: 115) < 45, true,
                "money: a name is written along a rim long enough for it, less 3pt either side")
+        // A name over its price, two lines 45 wide: the largest slice holds them out by the
+        // rim, a sliver nowhere. At six o'clock, where a label lies across its slice, 12%
+        // holds lines 40 wide and none 60 wide.
+        let wide = Money.seat([45, 45], line: 11, from: 0, to: 0.62, radius: 100)
+        let across = Money.seat([40, 40], line: 11, from: 0.44, to: 0.56, radius: 100)
+        expect(wide.map { $0 > 60 } == true
+               && Money.seat([45, 45], line: 11, from: 0.97, to: 1, radius: 100) == nil
+               && Money.seat([60, 60], line: 11, from: 0.44, to: 0.56, radius: 100) == nil
+               && across.map { $0 > 60 && $0 <= 97 } == true, true,
+               "money: a name sits on straight lines in the slice wide enough for them, as far out as it fits")
+        // Each line is held to its own width: 15% at eight o'clock has room for a long name
+        // over a shorter price, not for two lines as long as the name.
+        expect(Money.seat([60, 50], line: 9.5, from: 0.615, to: 0.765, radius: 100) != nil
+               && Money.seat([60, 60], line: 9.5, from: 0.615, to: 0.765, radius: 100) == nil, true,
+               "money: a short line under a long one sits where two long ones would not")
+        // A large slice of a small pie: the label goes back towards the centre.
+        expect(Money.seat([50, 50], line: 9.5, from: 0, to: 0.46, radius: 70).map { $0 < 42 } == true, true,
+               "money: a label too long for the outer half of its slice sits nearer the centre")
+        // The share under the pointer keeps nearer the centre than the name over it.
+        expect(Money.seat([26], line: 12, from: 0, to: 0.62, radius: 100, within: 60)
+                   .map { $0 > 40 && $0 < 50 } == true, true,
+               "money: a line told to keep within 60 of the centre sits as far out as that allows")
 
         let passing = Money.months(csv: """
         date,amount,category,merchant
