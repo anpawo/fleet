@@ -74,9 +74,10 @@ enum TerminalFocus {
     /// only place the difference is written down, and Fleet is already in this file talking to
     /// the same tab by the same tty.
     ///
-    /// Costs a Scripting Bridge round trip on the main thread, so the caller is expected to ask
-    /// rarely and about few sessions — see `Config.terminalReadInterval`.
-    static func visibleText(pid: pid_t, tty: String, cwd: String) -> String? {
+    /// Costs a round trip into another app, 2 to 52 ms measured, so the caller is expected to
+    /// ask rarely and about few sessions — see `Config.terminalReadInterval`. Callable off the
+    /// main thread, which is where `TerminalWatch` renews an answer it already has.
+    nonisolated static func visibleText(pid: pid_t, tty: String, cwd: String) -> String? {
         guard let host = ProcessScanner.hostApplication(of: pid)?.app else { return nil }
         switch host.bundleIdentifier ?? "" {
         case "com.apple.Terminal":
@@ -91,7 +92,7 @@ enum TerminalFocus {
     /// Terminal.app: `contents` is the visible screen, `history` the whole scrollback. The
     /// visible screen is the one that matters — the status line we are after is pinned to the
     /// bottom of it, and the scrollback is megabytes.
-    private static func contents(tty: String, inTerminal pid: pid_t) -> String? {
+    private nonisolated static func contents(tty: String, inTerminal pid: pid_t) -> String? {
         guard let app = app(pid: pid),
               let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
 
@@ -106,7 +107,7 @@ enum TerminalFocus {
     }
 
     /// iTerm2 hangs the text off the session rather than the tab, and calls it `text`.
-    private static func contents(tty: String, iniTerm pid: pid_t) -> String? {
+    private nonisolated static func contents(tty: String, iniTerm pid: pid_t) -> String? {
         guard let app = app(pid: pid),
               let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
 
@@ -147,7 +148,7 @@ enum TerminalFocus {
     /// there — `AXDocument` is what a shell reported at its last prompt, and a window opened
     /// straight onto `claude` never showed one (11-10: a spawned session four minutes into a
     /// thought sat under NEEDS YOU, its spinner on a screen refused for want of a directory).
-    private static func contents(cwd: String, viaAccessibility pid: pid_t) -> String? {
+    private nonisolated static func contents(cwd: String, viaAccessibility pid: pid_t) -> String? {
         guard Desktop.accessibilityTrusted(prompt: false),
               let window = Desktop.focusedWindow(of: AXUIElementCreateApplication(pid)) else {
             return nil
@@ -160,7 +161,7 @@ enum TerminalFocus {
     }
 
     /// The first text area in the window, which for a terminal is the screen itself.
-    private static func screenText(in element: AXUIElement, depth: Int = 0) -> String? {
+    private nonisolated static func screenText(in element: AXUIElement, depth: Int = 0) -> String? {
         if depth > 8 { return nil }
         if string(element, kAXRoleAttribute) == "AXTextArea" {
             return string(element, kAXValueAttribute)
@@ -175,7 +176,7 @@ enum TerminalFocus {
         return nil
     }
 
-    private static func string(_ element: AXUIElement, _ attribute: String) -> String? {
+    private nonisolated static func string(_ element: AXUIElement, _ attribute: String) -> String? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString,
                                             &value) == .success else { return nil }
@@ -186,7 +187,7 @@ enum TerminalFocus {
     ///
     /// Scripting Bridge blocks the calling thread waiting for a reply, and this runs on the
     /// main actor, so the timeout matters: a wedged terminal must cost us a beat, not the UI.
-    private static func app(pid: pid_t) -> SBApplication? {
+    private nonisolated static func app(pid: pid_t) -> SBApplication? {
         guard let app = SBApplication(processIdentifier: pid) else {
             NSLog("Fleet: no scripting connection to pid \(pid)")
             return nil

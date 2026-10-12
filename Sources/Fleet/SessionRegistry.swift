@@ -13,6 +13,12 @@ final class SessionRegistry {
     private var lastWideScan = Date.distantPast
     private let screens = TerminalWatch()
 
+    /// See `TerminalWatch.onChange`.
+    var onScreenChange: (() -> Void)? {
+        get { screens.onChange }
+        set { screens.onChange = newValue }
+    }
+
     func refresh() -> [Session] {
         let procs = ProcessScanner.scan()
         let now = Date()
@@ -470,7 +476,16 @@ final class TerminalWatch {
                  recheck: TimeInterval = Config.terminalRecheckInterval) -> Verdict {
         if let last = seen[proc.pid] {
             let interval = last.verdict == .unknown ? recheck : Config.terminalReadInterval
-            if now.timeIntervalSince(last.at) < interval { return last.verdict }
+            let age = now.timeIntervalSince(last.at)
+            if age < interval { return last.verdict }
+            // Lapsed a moment ago on a session asked about at every pass: read again off the
+            // main thread, and this pass keeps the answer it has. Only the first read of a
+            // spell of waiting is made here and now, since a tile must not turn blue, nor a
+            // banner go out, on a screen nobody has looked at yet.
+            if age < interval + Self.renewWindow || renewing.contains(proc.pid) {
+                renew(proc)
+                return last.verdict
+            }
             if readThisPass { return last.verdict }
         } else if readThisPass {
             return .unknown
@@ -478,11 +493,42 @@ final class TerminalWatch {
         readThisPass = true
         let verdict = TerminalFocus.visibleText(pid: proc.pid, tty: proc.tty, cwd: proc.cwd)
             .map(Self.read) ?? .unknown
-        seen[proc.pid] = (now, verdict)
-        if verdict != .unknown {
-            NSLog("Fleet: pid \(proc.pid) screen says \(verdict), not waiting on you")
-        }
+        record(verdict, pid: proc.pid, at: now)
         return verdict
+    }
+
+    /// Past the longest gap between two passes (5 s and the timer's slack): an answer older
+    /// than its interval by more than this is about an earlier spell of waiting.
+    private static let renewWindow: TimeInterval = 10
+    /// One read at a time, so a terminal is never asked about two tabs at once.
+    private static let queue = DispatchQueue(label: "fleet.terminal-read", qos: .userInitiated)
+    private var renewing: Set<pid_t> = []
+    /// A renewed answer that differs from the one it replaces: the tile is redrawn on it now
+    /// rather than at the next tick, which is 5 s away while the panel is hidden.
+    var onChange: (() -> Void)?
+
+    private func renew(_ proc: ClaudeProcess) {
+        guard renewing.insert(proc.pid).inserted else { return }
+        let (pid, tty, cwd) = (proc.pid, proc.tty, proc.cwd)
+        Self.queue.async {
+            let verdict = TerminalFocus.visibleText(pid: pid, tty: tty, cwd: cwd)
+                .map(Self.read) ?? .unknown
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.renewing.remove(pid)
+                    guard let last = self.seen[pid] else { return }
+                    self.record(verdict, pid: pid, at: Date())
+                    if last.verdict != verdict { self.onChange?() }
+                }
+            }
+        }
+    }
+
+    private func record(_ verdict: Verdict, pid: pid_t, at: Date) {
+        seen[pid] = (at, verdict)
+        if verdict != .unknown {
+            NSLog("Fleet: pid \(pid) screen says \(verdict), not waiting on you")
+        }
     }
 
     func forget(everythingBut live: Set<pid_t>) {
@@ -501,7 +547,7 @@ final class TerminalWatch {
     /// update", "new task? /clear to save 894.7k tokens". Eight was already the exact distance
     /// to the spinner with nothing in between, so one hint line was enough to push it out of
     /// sight and leave a working session looking like a question.
-    static func read(_ screen: String) -> Verdict {
+    nonisolated static func read(_ screen: String) -> Verdict {
         let tail = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }

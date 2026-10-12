@@ -155,7 +155,7 @@ enum Desktop {
         focusedWindow(of: app) ?? windows(of: app).first
     }
 
-    static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
+    nonisolated static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString,
                                             &focused) == .success,
@@ -177,7 +177,7 @@ enum Desktop {
     /// `prompt` asks macOS to put up the grant dialog. Worth it the first time a session is
     /// started or raised, and not worth it on a poll.
     @discardableResult
-    static func accessibilityTrusted(prompt: Bool = true) -> Bool {
+    nonisolated static func accessibilityTrusted(prompt: Bool = true) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         guard AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary) else {
             NSLog("Fleet: no Accessibility grant — a click can raise the terminal app but not "

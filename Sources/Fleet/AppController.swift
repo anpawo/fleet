@@ -284,6 +284,10 @@ final class AppController: ObservableObject {
         reaper.onFluidity = { [weak self] struggling, reason in
             MainActor.assumeIsolated { self?.fluidityChanged(struggling, reason) }
         }
+        registry.onScreenChange = { [weak self] in
+            guard let self, !suspended, pretendFleet == nil else { return }
+            sessions = registry.refresh()
+        }
         // Whatever the last run left behind is not evidence about this one.
         Hooks.writeMachineState(struggling: false, reason: "", hogs: [])
         observeSleepWake()

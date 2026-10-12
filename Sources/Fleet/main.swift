@@ -160,6 +160,16 @@ if CommandLine.arguments.contains("--bench") {
                                               cwd: session.proc.cwd)
             }
         }
+        // What the watch itself costs this thread: the first answer is read here, the one that
+        // replaces it five seconds on is read elsewhere.
+        if let proc = sessions.first?.proc {
+            let watch = TerminalWatch(), start = Date()
+            time("watch, first answer") { _ = watch.verdict(proc, now: start, recheck: 4) }
+            watch.startPass()
+            time("watch, renewed 5 s on") {
+                _ = watch.verdict(proc, now: start.addingTimeInterval(5), recheck: 4)
+            }
+        }
         exit(0)
     }
 }
