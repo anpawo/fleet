@@ -26,9 +26,31 @@ enum SelfCheck {
         judging(expect)
         repairs(expect)
         money(expect)
+        grid(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
+    }
+
+    // MARK: - Grid
+
+    /// Which directories the grid shows unfolded: every one that fits, the one holding the most
+    /// sessions first, a smaller one where that one does not fit, none on a grid already full.
+    private static func grid(_ expect: (Bool, Bool, String) -> Void) {
+        let grid = FleetLayout(tile: CGSize(width: 310, height: 186), spacing: 26, columns: 2,
+                               openHeight: 0, progress: 0)
+        // A group of four, a session alone, a group of two — unfolded, 100pt a session.
+        func unfolded(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> [Bool] {
+            grid.unfolding(sizes, room: room) { CGFloat($0) * 100 }.wide.map { $0 != nil }
+        }
+        expect(unfolded(room: 838) == [true, false, true], true, "grid: both directories unfolded when both fit")
+        expect(unfolded(room: 837) == [true, false, false], true, "grid: the bigger one alone when both do not")
+        expect(unfolded(room: 611) == [false, false, true], true, "grid: the smaller one when the bigger does not fit")
+        expect(unfolded(room: 411) == [false, false, false], true, "grid: none when neither fits")
+        expect(unfolded([2, 2], room: 425) == [true, false], true, "grid: of two the same size, the first")
+        let rest = grid.unfolding([4, 1, 2], room: 838) { CGFloat($0) * 100 }.rest(3)
+        expect(rest.frames.map(\.minY) == [0, 652, 426] && rest.height == 838, true,
+               "grid: unfolded directories lead, the other sessions under them")
     }
 
     // MARK: - Money

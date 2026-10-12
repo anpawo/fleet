@@ -514,16 +514,25 @@ struct OverlayView: View {
     /// block at the top are two different places in the view tree, so the first was removed and
     /// the second inserted — the card blinked out of the grid and the block arrived from above.
     private var grid: some View {
-        FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
-                    spacing: tileSpacing, columns: Self.tilesPerRow,
-                    open: openIndex, openHeight: openHeight,
-                    progress: openGroup == nil ? 0 : 1) {
+        let cells = self.cells
+        // A directory that fits stands unfolded in the grid itself: its sessions are in view
+        // with nothing to click, and the rest of the fleet is still there under it (asked
+        // 2026-10-12). A click gives it the whole block, as it does one that did not fit.
+        let layout = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
+                                 spacing: tileSpacing, columns: Self.tilesPerRow,
+                                 open: openIndex, openHeight: openHeight,
+                                 progress: openGroup == nil ? 0 : 1)
+            .unfolding(cells.map(\.count), room: openHeight) {
+                GroupTile.height(holding: $0, spacing: tileSpacing)
+            }
+        let unfolded = Set(zip(cells, layout.wide).filter { $0.1 != nil }.map(\.0.id))
+        return layout {
             ForEach(cells) { cell in
                 Group {
                     switch cell {
                         case let .group(name, sessions):
                         GroupTile(name: name, sessions: sessions,
-                                  open: openGroup == name,
+                                  open: openGroup == name || unfolded.contains(cell.id),
                                   commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   full: CGSize(width: centerWidth, height: openHeight),
@@ -744,6 +753,9 @@ struct FleetLayout: Layout {
     var tile: CGSize
     var spacing: CGFloat
     var columns: Int
+    /// How tall each card stands when it is a directory unfolded in the grid, nil for one the
+    /// size of a tile — see `unfolding`.
+    var wide: [CGFloat?] = []
     /// The card that is opening — or the one that was open and is folding back up. Kept
     /// through the close, since a card that loses its place the moment you click has nothing
     /// to shrink back from.
@@ -765,17 +777,54 @@ struct FleetLayout: Layout {
         return max(0, CGFloat(rows) * tile.height + CGFloat(max(0, rows - 1)) * spacing)
     }
 
+    /// Where every card sits while none has the block, from the grid's own corner, and how
+    /// tall that is. An unfolded directory is a row to itself, and they lead: one met halfway
+    /// down would leave the card before it alone on its row.
+    func rest(_ count: Int) -> (frames: [CGRect], height: CGFloat) {
+        var frames = Array(repeating: CGRect.zero, count: count)
+        var y: CGFloat = 0, tiles = 0
+        for i in 0 ..< count where i < wide.count {
+            guard let height = wide[i] else { continue }
+            frames[i] = CGRect(x: 0, y: y, width: width, height: height)
+            y += height + spacing
+        }
+        for i in 0 ..< count where i >= wide.count || wide[i] == nil {
+            frames[i] = CGRect(x: CGFloat(tiles % columns) * (tile.width + spacing),
+                               y: y + CGFloat(tiles / columns) * (tile.height + spacing),
+                               width: tile.width, height: tile.height)
+            tiles += 1
+        }
+        return (frames, tiles > 0 ? y + rows(tiles) : max(0, y - spacing))
+    }
+
+    /// This grid with the directories that fit unfolded in it. `sizes` is how many sessions
+    /// each card holds. The one holding the most is tried first, and each stays unfolded only
+    /// if the grid still ends inside `room` with it so: one that does not fit leaves the next
+    /// its chance, and a grid already past `room` unfolds none.
+    func unfolding(_ sizes: [Int], room: CGFloat, height: (Int) -> CGFloat) -> FleetLayout {
+        var layout = self
+        layout.wide = Array(repeating: nil, count: sizes.count)
+        // Two of a size in the order they come: a tie settled another way at each pass is two
+        // directories trading places once a second.
+        for i in sizes.indices.filter({ sizes[$0] > 1 }).sorted(by: { (sizes[$1], $0) < (sizes[$0], $1) }) {
+            layout.wide[i] = height(sizes[i])
+            if layout.rest(sizes.count).height > room { layout.wide[i] = nil }
+        }
+        return layout
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Open, the grid is exactly the open card: the others are off the bottom, and counting
         // them would give the scroll view somewhere to scroll them back into view.
-        let folded = rows(subviews.count)
+        let folded = rest(subviews.count).height
         return CGSize(width: width, height: folded + (openHeight - folded) * progress)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
                        cache: inout ()) {
+        let frames = rest(subviews.count).frames.map { $0.offsetBy(dx: bounds.minX, dy: bounds.minY) }
         for (i, subview) in subviews.enumerated() {
-            let from = slot(i, in: bounds, at: i, drop: 0)
+            let from = frames[i]
             let to: CGRect
             if i == open {
                 to = CGRect(origin: bounds.origin, size: CGSize(width: width, height: openHeight))
@@ -784,7 +833,7 @@ struct FleetLayout: Layout {
                 // top, one below by the bottom, one beside it sideways. Not all of them down
                 // past the open card — a column of cards sliding the length of the panel is
                 // more movement than the opening itself, and half of it goes the wrong way.
-                to = exit(from, mine: i, open: open, in: bounds)
+                to = exit(from, past: open.flatMap { $0 < frames.count ? frames[$0] : nil }, in: bounds)
             }
             let frame = CGRect(x: from.minX + (to.minX - from.minX) * progress,
                                y: from.minY + (to.minY - from.minY) * progress,
@@ -797,27 +846,18 @@ struct FleetLayout: Layout {
 
     /// Where a card that is not the open one goes: off the nearest edge of the block, which
     /// clips it. It fades on the way — see the grid's own `opacity`.
-    private func exit(_ from: CGRect, mine: Int, open: Int?, in bounds: CGRect) -> CGRect {
+    private func exit(_ from: CGRect, past open: CGRect?, in bounds: CGRect) -> CGRect {
         guard let open else { return from }
         var out = from
-        let row = mine / columns, column = mine % columns
-        let openRow = open / columns, openColumn = open % columns
-        if row < openRow {
-            out.origin.y = bounds.minY - tile.height - spacing
-        } else if row > openRow {
+        if from.maxY <= open.minY {
+            out.origin.y = bounds.minY - from.height - spacing
+        } else if from.minY >= open.maxY {
             out.origin.y = bounds.minY + openHeight + spacing
         } else {
             out.origin.x = from.minX
-                + (column >= openColumn ? 1 : -1) * (width + spacing)
+                + (from.minX >= open.minX ? 1 : -1) * (width + spacing)
         }
         return out
-    }
-
-    private func slot(_ i: Int, in bounds: CGRect, at index: Int, drop: CGFloat) -> CGRect {
-        let column = index % columns, row = index / columns
-        return CGRect(x: bounds.minX + CGFloat(column) * (tile.width + spacing),
-                      y: bounds.minY + drop + CGFloat(row) * (tile.height + spacing),
-                      width: tile.width, height: tile.height)
     }
 }
 
@@ -825,6 +865,12 @@ struct FleetLayout: Layout {
 enum FleetCell: Identifiable {
     case group(String, [Session])
     case session(Session, heading: String?)
+
+    /// How many sessions the card stands for.
+    var count: Int {
+        if case let .group(_, sessions) = self { return sessions.count }
+        return 1
+    }
 
     var id: String {
         switch self {
@@ -838,10 +884,12 @@ enum FleetCell: Identifiable {
 /// state colour, and the count — the same rectangle a session gets, in the one colour no state
 /// wears. Open, the same rectangle grown to the whole block, with its sessions inside its own
 /// border: the directory is the thing you are looking at, and the rest of the fleet is pushed
-/// out the bottom rather than left half-visible underneath it.
+/// out the bottom rather than left half-visible underneath it. One that fits is open from the
+/// start, in the grid and only as tall as its cards — see `FleetLayout.unfolding`.
 struct GroupTile: View {
     let name: String
     let sessions: [Session]
+    /// Its sessions as cards rather than as lines: unfolded in the grid, or given the block.
     let open: Bool
     /// ⌘-click goes to the head's terminal; a plain click only unfolds.
     let commandHeld: Bool
@@ -872,6 +920,12 @@ struct GroupTile: View {
     /// between them: a card in there throws the same glow as one on the grid, and the group's
     /// own rounded clip was cutting it off square.
     static let aura: CGFloat = 12
+    /// How tall the card stands with every one of its sessions in view and nothing to scroll:
+    /// the rows, and what `Cards` pads them with — if one moves the other has to.
+    static func height(holding count: Int, spacing: CGFloat) -> CGFloat {
+        let rows = CGFloat((count + 1) / 2)
+        return spacing + nameLine + 34 + rows * (SessionTile.height + spacing) + aura
+    }
     /// What the open cards are called as a whole, to scroll back to their top.
     private static let cards = "cards"
 

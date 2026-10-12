@@ -175,7 +175,7 @@ final class AppController: ObservableObject {
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
 
-    /// The one directory group showing its sessions, if any. On the controller rather than on
+    /// The one directory group given the whole block, if any. On the controller rather than on
     /// the view: Esc and the panel chord fold it as they take the panel away, and a piece
     /// of `@State` inside `OverlayView` is not something they can reach.
     @Published var openGroup: String? {
