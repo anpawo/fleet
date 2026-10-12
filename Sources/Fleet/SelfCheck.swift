@@ -172,10 +172,14 @@ enum SelfCheck {
         // A large slice of a small pie: the label goes back towards the centre.
         expect(Money.seat([50, 50], line: 9.5, from: 0, to: 0.46, radius: 70).map { $0 < 42 } == true, true,
                "money: a label too long for the outer half of its slice sits nearer the centre")
-        // The share under the pointer keeps nearer the centre than the name over it.
+        // The share under the pointer keeps nearer the centre than the name over it, and as
+        // near the middle of its slice as it fits: there in a wide one, further out in a thin.
         expect(Money.seat([26], line: 12, from: 0, to: 0.62, radius: 100, within: 60)
-                   .map { $0 > 40 && $0 < 50 } == true, true,
-               "money: a line told to keep within 60 of the centre sits as far out as that allows")
+                   .map { $0 > 40 && $0 < 50 } == true
+               && Money.seat([26], line: 12, from: 0, to: 0.62, radius: 100, within: 60, near: 30) == 30
+               && Money.seat([18], line: 10, from: 0.95, to: 1, radius: 124, near: 62)
+                   .map { $0 > 62 && $0 < 84 } == true, true,
+               "money: a line told where to be sits there, or as near it as its slice has room")
 
         let passing = Money.months(csv: """
         date,amount,category,merchant

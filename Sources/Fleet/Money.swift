@@ -232,12 +232,12 @@ enum Money {
 
     /// How far from the pie's centre, along the middle of a slice, a label sits inside it on
     /// straight lines: `rows` are how wide they are, each `line` tall, one centred under the
-    /// other. The furthest place out that keeps every line 2pt clear of the slice's sides and
-    /// no corner of it further than `within` from the centre — 3pt short of the rim, unless
-    /// told — and never over the centre. Nil for a slice with no such place. Turns clockwise
-    /// from twelve o'clock.
+    /// other. A place that keeps every line 2pt clear of the slice's sides and no corner of it
+    /// further than `within` from the centre — 3pt short of the rim, unless told — and never
+    /// over the centre: the furthest one out, or the one nearest `near` when that is given.
+    /// Nil for a slice with no such place. Turns clockwise from twelve o'clock.
     static func seat(_ rows: [Double], line: Double, from: Double, to: Double, radius: Double,
-                     within: Double? = nil) -> Double? {
+                     within: Double? = nil, near: Double? = nil) -> Double? {
         let middle = Double.pi * (from + to), half = Double.pi * (to - from)
         let along = (x: sin(middle), y: -cos(middle))
         let top = -line * Double(rows.count) / 2
@@ -245,7 +245,8 @@ enum Money {
             [-0.5, 0.5].flatMap { side in [0.0, 1].map { (x: side * width, y: top + (Double(row) + $0) * line) } }
         }
         let limit = within ?? radius - 3
-        return stride(from: limit, through: max(0.2 * radius, (rows.max() ?? 0) / 2 + 2), by: -2).first { out in
+        let tries = Array(stride(from: limit, through: max(0.2 * radius, (rows.max() ?? 0) / 2 + 2), by: -2))
+        return (near.map { near in tries.sorted { abs($0 - near) < abs($1 - near) } } ?? tries).first { out in
             corners.allSatisfy { corner in
                 let x = out * along.x + corner.x
                 let y = out * along.y + corner.y
@@ -426,8 +427,9 @@ struct MoneyColumn: View {
 /// One too thin for either has an arrow out to them, and there is no legend beside the pie
 /// (asked 2026-10-11): the name is still read where the slice is.
 ///
-/// A slice's share is not written at rest, its size says it. It comes under the pointer,
-/// nearer the centre than the name (asked 2026-10-12).
+/// A slice's share is not written at rest, its size says it. It comes under the pointer, as
+/// near the middle of the slice as it fits and nearer the centre than the name (asked
+/// 2026-10-12).
 ///
 /// The month's name and its total are on the line the pie's top stands in, either side of it
 /// (asked 2026-10-12): a circle leaves the ends of that line alone.
@@ -493,18 +495,19 @@ private struct MoneyMonth: View {
             let percent = "\(shares[slice.kind] ?? 0)%", price = Money.euros(month.spent[slice.kind] ?? 0)
             let name = Self.width(slice.kind.title, .systemFont(ofSize: 9))
             let cost = Self.width(price, .monospacedDigitSystemFont(ofSize: 9, weight: .medium))
-            let share = Self.width(percent, .monospacedDigitSystemFont(ofSize: 13, weight: .semibold))
+            let share = Self.width(percent, .monospacedDigitSystemFont(ofSize: 11, weight: .semibold))
             let turn = (slice.from + slice.to) / 2
             let room = { (out: Double) in Money.arc(from: slice.from, to: slice.to, out: out) }
-            let seat = { (rows: [Double], line: Double, within: Double?) in
-                Money.seat(rows, line: line, from: slice.from, to: slice.to, radius: radius, within: within)
+            let seat = { (rows: [Double], line: Double, within: Double?, near: Double?) in
+                Money.seat(rows, line: line, from: slice.from, to: slice.to, radius: radius,
+                           within: within, near: near)
             }
             // A line as tall as its ink, not as its line box: 1.5pt less.
             let line = Self.pitch - 1.5
             let spot: Spot
             // How far out a corner of the share may be: 2pt short of the name's own lines.
             let limit: Double
-            if let out = seat([name, cost], line, nil) {
+            if let out = seat([name, cost], line, nil, nil) {
                 spot = .straight(out)
                 limit = hypot(max(abs(out * sin(2 * .pi * turn)) - max(name, cost) / 2, 0),
                               max(abs(out * cos(2 * .pi * turn)) - line, 0)) - 2
@@ -523,7 +526,7 @@ private struct MoneyMonth: View {
             return Placed(kind: slice.kind, turn: turn, percent: percent, price: price, spot: spot,
                           width: max(name, Self.width("\(percent) \(price)",
                                                       .monospacedDigitSystemFont(ofSize: 9, weight: .semibold))),
-                          share: seat([share], 12, limit).map { ($0, false) }
+                          share: seat([share], 10, limit, radius / 2).map { ($0, false) }
                               ?? (round ?? (past ? nil : limit - 6)).map { ($0, true) })
         }
         // Two lines and a little air: packed, six names read as one column of twelve lines.
@@ -564,7 +567,7 @@ private struct MoneyMonth: View {
                                 y: centre.y - out * cos(2 * .pi * label.turn))
                     }
                     if lit, let share = label.share {
-                        let large = Font.system(size: 13, weight: .semibold).monospacedDigit()
+                        let large = Font.system(size: 11, weight: .semibold).monospacedDigit()
                         if share.round {
                             Self.write(label.percent, large, .black.opacity(0.85),
                                        in: context, round: centre, radius: share.out, turn: label.turn)
