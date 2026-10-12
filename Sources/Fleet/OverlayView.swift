@@ -505,7 +505,8 @@ struct OverlayView: View {
     /// card's own padding, split in three.
     private var innerTileWidth: CGFloat {
         let across = CGFloat(GroupTile.perRow)
-        return (centerWidth - (across - 1) * tileSpacing - 2 * GroupTile.margin(tileSpacing)) / across
+        return (centerWidth - (across - 1) * GroupTile.gap(tileSpacing)
+                - 2 * GroupTile.margin(tileSpacing)) / across
     }
 
     /// Every card, in rows of two, laid out by hand rather than by stacks — see `FleetLayout`.
@@ -931,11 +932,15 @@ struct GroupTile: View {
     /// What its cards keep clear above them: the name's line, and the room above and under
     /// it, halved with the rest.
     static func top(_ spacing: CGFloat) -> CGFloat { spacing / 2 + nameLine + 17 }
+    /// What two of its cards keep between them, across and down: half the grid's own gap
+    /// (asked 2026-10-12), and the cards take the width. A hovered card's glow is wider than
+    /// that, and meets the cards beside it.
+    static func gap(_ spacing: CGFloat) -> CGFloat { spacing / 2 }
     /// How tall the card stands with every one of its sessions in view and nothing to scroll:
     /// the rows, and what `Cards` pads them with.
     static func height(holding count: Int, spacing: CGFloat) -> CGFloat {
         let rows = CGFloat((count + perRow - 1) / perRow)
-        return top(spacing) + rows * (SessionTile.groupedHeight + spacing) - spacing + margin(spacing)
+        return top(spacing) + rows * (SessionTile.groupedHeight + gap(spacing)) - gap(spacing) + margin(spacing)
     }
     /// How many sessions stand side by side inside the open card. Three (asked 2026-10-12)
     /// where the grid around it holds two, on cards made smaller for it — see
@@ -1059,9 +1064,9 @@ struct GroupTile: View {
             let lines = stride(from: 0, to: ordered.count, by: GroupTile.perRow).map {
                 Array(ordered[$0 ..< min($0 + GroupTile.perRow, ordered.count)])
             }
-            let rows = VStack(alignment: .leading, spacing: spacing) {
+            let rows = VStack(alignment: .leading, spacing: GroupTile.gap(spacing)) {
                 ForEach(lines, id: \.first?.id) { row in
-                    HStack(alignment: .top, spacing: spacing) {
+                    HStack(alignment: .top, spacing: GroupTile.gap(spacing)) {
                         ForEach(row) { session in
                             // Inside a directory the card wears its topic: the directory is
                             // what these sessions have in common, and a row of cards all
