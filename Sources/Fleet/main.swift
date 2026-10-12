@@ -174,29 +174,6 @@ if CommandLine.arguments.contains("--bench") {
     }
 }
 
-/// The panel's hosting view, keeping what each frame it rendered cost the main thread. SwiftUI
-/// renders inside `layout()`, once per frame of an animation, so this is the frame itself —
-/// which a loop around the run loop cannot time: it sees its own turns, not the frames.
-final class FrameCountingHost: NSHostingView<OverlayView> {
-    var frames: [Double] = []
-    /// The thread's CPU clock as the first frame since `frames` was emptied came out.
-    var firstFrameAt = 0.0
-
-    static func cpu() -> Double {
-        var t = timespec()
-        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
-        return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
-    }
-
-    override func layout() {
-        let start = Self.cpu()
-        super.layout()
-        let end = Self.cpu()
-        if frames.isEmpty { firstFrameAt = end }
-        frames.append(end - start)
-    }
-}
-
 // `--bench-panel` times the panel's own view tree, which `--bench` cannot see: the real
 // `OverlayView` in a window that is never ordered in, ticked, scrolled and hovered, in
 // main-thread CPU per step. Run it under `sample` for the call tree. What it cannot see is the
@@ -221,6 +198,7 @@ if CommandLine.arguments.contains("--bench-panel") {
         let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered,
                               defer: false)
         let hosting = FrameCountingHost(rootView: OverlayView(controller: controller))
+        hosting.counting = true
         window.contentView = hosting
         window.acceptsMouseMovedEvents = true
 
@@ -315,7 +293,7 @@ if CommandLine.arguments.contains("--bench-panel") {
                     RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.004))
                 }
                 // A layout that found nothing to do is not a frame.
-                return (hosting.firstFrameAt - clicked, hosting.frames.dropFirst().filter { $0 > 0.05 })
+                return (hosting.firstFrameAt - clicked, hosting.frames.dropFirst().map(\.cost).filter { $0 > 0.05 })
             }
             // One click's first frame reads anywhere from 11 to 32 ms: five of each, the median.
             var opening: [(first: Double, rest: [Double])] = [], folding = opening
@@ -331,6 +309,14 @@ if CommandLine.arguments.contains("--bench-panel") {
                              frames.reduce(0, +) / Double(max(frames.count, 1)), frames.max() ?? 0,
                              firsts[firsts.count / 2], firsts.count))
             }
+            // The line the app writes for that move on the real window, written for this one.
+            settle()
+            hosting.trace("group opening, as the app logs it", asked: CACurrentMediaTime(),
+                          lasting: OverlayView.unfoldDuration)
+            _ = fold(to: group.key)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            _ = fold(to: nil)
+            hosting.counting = true
         }
         // The rightmost scroll view is the todo column.
         let scrolls = scrollViews(hosting).sorted { a, b in

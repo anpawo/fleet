@@ -179,7 +179,14 @@ final class AppController: ObservableObject {
     /// the view: Esc and the panel chord fold it before they take the panel away, and a piece
     /// of `@State` inside `OverlayView` is not something they can reach.
     @Published var openGroup: String? {
-        didSet { if let openGroup { lastGroup = openGroup } }
+        didSet {
+            if let openGroup { lastGroup = openGroup }
+            guard openGroup != oldValue, isPanelVisible else { return }
+            // The grid moves for that long, and its first frame takes a moment to come.
+            quietUntil = Date().addingTimeInterval(OverlayView.unfoldDuration + 0.1)
+            overlay?.trace(openGroup == nil ? "group folding" : "group opening",
+                           lasting: OverlayView.unfoldDuration)
+        }
     }
 
     /// The directory the grid last had open. Survives the close so the card has somewhere to
@@ -217,6 +224,10 @@ final class AppController: ObservableObject {
     private var lastTickAt = Date()
     private var lastTickInterval: TimeInterval = 0
     private var currentInterval: TimeInterval = 0
+    /// While a group opens or folds, what can wait does: a tick is 3 to 10 ms of main thread,
+    /// 17 with the Reaper's scan, in a move whose every frame has 16.7 (60 Hz). Once a second
+    /// against a move of 0.28 s, it fell inside about one fold in four.
+    private var quietUntil = Date.distantPast
     private var suspended = false
 
     /// Guards against the panel reappearing the instant it is dismissed. Re-arms only once
@@ -285,7 +296,7 @@ final class AppController: ObservableObject {
             MainActor.assumeIsolated { self?.fluidityChanged(struggling, reason) }
         }
         registry.onScreenChange = { [weak self] in
-            guard let self, !suspended, pretendFleet == nil else { return }
+            guard let self, !suspended, pretendFleet == nil, quietUntil < Date() else { return }
             sessions = registry.refresh()
         }
         // Whatever the last run left behind is not evidence about this one.
@@ -346,6 +357,7 @@ final class AppController: ObservableObject {
     /// to refuse: the panel is mail, todos and memory too, and the sessions grid simply has
     /// nothing in it.
     func forceShow() {
+        overlay?.trace("panel", lasting: 0)
         sessions = pretendFleet ?? registry.refresh()
         armed = false
         showPanel()
@@ -368,6 +380,13 @@ final class AppController: ObservableObject {
     }
 
     private func tick() {
+        let wait = quietUntil.timeIntervalSinceNow
+        if wait > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                MainActor.assumeIsolated { self?.tick() }
+            }
+            return
+        }
         // Ahead of the suspended gate: with the display asleep this is the only thing still
         // ticking, and a hold nobody releases keeps the machine awake all night.
         let running = ProcessScanner.anyClaudeRunning()

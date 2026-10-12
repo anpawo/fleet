@@ -61,7 +61,8 @@ struct OverlayView: View {
 
     /// Opening a directory moves every other card at once. Cut rather than animated, the grid
     /// reads as a different grid each click.
-    private static let unfold = Animation.easeOut(duration: 0.28)
+    static let unfoldDuration = 0.28
+    private static let unfold = Animation.easeOut(duration: unfoldDuration)
 
 
     /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a

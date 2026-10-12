@@ -105,6 +105,7 @@ final class OverlayWindowController {
     /// so instead we stay the key window — invisible and click-through — until the press is over.
     func hide() {
         guard let window, teardown == nil else { return }
+        host?.dropTrace()
         window.alphaValue = 0
         // Invisible but still on screen would otherwise eat a click meant for what's behind it.
         window.ignoresMouseEvents = true
@@ -160,6 +161,7 @@ final class OverlayWindowController {
         // trigger was a click, so there is no key press still in flight to absorb.
         teardown?.cancel()
         teardown = nil
+        host?.dropTrace()
         window?.alphaValue = 1
         window?.orderOut(nil)
         previousApp = nil
@@ -193,9 +195,101 @@ final class OverlayWindowController {
         window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
 
         let root = OverlayView(controller: controller)
-        let hosting = NSHostingView(rootView: root)
+        let hosting = FrameCountingHost(rootView: root)
         window.contentView = hosting
         return window
+    }
+
+    private var host: FrameCountingHost? { window?.contentView as? FrameCountingHost }
+
+    /// What the panel is about to do, as one line in the log — see `FrameCountingHost.trace`.
+    /// Timed from here, the window's first making included.
+    func trace(_ what: String, lasting: TimeInterval) {
+        let asked = CACurrentMediaTime()
+        let window = self.window ?? makeWindow()
+        self.window = window
+        host?.trace(what, asked: asked, lasting: lasting)
+    }
+}
+
+/// The panel's hosting view, keeping what each frame it rendered cost the main thread. SwiftUI
+/// renders inside `layout()`, once per frame of an animation, so this is the frame itself —
+/// which a loop around the run loop cannot time: it sees its own turns, not the frames.
+final class FrameCountingHost: NSHostingView<OverlayView> {
+    struct Frame {
+        /// On the wall clock: the gaps between two are what the eye gets.
+        var began: CFTimeInterval, ended: CFTimeInterval
+        /// In ms of the main thread's CPU.
+        var cost: Double
+    }
+
+    /// Only while something reads them, the bench or a trace: the app runs for days.
+    var counting = false
+    var frames: [Frame] = []
+    /// The thread's CPU clock as the first frame since `frames` was emptied came out.
+    var firstFrameAt = 0.0
+    private var tracing: DispatchWorkItem?
+
+    static func cpu() -> Double {
+        var t = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
+        return Double(t.tv_sec) * 1000 + Double(t.tv_nsec) / 1_000_000
+    }
+
+    override func layout() {
+        guard counting else { return super.layout() }
+        let began = CACurrentMediaTime(), start = Self.cpu()
+        super.layout()
+        let end = Self.cpu()
+        if frames.isEmpty { firstFrameAt = end }
+        frames.append(Frame(began: began, ended: CACurrentMediaTime(), cost: end - start))
+    }
+
+    /// How long a trace waits for its frames: a first one that takes most of a second to come
+    /// is the one worth a line.
+    private static let traced: TimeInterval = 1
+
+    /// One line in the log for something the user just asked of the panel, once it has played
+    /// out: how long the first frame took to come, then how evenly the move's other frames
+    /// followed for the `lasting` seconds it runs. `--bench-panel` times the same frames in a
+    /// window nobody sees; this is the one on the screen, on the machine as it is that minute.
+    /// What it cannot see is the compositor: a frame handed over on time and shown late.
+    func trace(_ what: String, asked: CFTimeInterval, lasting: TimeInterval) {
+        guard tracing == nil else { return }
+        counting = true
+        frames = []
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.dropTrace()
+                // A layout that found nothing to do is not a frame.
+                let drawn = self.frames.filter { $0.cost > 0.05 }
+                guard let first = drawn.first else {
+                    NSLog("Fleet: frames — \(what): none in \(Int(Self.traced * 1000)) ms")
+                    return
+                }
+                var line = String(format: "first after %.0f ms (%.1f of main thread)",
+                                  (first.ended - asked) * 1000, first.cost)
+                let move = drawn.filter { $0.began <= first.began + lasting }
+                if let last = move.last, move.count > 1 {
+                    let gaps = zip(move, move.dropFirst()).map { ($1.began - $0.began) * 1000 }
+                    let costs = move.dropFirst().map(\.cost)
+                    line += String(format: ", %d more in %.0f ms, worst gap %.0f ms, %.1f ms of main thread each (worst %.1f)",
+                                   costs.count, (last.began - first.began) * 1000, gaps.max() ?? 0,
+                                   costs.reduce(0, +) / Double(costs.count), costs.max() ?? 0)
+                }
+                NSLog("Fleet: frames — \(what): \(line)")
+            }
+        }
+        tracing = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.traced, execute: work)
+    }
+
+    /// The panel went away under it: frames of a window nobody sees are not worth a line.
+    func dropTrace() {
+        tracing?.cancel()
+        tracing = nil
+        counting = false
     }
 }
 
