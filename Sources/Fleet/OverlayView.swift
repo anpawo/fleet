@@ -146,7 +146,12 @@ struct OverlayView: View {
     /// — and a block as tall as the clip lost its own bottom edge to it.
     static var blockHeight: CGFloat { columnHeight - blockSpread }
 
-    static var columnHeight: CGFloat {
+    /// Measured as the panel goes up — see `OverlayWindowController.show` — not at every pass
+    /// over the body: finding the screen is a round trip to the window server, and a pass
+    /// asks eight times. It was 2 ms of the 11 a click on a group took (sampled 2026-10-12).
+    static var columnHeight: CGFloat = measuredColumnHeight()
+
+    static func measuredColumnHeight() -> CGFloat {
         let screen = OverlayWindowController.activeScreen()
         // The window is the whole screen, menu bar and dock included, so the insets are
         // measured off that. A dock at the bottom eats into the gap rather than adding to it.
@@ -521,6 +526,7 @@ struct OverlayView: View {
                                   open: openGroup == name,
                                   commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
+                                  full: CGSize(width: centerWidth, height: openHeight),
                                   scrolling: !eagerLayout,
                                   onToggle: {
                                       withAnimation(Self.unfold) {
@@ -842,6 +848,10 @@ struct GroupTile: View {
     /// What a session card inside is given, worked out by the grid from its own width.
     var inner: CGFloat
     var spacing: CGFloat
+    /// The card's size once open, which its cards are laid out at from the start: the card's
+    /// own border is what cuts them while it grows. Following the card instead, their scroll
+    /// view was resized at every frame of a fold.
+    var full: CGSize
     /// Offscreen renders drop the scroll container, which never materialises its rows.
     var scrolling = true
     let onToggle: () -> Void
@@ -862,6 +872,8 @@ struct GroupTile: View {
     /// between them: a card in there throws the same glow as one on the grid, and the group's
     /// own rounded clip was cutting it off square.
     static let aura: CGFloat = 12
+    /// What the open cards are called as a whole, to scroll back to their top.
+    private static let cards = "cards"
 
     @State private var hovering = false
     /// How far the open group has been scrolled, so the name can travel with the cards it
@@ -871,17 +883,27 @@ struct GroupTile: View {
     var body: some View {
         GeometryReader { box in
             ZStack(alignment: .topLeading) {
-                if open {
-                    sessions(in: box.size)
-                } else {
-                    // A dot per session said how many and in what state and nothing about what
-                    // any of them was doing — on a group of ten, the one thing worth the space.
-                    // A line each says it, and the ones past the fourth are scrolled to.
-                    folded
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 16)
-                        .padding(.bottom, 12)
-                }
+                // Both faces of the card are kept, and a click only changes which one shows.
+                // Built at the click, the cards were most of what that click's frame cost —
+                // 17 to 29 ms for three sessions, against 6 with them already there
+                // (`--bench-panel`, 12-10) — and the move starts once that frame is out.
+                sessions(in: full)
+                    // Held to the card's own size as far as the stack goes: left to their
+                    // full one, they pushed the count and the arrow out past the border.
+                    .frame(width: box.size.width, height: box.size.height, alignment: .topLeading)
+                    .opacity(open ? 1 : 0)
+                    .allowsHitTesting(open)
+                    .accessibilityHidden(!open)
+                // A dot per session said how many and in what state and nothing about what
+                // any of them was doing — on a group of ten, the one thing worth the space.
+                // A line each says it, and the ones past the fourth are scrolled to.
+                folded
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 16)
+                    .padding(.bottom, 12)
+                    .opacity(open ? 0 : 1)
+                    .allowsHitTesting(!open)
+                    .accessibilityHidden(open)
 
                 // One text, two places. Not a folded name and an open one: those are two views,
                 // so SwiftUI fades the first out and the second in, and the name blinks while
@@ -976,15 +998,20 @@ struct GroupTile: View {
 
         Group {
             if scrolling {
-                ScrollView(.vertical) { rows }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
-                    // The name is drawn over this rather than in it — see `body` — so it has
-                    // to be told how far the cards have moved. Clipped by the group's own
-                    // border on the way out, which is where a heading should go.
-                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
-                        _, y in scrolled = y
-                    }
+                ScrollViewReader { reader in
+                    ScrollView(.vertical) { rows.id(Self.cards) }
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                        // The name is drawn over this rather than in it — see `body` — so it
+                        // has to be told how far the cards have moved. Clipped by the group's
+                        // own border on the way out, which is where a heading should go.
+                        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
+                            _, y in scrolled = y
+                        }
+                        // The cards outlive the fold now, and so does how far they were
+                        // scrolled: sent back up as the group opens, before they can be seen.
+                        .onChange(of: open) { if open { reader.scrollTo(Self.cards, anchor: .top) } }
+                }
             } else {
                 rows
             }

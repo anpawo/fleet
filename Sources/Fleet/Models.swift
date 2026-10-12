@@ -365,6 +365,9 @@ struct Session: Identifiable {
     var transcript: TranscriptInfo?
     var state: SessionState
     var cpuPercent: Double
+    /// The session's own line about itself — see `Hooks.context`. Read once per scan: `topic`
+    /// is asked for by every card at every frame of a fold, and it was a file read each time.
+    var context: String? = nil
 
     /// Where the session is working *now*. The process cwd is only where it was launched:
     /// `cd` inside a session moves the session but never the process, so a tile keyed on the
@@ -442,9 +445,7 @@ struct Session: Identifiable {
     }
 
     var topic: String {
-        if let path = transcript?.path,
-           let said = Hooks.context(sessionID: ((path as NSString).lastPathComponent as NSString)
-               .deletingPathExtension) { return said }
+        if let context { return context }
         if let t = transcript?.title, !t.isEmpty { return t }
         if let p = transcript?.lastPrompt, !p.isEmpty { return p }
         // No title and nothing you ever typed: a session another session drives by message

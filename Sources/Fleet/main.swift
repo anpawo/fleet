@@ -317,6 +317,18 @@ if CommandLine.arguments.contains("--bench-panel") {
             RunLoop.main.run(until: Date().addingTimeInterval(0.6))
             _ = fold(to: nil)
             hosting.counting = true
+            // `--churn`: sixty more of each, for `sample`. The click's own frame is taken in on
+            // a line of its own, so the call tree keeps it apart from the frames of the move.
+            if CommandLine.arguments.contains("--churn") {
+                for _ in 0 ..< 60 {
+                    controller.openGroup = group.key
+                    settle()
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.35))
+                    controller.openGroup = nil
+                    settle()
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.35))
+                }
+            }
         }
         // The rightmost scroll view is the todo column.
         let scrolls = scrollViews(hosting).sorted { a, b in

@@ -84,7 +84,11 @@ final class SessionRegistry {
                 proc: proc,
                 transcript: info,
                 state: state,
-                cpuPercent: cpu
+                cpuPercent: cpu,
+                context: info.flatMap {
+                    Hooks.context(sessionID: (($0.path as NSString).lastPathComponent as NSString)
+                        .deletingPathExtension)
+                }
             ))
         }
 

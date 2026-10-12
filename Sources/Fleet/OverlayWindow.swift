@@ -44,6 +44,7 @@ final class OverlayWindowController {
             window.orderOut(nil)
         }
 
+        OverlayView.columnHeight = OverlayView.measuredColumnHeight()
         window.setFrame(Self.activeScreen().frame, display: true)
         // Order in *before* activating. Activation alone would pull us to whichever Space
         // macOS last associated the app with; putting the window up first means the Space
