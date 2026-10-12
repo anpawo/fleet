@@ -243,7 +243,7 @@ struct OverlayView: View {
                                        limit: max(0, free * 3 / 7))
                             EpitechColumn(hub: hub,
                                           commandHeld: controller.commandHeld,
-                                          onDismiss: { controller.hidePanel() },
+                                          onDismiss: controller.dismiss,
                                           scrolling: !eagerLayout)
                                 .frame(maxHeight: hub.schoolEmpty ? nil : .infinity, alignment: .top)
                         }
@@ -273,8 +273,14 @@ struct OverlayView: View {
                 .padding(.top, -40)
                 Spacer(minLength: 0).frame(width: Self.innerGap)
             }
-            fleet(scrolling: scrolling)
-                .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
+            // A wall for layout: a geometry reader's own size never depends on what is in it,
+            // which keeps a grid re-laid at each frame of a fold from re-running the board
+            // around it. Measured: half the main thread's work per frame, 0.83 ms to 0.45.
+            GeometryReader { _ in
+                fleet(scrolling: scrolling)
+                    .frame(width: centerWidth, height: Self.blockHeight, alignment: .top)
+            }
+                .frame(width: centerWidth, height: Self.blockHeight)
                 // What is broken rides over the fleet, centred, and only when something is —
                 // see `AlertsBlock`. Hung over the top edge rather than stacked on it: in the
                 // stack it pushed the whole fleet down the axis the day something broke, and a
@@ -310,7 +316,7 @@ struct OverlayView: View {
                                     scrolling: !eagerLayout, limit: max(0, free * 3 / 4))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,
-                                   onDismiss: { controller.hidePanel() },
+                                   onDismiss: controller.dismiss,
                                    scrolling: !eagerLayout)
                             .frame(maxHeight: controller.hub.todoEmpty ? nil : .infinity)
                     }

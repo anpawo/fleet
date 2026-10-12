@@ -293,7 +293,9 @@ if CommandLine.arguments.contains("--bench-panel") {
         // move, so a pass that costs more than a frame is a frame dropped.
         let byGroup = Dictionary(grouping: controller.sessions, by: \.groupKey)
         if let group = byGroup.max(by: { $0.value.count < $1.value.count }), group.value.count > 1 {
-            @MainActor func fold(_ name: String, to target: String?) {
+            // The first frame is the whole panel taking the change in, and it is timed from the
+            // click: most of it is spent before `layout()` is reached.
+            @MainActor func fold(to target: String?) -> (first: Double, rest: [Double]) {
                 settle()
                 hosting.frames = []
                 let clicked = cpu()
@@ -302,17 +304,23 @@ if CommandLine.arguments.contains("--bench-panel") {
                 while Date() < end {
                     RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.004))
                 }
-                // The first frame is the whole panel taking the change in, and it is timed from
-                // the click: most of it is spent before `layout()` is reached.
                 // A layout that found nothing to do is not a frame.
-                let rest = hosting.frames.dropFirst().filter { $0 > 0.05 }
-                print(String(format: "  %-34s %7.2f ms/frame  worst %7.2f ms   first frame %.1f ms, %d frames",
-                             (name as NSString).utf8String!,
-                             rest.reduce(0, +) / Double(max(rest.count, 1)), rest.max() ?? 0,
-                             hosting.firstFrameAt - clicked, rest.count + 1))
+                return (hosting.firstFrameAt - clicked, hosting.frames.dropFirst().filter { $0 > 0.05 })
             }
-            fold("group opening (\(group.value.count) sessions)", to: group.key)
-            fold("group folding", to: nil)
+            // One click's first frame reads anywhere from 11 to 32 ms: five of each, the median.
+            var opening: [(first: Double, rest: [Double])] = [], folding = opening
+            for _ in 0 ..< 5 {
+                opening.append(fold(to: group.key))
+                folding.append(fold(to: nil))
+            }
+            for (name, runs) in [("group opening (\(group.value.count) sessions)", opening),
+                                 ("group folding", folding)] {
+                let frames = runs.flatMap(\.rest), firsts = runs.map(\.first).sorted()
+                print(String(format: "  %-34s %7.2f ms/frame  worst %7.2f ms   first frame %.1f ms (median of %d)",
+                             (name as NSString).utf8String!,
+                             frames.reduce(0, +) / Double(max(frames.count, 1)), frames.max() ?? 0,
+                             firsts[firsts.count / 2], firsts.count))
+            }
         }
         // The rightmost scroll view is the todo column.
         let scrolls = scrollViews(hosting).sorted { a, b in

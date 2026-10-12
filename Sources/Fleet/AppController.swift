@@ -492,6 +492,10 @@ final class AppController: ObservableObject {
         withAnimation(TodoColumn.unroll) { commandHeld = held }
     }
 
+    /// `hidePanel`, as one closure for the app's life. A column handed a new closure at every
+    /// update never compares equal to itself, so its whole body was run again at every tick.
+    private(set) lazy var dismiss: () -> Void = { [unowned self] in hidePanel() }
+
     func hidePanel() {
         openGroup = nil
         guard isPanelVisible else { return }
