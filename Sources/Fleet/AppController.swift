@@ -304,6 +304,10 @@ final class AppController: ObservableObject {
         observeSleepWake()
         schedule(Config.idlePollDormant)
         tick()
+        // A moment after the first scan, so the panel is built around the fleet it will show.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            MainActor.assumeIsolated { self?.overlay?.prebuild() }
+        }
     }
 
     /// `--render`: populate the panel without any window, for offscreen image rendering.

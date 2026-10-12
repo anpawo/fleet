@@ -200,6 +200,20 @@ final class OverlayWindowController {
         return window
     }
 
+    /// Builds the panel once, right after launch, in the window nobody has asked for yet.
+    /// Left to the first open, that build is what the open waited on: 250 ms after a restart,
+    /// against 20 to 75 for every open after it (frames logged 2026-10-12).
+    func prebuild() {
+        guard window == nil else { return }
+        let began = CACurrentMediaTime()
+        let window = makeWindow()
+        self.window = window
+        window.setFrame(Self.activeScreen().frame, display: false)
+        window.contentView?.layoutSubtreeIfNeeded()
+        NSLog(String(format: "Fleet: panel built ahead of its first open, in %.0f ms",
+                     (CACurrentMediaTime() - began) * 1000))
+    }
+
     private var host: FrameCountingHost? { window?.contentView as? FrameCountingHost }
 
     /// What the panel is about to do, as one line in the log — see `FrameCountingHost.trace`.
