@@ -606,6 +606,14 @@ enum SelfCheck {
         expect(resumed?.preview.last?.text == "Done." ? 1 : 0, 1,
                "and is not a line on the tile")
 
+        // What a compaction writes when it runs on a session idle at its prompt.
+        append(#"{"type":"user","timestamp":"\#(stamp(0))","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"content":"This session is being continued from a previous conversation that ran out of context."}}"#)
+        let compacted = store.info(for: session)
+        expect(compacted?.turnOpen == false ? 1 : 0, 1,
+               "the summary of an idle compaction opens no turn")
+        expect(compacted?.preview.last?.text == "Done." ? 1 : 0, 1,
+               "and is not a line on the tile")
+
         // A shell started well before the tail a cold read covers, and nothing ending it since:
         // a Fleet started now must still count it.
         append(#"{"type":"assistant","timestamp":"\#(stamp(4))","message":{"id":"m8","content":[{"type":"tool_use","id":"toolu_sh3","name":"Bash","input":{"command":"sleep 99"}}]}}"#)

@@ -460,7 +460,10 @@ private struct ParseState {
         let blocks = Self.contentBlocks(message["content"])
         let messageID = message["id"] as? String
         if let stamp = obj["timestamp"] as? String, let at = Self.date(stamp) { lastMessageAt = at }
+        // A compaction's summary is filed as a user entry too, and one made while the session
+        // sat idle is answered by nobody (12-10: trading NEEDS YOU, compacted at its prompt).
         let transcriptOnly = obj["queueTranscriptOnly"] as? Bool == true
+            || obj["isCompactSummary"] as? Bool == true
 
         // A turn cancelled with Esc names the message it cut short, and the tool calls in that
         // message are never answered — nothing is coming back for them. Left in `pending` they
