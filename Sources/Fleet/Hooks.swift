@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 20
+    static let version = 21
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -438,7 +438,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 20
+    # fleet-hook-version: 21
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -525,10 +525,29 @@ enum Hooks {
 
     input=$(cat)
 
+    # str and num read one field out of a line of JSON in the shell itself: `$v` is the string or
+    # the number that $2 gives the key $1, the first one, or nothing. A `sed` and a `head` for
+    # each were three processes a field, at every tool call of every session.
+    str() { v=; case $2 in *"\\"$1\\":\\""*\\"*) v=${2#*"\\"$1\\":\\""}; v=${v%%\\"*} ;; esac; }
+    num() { v=; case $2 in *"\\"$1\\":"[0-9]*) v=${2#*"\\"$1\\":"}; v=${v%%[!0-9]*} ;; esac; }
+
+    # The session's own fields come first in a payload, ahead of whatever the tool read or wrote,
+    # and they are looked for in its first 1500 characters only: past a few thousand the shell
+    # is slower at this than `sed`, and a file a tool read is 100 KB of payload. Where that
+    # finds nothing (another layout, an `sh` that is not bash, which the `eval` spares from
+    # parsing this) the `sed` reads the whole payload, as before.
+    head=
+    [ -z "${BASH_VERSION:-}" ] || eval 'head=${input:0:1500}'
+
     # "session_id":"<uuid>" — the same id that names the session's transcript file.
-    sid=$(printf '%s' "$input" | sed -n \\
+    str session_id "$head"; sid=$v
+    case $sid in *[!0-9a-fA-F-]*) sid= ;; esac
+    [ ${#sid} -ge 8 ] || sid=$(printf '%s' "$input" | sed -n \\
         's/.*"session_id"[[:space:]]*:[[:space:]]*"\\([0-9a-fA-F-]\\{8,\\}\\)".*/\\1/p' | head -1)
     [ -n "$sid" ] || exit 0
+    str hook_event_name "$head"; event=$v
+    case $event in '' | *[!A-Za-z]*) event=$(printf '%s' "$input" | sed -n \\
+        's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1) ;; esac
 
     # The payload's own "cwd": the folder the session's shell stands in.
     cwd() { /usr/bin/perl -MJSON::PP -e 'local $/; my $in = eval { decode_json(<STDIN>) }; print $in->{cwd} // "" if ref $in eq "HASH"'; }
@@ -552,7 +571,7 @@ enum Hooks {
     # would be ended by the next sweep, mid-turn (04-10: test-restart.sh, run from a session).
     if [ -n "${FLEET_SHELL:-}" ] && [ "${CLAUDE_CODE_SESSION_ID:-$sid}" = "$sid" ] &&
         { [ "$state" = "start" ] ||
-        [ "$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" != "$FLEET_SHELL" ]; }; then
+        ! { read -r _ sh _ < "$dir/$sid.shell" && [ "$sh" = "$FLEET_SHELL" ]; } 2>/dev/null; }; then
         p=$PPID; n=0; cl=
         while [ $n -lt 4 ] && [ -n "$p" ]; do
             case "$(ps -o comm= -p "$p" 2>/dev/null)" in
@@ -589,13 +608,11 @@ enum Hooks {
     advise() {
         machine="$HOME/.claude/fleet/machine.json"
         [ -f "$machine" ] || return 0
-        payload=$(cat "$machine" 2>/dev/null) || return 0
+        payload=; IFS= read -r payload 2>/dev/null < "$machine"
         now=$(date +%s)
-        event=$(printf '%s' "$input" | sed -n \\
-            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
-        reason=$(printf '%s' "$payload" | sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' | head -1)
+        str reason "$payload"; reason=$v
         # Any other event means no hold is running, whatever a hold killed by Esc left behind.
-        [ "$event" = "PreToolUse" ] || rm -f "$dir/$sid.held"
+        [ "$event" = "PreToolUse" ] || [ ! -e "$dir/$sid.held" ] || rm -f "$dir/$sid.held"
         # When you last spoke to this session, which is what exempts it from a hold.
         [ "$event" = "UserPromptSubmit" ] && mkdir -p "$dir" && echo "$now" > "$dir/$sid.prompted"
 
@@ -612,7 +629,7 @@ enum Hooks {
         # One per session per press: the stamp records which stop this session has already
         # honoured, so a run started after it is not cut down by a press from ten minutes ago.
         case "$event" in PreToolUse | PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
-        stop=$(printf '%s' "$payload" | sed -n 's/.*"stop":\\([0-9]*\\).*/\\1/p' | head -1)
+        num stop "$payload"; stop=$v
         if [ -n "${stop:-}" ] && [ $((now - stop)) -lt 300 ]; then
             honoured=0
             [ -f "$dir/$sid.stopped" ] && honoured=$(cat "$dir/$sid.stopped" 2>/dev/null || echo 0)
@@ -632,9 +649,9 @@ enum Hooks {
         # fourteen minutes, inside the hook's timeout; the next tool call is held again if need
         # be. A prompt you typed after the verdict exempts the session: that is the one you want.
         if [ "$event" = "PreToolUse" ]; then
-            pause=$(printf '%s' "$payload" | sed -n 's/.*"pause":"\\([^"]*\\)".*/\\1/p' | head -1)
+            str pause "$payload"; pause=$v
             case ",${pause:-}," in *",$sid,"*) ;; *) return 0 ;; esac
-            at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+            num at "$payload"; at=$v
             prompted=$(cat "$dir/$sid.prompted" 2>/dev/null || echo 0)
             [ "${prompted:-0}" -lt "${at:-0}" ] || return 0
             p="$payload"
@@ -642,7 +659,7 @@ enum Hooks {
             while :; do
                 case "$p" in *'"struggling":true'*) ;; *) break ;; esac
                 case "$p" in *"$sid"*) ;; *) break ;; esac
-                a=$(printf '%s' "$p" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+                num at "$p"; a=$v
                 t=$(date +%s)
                 [ $((t - ${a:-0})) -lt 60 ] && [ $((t - now)) -lt 840 ] || break
                 sleep 5
@@ -660,7 +677,7 @@ enum Hooks {
         # Claude Code feeds back to the model.
         case "$payload" in *'"struggling":true'*) ;; *) return 0 ;; esac
         case "$event" in PostToolUse | UserPromptSubmit ) ;; * ) return 0 ;; esac
-        at=$(printf '%s' "$payload" | sed -n 's/.*"at":\\([0-9]*\\).*/\\1/p' | head -1)
+        num at "$payload"; at=$v
         [ -n "${at:-}" ] && [ $((now - at)) -lt 300 ] || return 0
 
         stamp="$dir/$sid.nudge"
@@ -670,7 +687,7 @@ enum Hooks {
         fi
         mkdir -p "$dir" && echo "$now" > "$stamp"
 
-        hogs=$(printf '%s' "$payload" | sed -n 's/.*"hogs":"\\([^"]*\\)".*/\\1/p' | head -1)
+        str hogs "$payload"; hogs=$v
         note="Fleet: this Mac has stopped keeping up ($reason). Heaviest processes right now, \\
     each with how long it has run and the directory it works in: ${hogs:-unknown}. \\
     A process whose directory is your working directory, or below it, is YOUR load — a \\
@@ -693,8 +710,6 @@ enum Hooks {
     if [ -n "$out" ]; then
         printf '%s\n' "$out"
     elif [ -s "$dir/$sid.reel" ]; then
-        event=$(printf '%s' "$input" | sed -n \\
-            's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\\([A-Za-z]*\\)".*/\\1/p' | head -1)
         case "$event" in PostToolUse | UserPromptSubmit )
             if mv "$dir/$sid.reel" "$dir/$sid.reel.out" 2>/dev/null; then
                 note=$(tr -d '\n' < "$dir/$sid.reel.out")
@@ -723,10 +738,11 @@ enum Hooks {
     # invoked through a wrapper shell would sit one further down, so a short ancestry is
     # recorded and Fleet takes the first entry that is a session it can see. Two levels up is
     # as far as this is worth one extra `ps`.
-    path=$(printf '%s' "$input" | sed -n \\
+    str transcript_path "$head"; path=$v
+    [ -n "$path" ] || path=$(printf '%s' "$input" | sed -n \\
         's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
     pids="$PPID"
-    up=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
+    up=$(ps -o ppid= -p "$PPID" 2>/dev/null); up=${up##* }
     case "${up:-}" in
         '' | 0 | 1 | *[!0-9]* ) ;;
         * ) pids="$pids,$up" ;;
@@ -741,7 +757,7 @@ enum Hooks {
         esac
     fi
 
-    mkdir -p "$dir"
+    [ -d "$dir" ] || mkdir -p "$dir"
     tmp="$dir/$sid.json.$$"
     printf '{"state":"%s","at":%s,"pids":"%s","transcript":"%s"}\\n' \\
         "$state" "$(date +%s)" "$pids" "$path" > "$tmp" && mv "$tmp" "$dir/$sid.json"
