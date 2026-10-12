@@ -505,7 +505,7 @@ struct OverlayView: View {
     /// card's own padding, split in three.
     private var innerTileWidth: CGFloat {
         let across = CGFloat(GroupTile.perRow)
-        return (centerWidth - (across + 1) * tileSpacing - 2 * GroupTile.aura) / across
+        return (centerWidth - (across - 1) * tileSpacing - 2 * GroupTile.margin(tileSpacing)) / across
     }
 
     /// Every card, in rows of two, laid out by hand rather than by stacks — see `FleetLayout`.
@@ -518,7 +518,8 @@ struct OverlayView: View {
         let cells = self.cells
         // A directory that fits stands unfolded in the grid itself: its sessions are in view
         // with nothing to click, and the rest of the fleet is still there under it (asked
-        // 2026-10-12). A click gives it the whole block, as it does one that did not fit.
+        // 2026-10-12). A click does not give it the block, as it does one that did not fit:
+        // there is no more of it to show.
         let layout = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
                                  spacing: tileSpacing, columns: Self.tilesPerRow,
                                  open: openIndex, openHeight: openHeight,
@@ -534,6 +535,9 @@ struct OverlayView: View {
                         case let .group(name, sessions):
                         GroupTile(name: name, sessions: sessions,
                                   open: openGroup == name || unfolded.contains(cell.id),
+                                  // One that has the block all the same (a fleet of one
+                                  // directory comes up so) still folds back.
+                                  toggles: openGroup == name || !unfolded.contains(cell.id),
                                   commandHeld: controller.commandHeld,
                                   inner: innerTileWidth, spacing: tileSpacing,
                                   full: CGSize(width: centerWidth, height: openHeight),
@@ -892,6 +896,9 @@ struct GroupTile: View {
     let sessions: [Session]
     /// Its sessions as cards rather than as lines: unfolded in the grid, or given the block.
     let open: Bool
+    /// Whether a click opens it or folds it back. Not one that stands unfolded in the grid
+    /// (asked 2026-10-12): its sessions are in view already, and it carries no arrow.
+    var toggles = true
     /// ⌘-click goes to the head's terminal; a plain click only unfolds.
     let commandHeld: Bool
     /// What a session card inside is given, worked out by the grid from its own width.
@@ -917,15 +924,18 @@ struct GroupTile: View {
     /// Roughly the name's line height, to centre it on the folded card's 33% mark.
     private static let nameLine: CGFloat = 37
 
-    /// What the open card keeps clear inside its border, past the gap the cards already have
-    /// between them: a card in there throws the same glow as one on the grid, and the group's
-    /// own rounded clip was cutting it off square.
-    static let aura: CGFloat = 12
+    /// What the open card keeps clear between its border and its cards, at the sides and
+    /// under them. Half of what it was (asked 2026-10-12), which was the gap between two cards
+    /// and 12 pt more for a card's glow.
+    static func margin(_ spacing: CGFloat) -> CGFloat { (spacing + 12) / 2 }
+    /// What its cards keep clear above them: the name's line, and the room above and under
+    /// it, halved with the rest.
+    static func top(_ spacing: CGFloat) -> CGFloat { spacing / 2 + nameLine + 17 }
     /// How tall the card stands with every one of its sessions in view and nothing to scroll:
-    /// the rows, and what `Cards` pads them with — if one moves the other has to.
+    /// the rows, and what `Cards` pads them with.
     static func height(holding count: Int, spacing: CGFloat) -> CGFloat {
         let rows = CGFloat((count + perRow - 1) / perRow)
-        return spacing + nameLine + 34 + rows * (SessionTile.groupedHeight + spacing) + aura
+        return top(spacing) + rows * (SessionTile.groupedHeight + spacing) - spacing + margin(spacing)
     }
     /// How many sessions stand side by side inside the open card. Three (asked 2026-10-12)
     /// where the grid around it holds two, on cards made smaller for it — see
@@ -978,11 +988,11 @@ struct GroupTile: View {
                     // Centred in both states, on the same width: the title does not change
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
-                            y: open ? spacing - scrolled : Self.titleTop)
+                            y: open ? spacing / 2 - scrolled : Self.titleTop)
 
                 HStack(spacing: 7) {
                     count
-                    chevron
+                    if toggles { chevron }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
@@ -1075,8 +1085,8 @@ struct GroupTile: View {
             // Clear of the name, which is drawn over this rather than above it — and clear by
             // a margin: a row of cards starting five points under the title read as its
             // underline.
-            .padding(.top, spacing + GroupTile.nameLine + 34)
-            .padding([.horizontal, .bottom], spacing + GroupTile.aura)
+            .padding(.top, GroupTile.top(spacing))
+            .padding([.horizontal, .bottom], GroupTile.margin(spacing))
 
             Group {
                 if scrolling {
@@ -1118,7 +1128,7 @@ struct GroupTile: View {
     /// head's terminal, which closes the panel and can change Space with nothing to click to
     /// come back — so it is asked for, never stumbled into.
     private func tapped() {
-        if commandHeld, let head { onActivate(head) } else { onToggle() }
+        if commandHeld, let head { onActivate(head) } else if toggles { onToggle() }
     }
 
     /// The group's head: the session the others name as the sender of their brief. A peer
@@ -1252,8 +1262,7 @@ struct SessionTile: View {
     /// Fixed so the name's 33% line is the same on every tile, whatever the history under it.
     static let height: CGFloat = 186
     /// Inside a group, where three stand on a line: a third of the block wide, and two thirds
-    /// of this height to keep the card's shape. It holds the name on two lines and two lines
-    /// under it, at the sizes they have everywhere else.
+    /// of this height to keep the card's shape.
     static let groupedHeight: CGFloat = 124
     /// Roughly the name's line height at its font size, to centre it on that 33% mark.
     /// Tracks `name`'s point size — if one moves the other has to.
@@ -1262,32 +1271,40 @@ struct SessionTile: View {
     var body: some View {
         Button(action: onSelect) {
             ZStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // The name sits with its centre 33% down the tile, so every tile's name
-                    // lands on the same line however much history is under it.
-                    // In a group's smaller card, just clear of the pills in its corner.
-                    Spacer().frame(height: grouped ? 20 : Self.height * 0.33 - Self.nameLine / 2)
+                // Inside a group the name alone, in the middle of the card, and no line of what
+                // it last ran (asked 2026-10-12): the border and the pill say its state.
+                if grouped {
                     name
-                    // The space above flexes and the space below is fixed, so the history sits
-                    // low in the tile — anchored near the bottom edge rather than centred
-                    // between it and the name.
-                    Spacer(minLength: 8)
-                    // One stack at the rail's own spacing: in the outer one, which has none, the
-                    // sub-agent and step lines sat three points closer than the lines above them.
-                    VStack(alignment: .leading, spacing: 3) {
-                        rail
-                        subagent
-                        step
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // The name sits with its centre 33% down the tile, so every tile's name
+                        // lands on the same line however much history is under it.
+                        Spacer().frame(height: Self.height * 0.33 - Self.nameLine / 2)
+                        name
+                        // The space above flexes and the space below is fixed, so the history
+                        // sits low in the tile — anchored near the bottom edge rather than
+                        // centred between it and the name.
+                        Spacer(minLength: 8)
+                        // One stack at the rail's own spacing: in the outer one, which has none,
+                        // the sub-agent and step lines sat three points closer than the lines
+                        // above them.
+                        VStack(alignment: .leading, spacing: 3) {
+                            rail
+                            subagent
+                            step
+                        }
                     }
+                    .padding([.horizontal, .top], 12)
+                    // Close to the border, clear of its 2.5 pt stroke.
+                    .padding(.bottom, (2.5 + 3) * 3)
+                    // Without this the stack is only as tall as its content, the flexible spacer
+                    // above the history has nothing to expand into, and the slack ends up below
+                    // the tile's content instead of above it — which is why the history sat high
+                    // whatever the spacers said.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .padding([.horizontal, .top], 12)
-                // Close to the border, clear of its 2.5 pt stroke.
-                .padding(.bottom, (2.5 + 3) * 3)
-                // Without this the stack is only as tall as its content, the flexible spacer
-                // above the history has nothing to expand into, and the slack ends up below
-                // the tile's content instead of above it — which is why the history sat high
-                // whatever the spacers said.
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 // Pills side by side while the two of them fit the tile, stacked in the corner
                 // when they don't — never shrunk: every pill is the same size on every tile. A
@@ -1302,7 +1319,7 @@ struct SessionTile: View {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 5) { subagentPill; statePill }.fixedSize()
                         // A group's smaller card has one line of pills to give: stacked, the
-                        // second sat on the name. The line under the name says who is working.
+                        // second sat on the name.
                         if grouped {
                             statePill
                         } else {
@@ -1362,10 +1379,8 @@ struct SessionTile: View {
             // The tile is a fixed height, so the sub-agent line has to come out of somewhere:
             // it takes the oldest rail line rather than pushing the whole stack past the
             // bottom edge. What a sub-agent is doing now beats one more finished step.
-            // A group's smaller card has two lines under its name in all, the step in flight
-            // among them.
-            let most = grouped ? (session.currentStep == nil ? 2 : 1) : Config.railLineCount
-            let room = session.subagentLine == nil ? most : most - 1
+            let room = session.subagentLine == nil ? Config.railLineCount
+                                                   : Config.railLineCount - 1
             // What was said, not what was run: the grey tool lines crowded out the sentences.
             // One exception — the call a session is blocked on, which is why it needs you.
             let steps = session.steps
@@ -1375,16 +1390,13 @@ struct SessionTile: View {
             // From your last message on, not the tail of the whole conversation: the line above
             // the question was the answer to the one before it. The question stays put when the
             // replies to it run past the room; they give up their oldest line instead.
-            let lines: [PreviewLine] = room < 1 ? [] : said.lastIndex(where: { $0.kind == .user }).map { ask in
+            let lines: [PreviewLine] = said.lastIndex(where: { $0.kind == .user }).map { ask in
                 [said[ask]] + said[(ask + 1)...].suffix(room - 1)
             } ?? Array(said.suffix(room))
             if lines.isEmpty {
-                // Said of a session with nothing said, not of a card with no line to spare.
-                if room > 0 {
-                    Text("No conversation yet")
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.25))
-                }
+                Text("No conversation yet")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.25))
             } else {
                 ForEach(lines) { line in
                     HStack(alignment: .top, spacing: 6) {
