@@ -230,31 +230,10 @@ enum Money {
         return out + [field]
     }
 
-    /// How far from the pie's centre, along the middle of a slice, a label sits inside it:
-    /// `rows` are how wide its lines are, each `line` tall, one centred under the other. The
-    /// first place that keeps every line 2pt clear of the slice's sides and 3 of the rim, from
-    /// 0.6 of the radius out to the rim — a slice is widest there — then back in, never over
-    /// the centre. Nil for a slice too thin to hold it anywhere. Turns clockwise from twelve
-    /// o'clock.
-    static func seat(_ rows: [Double], line: Double, from: Double, to: Double, radius: Double) -> Double? {
-        let middle = Double.pi * (from + to), half = Double.pi * (to - from)
-        let along = (x: sin(middle), y: -cos(middle))
-        let top = -line * Double(rows.count) / 2
-        let corners = rows.enumerated().flatMap { row, width in
-            [-0.5, 0.5].flatMap { side in [0.0, 1].map { (x: side * width, y: top + (Double(row) + $0) * line) } }
-        }
-        let tries = Array(stride(from: 0.6 * radius, through: radius - 3, by: 2))
-            + Array(stride(from: 0.6 * radius - 2, through: max(0.25 * radius, (rows.max() ?? 0) / 2 + 2), by: -2))
-        return tries.first { out in
-            corners.allSatisfy { corner in
-                let x = out * along.x + corner.x
-                let y = out * along.y + corner.y
-                let far = hypot(x, y)
-                // The corner's angle off the slice's middle.
-                let off = abs(atan2(x * along.y - y * along.x, x * along.x + y * along.y))
-                return far <= radius - 3 && (half - off >= .pi / 2 || far * sin(half - off) >= 2)
-            }
-        }
+    /// How long a line may be along a slice's own arc, `out` from the pie's centre: the arc,
+    /// less 3pt either side. Turns, as `Month.slices` gives them.
+    static func arc(from: Double, to: Double, out: Double) -> Double {
+        2 * .pi * (to - from) * out - 6
     }
 
     static func euros(_ amount: Double) -> String {
@@ -413,10 +392,13 @@ struct MoneyColumn: View {
 /// paid where is not the question, how the month splits is).
 ///
 /// The kinds are the month's own ranking — see `Month.ranked`: the pie turns from twelve
-/// o'clock, the largest first. A slice carries its own name, over its share and what that came
-/// to in euros, wherever it is wide enough to hold them (asked 2026-10-12, with the pie at
-/// 200 pt) — see `Money.seat`. One too thin has an arrow out to them, and there is no legend
-/// beside the pie (asked 2026-10-11): the name is still read where the slice is.
+/// o'clock, the largest first. A slice's name is written along its own rim, and under it what
+/// it came to in euros, when the rim is long enough for them (asked 2026-10-12, with the pie
+/// at 248 pt). One too thin has an arrow out to them, and there is no legend beside the pie
+/// (asked 2026-10-11): the name is still read where the slice is.
+///
+/// A slice's share is not written at rest, its size says it. It comes under the pointer,
+/// along an arc near the slice's middle (asked 2026-10-12).
 ///
 /// The month's name and its total are on the line the pie's top stands in, either side of it
 /// (asked 2026-10-12): a circle leaves the ends of that line alone.
@@ -430,9 +412,9 @@ private struct MoneyMonth: View {
     @State private var width: Double = 288
 
     /// The pie's radius: the first of these that leaves every name past the rim its room. A
-    /// thin slice at nine o'clock is the one that asks for a smaller pie — it has no seat for
-    /// its name, and the pie at its largest leaves 24pt beside it.
-    private static let radii: [Double] = [100, 90, 80, 70, 60]
+    /// thin slice at nine o'clock is the one that asks for a smaller pie — its rim is too
+    /// short for its name, and the pie at its largest leaves nothing beside it.
+    private static let radii: [Double] = [124, 112, 100, 88, 76, 64]
     /// How far past the rim an arrow runs, and the most it is stretched to part two names.
     private static let reach: CGFloat = 16
     private static let longest: CGFloat = 90
@@ -441,16 +423,24 @@ private struct MoneyMonth: View {
     /// What the month's name and its total take of the top. The pie may stand in it; a name
     /// past the rim may not, it would read as one more word of that line.
     private static let heading: CGFloat = 16
+    /// How far inside the rim a slice's name is written, and what it came to under it.
+    private static let nameIn: Double = 9
+    private static let priceIn: Double = 20
 
-    /// A slice's two lines, and where they go: `seat` from the pie's centre along the slice's
-    /// middle, or past the rim on an arrow when the slice has no seat for them.
+    /// A slice's name and what it came to, and where they are written: along the slice's own
+    /// rim, or past it on an arrow when the rim is too short for them.
     private struct Placed {
         let kind: Money.Kind
         let turn: Double
         let percent: String
         let price: String
+        let inside: Bool
+        /// How wide it is past the rim, with the share that joins the price under the pointer.
         let width: Double
-        let seat: Double?
+        /// How far from the centre the share is written under the pointer: as near the
+        /// slice's middle as the slice is wide enough for it. Nil for a sliver, whose share
+        /// goes beside its price.
+        let middle: Double?
     }
 
     private static func width(_ text: String, _ font: NSFont) -> Double {
@@ -464,15 +454,18 @@ private struct MoneyMonth: View {
         let labels = month.slices.map { slice in
             let percent = "\(shares[slice.kind] ?? 0)%", price = Money.euros(month.spent[slice.kind] ?? 0)
             let name = Self.width(slice.kind.title, .systemFont(ofSize: 9))
-            let figures = Self.width("\(percent) \(price)", .monospacedDigitSystemFont(ofSize: 9, weight: .semibold))
-            // A line as tall as its ink, not as its line box: 1.5pt less.
+            let room = { (out: Double) in Money.arc(from: slice.from, to: slice.to, out: out) }
+            let share = Self.width(percent, .monospacedDigitSystemFont(ofSize: 13, weight: .semibold))
             return Placed(kind: slice.kind, turn: (slice.from + slice.to) / 2, percent: percent, price: price,
-                          width: max(name, figures),
-                          seat: Money.seat([name, figures], line: Self.pitch - 1.5,
-                                           from: slice.from, to: slice.to, radius: radius))
+                          inside: name <= room(radius - Self.nameIn)
+                              && Self.width(price, .monospacedDigitSystemFont(ofSize: 9, weight: .medium))
+                              <= room(radius - Self.priceIn),
+                          width: max(name, Self.width("\(percent) \(price)",
+                                                      .monospacedDigitSystemFont(ofSize: 9, weight: .semibold))),
+                          middle: stride(from: 0.58 * radius, through: radius - 34, by: 4).first { share <= room($0) })
         }
         // Two lines and a little air: packed, six names read as one column of twelve lines.
-        let callouts = month.callouts(of: Set(labels.filter { $0.seat == nil }.map(\.kind)), radius: radius,
+        let callouts = month.callouts(of: Set(labels.filter { !$0.inside }.map(\.kind)), radius: radius,
                                       reach: Self.reach, line: 2 * Self.pitch + 3, longest: Self.longest)
         let fits = callouts.allSatisfy { callout in
             let label = labels.first { $0.kind == callout.kind }?.width ?? 0
@@ -499,20 +492,24 @@ private struct MoneyMonth: View {
                 let centre = CGPoint(x: size.width / 2, y: over)
                 for label in labels {
                     let lit = hovered == label.kind
-                    let name = Text(label.kind.title).font(.system(size: 9))
-                    let percent = Text(label.percent).font(.system(size: 9, weight: .semibold).monospacedDigit())
-                    let price = Text(label.price).font(.system(size: 9, weight: .medium).monospacedDigit())
-                    if let seat = label.seat {
-                        // Dark on the slice's own colour: against every one of the nine it reads
-                        // better than white does.
-                        let x = centre.x + seat * sin(2 * .pi * label.turn)
-                        let y = centre.y - seat * cos(2 * .pi * label.turn)
-                        context.draw(name.foregroundStyle(.black.opacity(lit ? 0.95 : 0.7)),
-                                     at: CGPoint(x: x, y: y - Self.pitch / 2))
-                        context.draw(percent.foregroundStyle(.black.opacity(0.85)) + Text(" ")
-                                         + price.foregroundStyle(.black.opacity(0.7)),
-                                     at: CGPoint(x: x, y: y + Self.pitch / 2))
+                    let digits = Font.system(size: 9, weight: .medium).monospacedDigit()
+                    // Dark on the slice's own colour: against every one of the nine it reads
+                    // better than white does.
+                    let middle = lit ? label.middle ?? (label.inside ? radius - 34 : nil) : nil
+                    if let middle {
+                        Self.write(label.percent, .system(size: 13, weight: .semibold).monospacedDigit(),
+                                   .black.opacity(0.85), in: context, round: centre, radius: middle, turn: label.turn)
+                    }
+                    if label.inside {
+                        Self.write(label.kind.title, .system(size: 9), .black.opacity(lit ? 0.95 : 0.75),
+                                   in: context, round: centre, radius: radius - Self.nameIn, turn: label.turn)
+                        Self.write(label.price, digits, .black.opacity(0.65),
+                                   in: context, round: centre, radius: radius - Self.priceIn, turn: label.turn)
                     } else if let callout = callouts.first(where: { $0.kind == label.kind }) {
+                        let name = Text(label.kind.title).font(.system(size: 9))
+                        let percent = Text(lit && middle == nil ? label.percent + " " : "")
+                            .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                        let price = Text(label.price).font(digits)
                         func at(_ past: Double) -> CGPoint {
                             let point = callout.point(radius: radius, past: past)
                             return CGPoint(x: centre.x + point.x, y: centre.y + point.y)
@@ -537,8 +534,8 @@ private struct MoneyMonth: View {
                         let anchor: UnitPoint = callout.right ? .leading : .trailing
                         context.draw(name.foregroundStyle(.white.opacity(lit ? 0.95 : 0.5)),
                                      at: CGPoint(x: x, y: tip.y - Self.pitch / 2), anchor: anchor)
-                        context.draw(percent.foregroundStyle(.white.opacity(0.85)) + Text(" ")
-                                         + price.foregroundStyle(.white.opacity(0.6)),
+                        context.draw(percent.foregroundStyle(.white.opacity(0.85))
+                                         + price.foregroundStyle(.white.opacity(0.75)),
                                      at: CGPoint(x: x, y: tip.y + Self.pitch / 2), anchor: anchor)
                     }
                 }
@@ -591,6 +588,26 @@ private struct MoneyMonth: View {
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
     }
 
+    /// Writes `text` round the pie, `radius` from `centre`, its middle at `turn`: letter by
+    /// letter, each standing on the circle. Clockwise with its head outwards over the upper
+    /// half of the pie; the other way round under it, where that would be upside down.
+    private static func write(_ text: String, _ font: Font, _ colour: Color, in context: GraphicsContext,
+                              round centre: CGPoint, radius: Double, turn: Double) {
+        let letters = text.map { context.resolve(Text(String($0)).font(font).foregroundStyle(colour)) }
+        let widths = letters.map { $0.measure(in: CGSize(width: 99, height: 99)).width }
+        let under = turn > 0.25 && turn < 0.75
+        let way: Double = under ? -1 : 1
+        var angle = 2 * .pi * turn - way * widths.reduce(0, +) / 2 / radius
+        for (letter, width) in zip(letters, widths) {
+            angle += way * width / 2 / radius
+            var spot = context
+            spot.translateBy(x: centre.x + radius * sin(angle), y: centre.y - radius * cos(angle))
+            spot.rotate(by: .radians(angle + (under ? .pi : 0)))
+            spot.draw(letter, at: .zero)
+            angle += way * width / 2 / radius
+        }
+    }
+
     /// A slice as the pointer raises it (asked 2026-10-12): drawn over the pie, `lift` of the
     /// way past the rim and over its neighbours either side, with a bright edge.
     ///
@@ -603,8 +620,9 @@ private struct MoneyMonth: View {
         let tint: Color
         var lift: Double
 
-        static let rise: Double = 8
-        static let spread: Double = 3
+        /// A little less than the 8 and 3 it had at first (asked 2026-10-12).
+        static let rise: Double = 5
+        static let spread: Double = 2
 
         var animatableData: Double {
             get { lift }
