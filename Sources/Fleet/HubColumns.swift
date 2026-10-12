@@ -771,7 +771,8 @@ extension View {
 }
 
 /// A block that unfolds under the pointer only with ⌘ down, and then stays unfolded until the
-/// pointer leaves, ⌘ or no ⌘ (asked 2026-10-07, for CRONS and SPENDING).
+/// pointer leaves, ⌘ or no ⌘ (asked 2026-10-07, for CRONS and SPENDING; SPENDING has opened
+/// without ⌘ since 2026-10-12).
 ///
 /// One rule for both events — the pointer moving and the key changing: open while the pointer
 /// is on the block and either ⌘ is down or the block was open already.

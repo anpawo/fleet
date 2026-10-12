@@ -313,7 +313,7 @@ struct OverlayView: View {
                         CronColumn(title: "CRONS", jobs: controller.launchd.jobs,
                                    commandHeld: controller.commandHeld,
                                    scrolling: !eagerLayout, limit: max(0, free / 2))
-                        MoneyColumn(store: controller.money, commandHeld: controller.commandHeld,
+                        MoneyColumn(store: controller.money,
                                     scrolling: !eagerLayout, limit: max(0, free * 3 / 4))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,

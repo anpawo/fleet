@@ -117,34 +117,50 @@ enum Money {
                 .sorted { (spent[$0] ?? 0) > (spent[$1] ?? 0) }
         }
 
+        /// Where each shown kind's slice starts and ends, in turns clockwise from twelve o'clock.
+        var slices: [(kind: Kind, from: Double, to: Double)] {
+            let kinds = ranked
+            let whole = kinds.reduce(0) { $0 + (spent[$1] ?? 0) }
+            var turned = 0.0
+            return kinds.map { kind in
+                let from = turned
+                turned += (spent[kind] ?? 0) / whole
+                return (kind, from, turned)
+            }
+        }
+
+        /// The kind whose slice is under a point, taken from the pie's centre, y down. Nil
+        /// past the rim.
+        func kind(at point: CGPoint, radius: Double) -> Kind? {
+            guard hypot(point.x, point.y) <= radius else { return nil }
+            let turn = (atan2(point.x, -point.y) / (2 * .pi) + 1).truncatingRemainder(dividingBy: 1)
+            return slices.last { $0.from <= turn }?.kind
+        }
+
         /// Each slice's arrow: straight out of the middle of its rim, along its own radius
         /// (asked 2026-10-12 — aimed at wherever its name had room, every arrow left the pie
         /// at an angle of its own). `reach` long, and longer for a name that would touch the
         /// one before it: a quarter of the pie at a time, from the horizontal towards twelve
         /// or six o'clock, where a longer arrow lifts a name clear — so the small slices
-        /// crowding twelve o'clock stack up over the pie.
+        /// crowding twelve o'clock stack up over the pie. `line` is how tall a kind's name
+        /// is: one that carries its figures under it takes two lines.
         ///
-        /// ponytail: no arrow past `longest`, the room there is. Three slices under 2% side by
+        /// ponytail: no arrow past `longest`, the room there is. Two slices under 4% side by
         /// side at three or nine o'clock would still touch; part them sideways if a month
         /// ever draws that.
-        func callouts(radius: Double, reach: Double, line: Double, longest: Double) -> [Callout] {
-            let kinds = ranked
-            let whole = kinds.reduce(0) { $0 + (spent[$1] ?? 0) }
-            var turned = 0.0
-            var out = kinds.map { kind in
-                let part = (spent[kind] ?? 0) / whole
-                defer { turned += part }
-                return Callout(kind: kind, turn: turned + part / 2, length: reach)
-            }
+        func callouts(radius: Double, reach: Double, line: (Kind) -> Double, longest: Double) -> [Callout] {
+            var out = slices.map { Callout(kind: $0.kind, turn: ($0.from + $0.to) / 2, length: reach) }
             func lift(_ index: Int) -> Double { abs(cos(2 * .pi * out[index].turn)) }
             for quarter in 0 ..< 4 {
-                var floor = -Double.infinity
+                var floor = -Double.infinity, last = 0.0
                 for index in out.indices.filter({ min(3, Int(out[$0].turn * 4)) == quarter })
                     .sorted(by: { lift($0) < lift($1) }) {
-                    if (radius + out[index].length) * lift(index) < floor + line {
-                        out[index].length = min(longest, (floor + line) / lift(index) - radius)
+                    let clear = floor + (last + line(out[index].kind)) / 2
+                    if (radius + out[index].length) * lift(index) < clear {
+                        out[index].length = min(longest, clear / lift(index) - radius)
                     }
                     floor = (radius + out[index].length) * lift(index)
+                    last = line(out[index].kind)
                 }
             }
             return out
@@ -249,37 +265,39 @@ final class MoneyStore: ObservableObject {
     }
 }
 
-/// What the month has cost so far: the figure on the heading and, unfolded, every month the
-/// file holds.
+/// What the month has cost so far: the figure on the heading and, unfolded, the month itself.
 ///
 /// Folded to its heading at rest, the month and its figure and nothing else (asked 2026-10-07,
-/// with the name and the green). Unfolded — see `OpensUnderCommand` — the months newest first:
-/// the question a figure raises is "against what", and last month is the answer.
+/// with the name and the green). Unfolded by the pointer alone, no ⌘ (asked 2026-10-12), it is
+/// as tall as the current month and shows that one. The month before is a scroll away — the
+/// question a figure raises is "against what", and last month is the answer — and the earlier
+/// ones wait behind a button under it.
 ///
 /// A month is a block of its own and not a bar (asked 2026-10-07, the day the bars shipped):
 /// a pie of what each kind took of it — see `MoneyMonth`.
 struct MoneyColumn: View {
     @ObservedObject var store: MoneyStore
-    var commandHeld = false
     /// Off for a render that draws no scroll view — see `CronColumn`.
     var scrolling = true
-    /// The most the block takes of its column. Six months of pies are taller than a laptop's
-    /// screen: they scroll under this rather than push TODO off the panel.
+    /// The most the block takes of its column: a month taller than this scrolls under it
+    /// rather than push TODO off the panel.
     var limit: CGFloat = .infinity
 
     /// Seeded from a flag so a render can show the open block, which only a pointer opens.
     @State private var open = CommandLine.arguments.contains("--money-open")
-    /// Whether there are months below the block's lower edge from where it is scrolled.
+    /// Whether the block's lower edge cuts a month: scrolled off the top, and not at the end.
     @State private var runsOn = false
+    /// How many months the list holds: `recent`, until the button is asked for more.
+    @State private var shown = MoneyColumn.recent
 
-    private static let shown = 6
+    private static let recent = 2
 
     /// What the block costs around its months: the heading, the gap under it, the frame's own
     /// padding, and the line that dates the file.
     private static let chrome: CGFloat = 76
 
     var body: some View {
-        let months = Array(store.months.prefix(Self.shown))
+        let months = Array(store.months.prefix(shown))
         let room = max(40, limit - Self.chrome)
         HubColumn(title: "SPENDING",
                   count: 0,
@@ -288,35 +306,46 @@ struct MoneyColumn: View {
                   badge: months.first.map { "\($0.name) \(Money.euros($0.total))" },
                   topInset: 5,
                   collapsed: months.isEmpty || !open) {
-            if scrolling {
-                ScrollView(.vertical) { list(months) }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
-                    // A month the edge cuts fades out, as CRONS's cards do: cut clean after
-                    // its fourth line, it read as a month of four lines.
-                    .onScrollGeometryChange(for: Bool.self) {
-                        $0.contentOffset.y + $0.containerSize.height < $0.contentSize.height - 1
-                    } action: { _, more in runsOn = more }
-                    .mask {
-                        VStack(spacing: 0) {
-                            Rectangle()
-                            if runsOn {
-                                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                    .frame(height: 36)
-                            }
+            if let current = months.first {
+                if scrolling {
+                    // The current month, not drawn, is what the block is measured by: the
+                    // list scrolls in the room it takes.
+                    MoneyMonth(month: current)
+                        .hidden()
+                        .frame(maxHeight: room, alignment: .top)
+                        .overlay {
+                            ScrollView(.vertical) { list(months) }
+                                .scrollIndicators(.hidden)
+                                .scrollBounceBehavior(.basedOnSize)
+                                // A month the edge cuts fades out, as CRONS's cards do: cut
+                                // clean after its fourth line, it read as a month of four
+                                // lines. At rest it cuts none: the edge is the month's own.
+                                .onScrollGeometryChange(for: Bool.self) {
+                                    $0.contentOffset.y > 1
+                                        && $0.contentOffset.y + $0.containerSize.height < $0.contentSize.height - 1
+                                } action: { _, cut in runsOn = cut }
+                                .mask {
+                                    VStack(spacing: 0) {
+                                        Rectangle()
+                                        if runsOn {
+                                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                                                .frame(height: 36)
+                                        }
+                                    }
+                                }
                         }
-                    }
-                    .frame(maxHeight: room)
-            } else {
-                list(months)
-                    .frame(maxHeight: room, alignment: .top)
-                    .clipped()
+                } else {
+                    MoneyMonth(month: current)
+                        .frame(maxHeight: room, alignment: .top)
+                        .clipped()
+                }
             }
             if let latest = store.latest {
                 HubEmptyLine(text: "Last payment read: \(Money.day(latest))")
             }
         }
-        .opens($open, underCommand: commandHeld)
+        .onHover { inside in withAnimation(OverlayView.fold) { open = inside } }
+        .onChange(of: open) { if !open { shown = Self.recent } }
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -325,6 +354,19 @@ struct MoneyColumn: View {
             ForEach(Array(months.enumerated()), id: \.element.id) { index, month in
                 if index > 0 { rule }
                 MoneyMonth(month: month)
+            }
+            if store.months.count > shown {
+                Button { shown += 3 } label: {
+                    Text("Load more")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .titleGround()
+                        // The chip's ground hangs past its words, and the scroll view cuts
+                        // what hangs past its own edge.
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -347,27 +389,38 @@ struct MoneyColumn: View {
 /// The kinds are the month's own ranking — see `Month.ranked`: the pie turns from twelve
 /// o'clock, the largest first. Each slice has an arrow out to its name and no legend beside
 /// the pie (asked 2026-10-11, with the larger pie): the name is read where the slice is, and
-/// its percentage inside it (asked 2026-10-12).
+/// its percentage inside it (asked 2026-10-12), over what that came to in euros (asked
+/// 2026-10-12, with the pie larger again). A slice too thin to hold the two has them under
+/// its name.
+///
+/// The slice under the pointer is raised — see `Wedge`.
 private struct MoneyMonth: View {
     let month: Money.Month
 
-    private static let pie: CGFloat = 96
+    @State private var hovered: Money.Kind?
+
+    private static let pie: CGFloat = 130
     /// How far past the rim an arrow runs, and the most it is stretched to part two names.
-    private static let reach: CGFloat = 10
-    private static let longest: CGFloat = 34
-    /// The least a slice takes for its percentage to fit inside it: under that, it follows
+    private static let reach: CGFloat = 12
+    private static let longest: CGFloat = 90
+    /// The least a slice takes for its figures to fit inside it: under that, they go under
     /// the name.
-    private static let roomy = 7
+    private static let roomy = 20
+    /// From the middle of a line of text to the middle of the one under it.
+    private static let pitch: CGFloat = 11
 
     var body: some View {
         let kinds = month.ranked
         let shares = month.shares
         let radius = Double(Self.pie) / 2
-        let callouts = month.callouts(radius: radius, reach: Self.reach, line: 11.5, longest: Self.longest)
-        // The room over and under the pie is what the names past its rim take, and no more.
-        let tips = callouts.map { $0.point(radius: radius, past: $0.length).y }
-        let over = max(radius, -(tips.min() ?? 0) + 7)
-        let under = max(radius, (tips.max() ?? 0) + 7)
+        // Two lines and a little air: packed, six names read as one column of twelve lines.
+        let tall: (Money.Kind) -> Double = { (shares[$0] ?? 0) >= Self.roomy ? 11.5 : 2 * Self.pitch + 3 }
+        let callouts = month.callouts(radius: radius, reach: Self.reach, line: tall, longest: Self.longest)
+        // The room over and under the pie is what the names past its rim take, and no more —
+        // and no less than a raised slice does.
+        let edges = callouts.map { (tip: $0.point(radius: radius, past: $0.length).y, half: tall($0.kind) / 2 + 1.25) }
+        let over = max(radius + Wedge.rise + 2, edges.map { $0.half - $0.tip }.max() ?? 0)
+        let under = max(radius + Wedge.rise + 2, edges.map { $0.half + $0.tip }.max() ?? 0)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(month.name)
@@ -388,10 +441,12 @@ private struct MoneyMonth: View {
                         return CGPoint(x: centre.x + point.x, y: centre.y + point.y)
                     }
                     let side: CGFloat = callout.right ? 1 : -1
+                    let lit = hovered == callout.kind
                     let tip = at(callout.length)
                     let back = atan2(centre.y - tip.y, centre.x - tip.x)
                     var arrow = Path()
-                    arrow.move(to: at(1))
+                    // From past the raised slice's edge, which the arrow would notch.
+                    arrow.move(to: at(lit ? Wedge.rise + 2 : 1))
                     arrow.addLine(to: tip)
                     for barb in [-0.5, 0.5] {
                         arrow.move(to: tip)
@@ -402,32 +457,101 @@ private struct MoneyMonth: View {
                                    style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
                     let share = shares[callout.kind] ?? 0
                     let percent = Text("\(share)%").font(.system(size: 9, weight: .semibold).monospacedDigit())
+                    let price = Text(Money.euros(month.spent[callout.kind] ?? 0))
+                        .font(.system(size: 9, weight: .medium).monospacedDigit())
                     let name = Text(callout.kind.title)
                         .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.5))
-                    context.draw(share < Self.roomy ? name + Text(" ") + percent.foregroundStyle(.white.opacity(0.85)) : name,
-                                 at: CGPoint(x: tip.x + side * 4, y: tip.y),
-                                 anchor: callout.right ? .leading : .trailing)
-                    // Dark on the slice's own colour: against every one of the nine it reads
-                    // better than white does.
+                        .foregroundStyle(.white.opacity(lit ? 0.95 : 0.5))
+                    let beside = CGPoint(x: tip.x + side * 4, y: tip.y)
+                    let anchor: UnitPoint = callout.right ? .leading : .trailing
                     if share >= Self.roomy {
-                        context.draw(percent.foregroundStyle(.black.opacity(0.85)), at: at(-radius * 0.32))
+                        context.draw(name, at: beside, anchor: anchor)
+                        // Dark on the slice's own colour: against every one of the nine it reads
+                        // better than white does.
+                        let middle = at(-radius * 0.32)
+                        context.draw(percent.foregroundStyle(.black.opacity(0.85)),
+                                     at: CGPoint(x: middle.x, y: middle.y - Self.pitch / 2))
+                        context.draw(price.foregroundStyle(.black.opacity(0.7)),
+                                     at: CGPoint(x: middle.x, y: middle.y + Self.pitch / 2))
+                    } else {
+                        context.draw(name, at: CGPoint(x: beside.x, y: beside.y - Self.pitch / 2), anchor: anchor)
+                        context.draw(percent.foregroundStyle(.white.opacity(0.85)) + Text(" ")
+                                         + price.foregroundStyle(.white.opacity(0.6)),
+                                     at: CGPoint(x: beside.x, y: beside.y + Self.pitch / 2), anchor: anchor)
                     }
                 }
             }
             .frame(height: over + under)
             .background(alignment: .top) {
-                // The inset is the ground showing between two slices: neighbours change with
-                // the month, and two close colours side by side still read as two.
-                Chart(kinds, id: \.self) { kind in
-                    SectorMark(angle: .value("Spent", month.spent[kind] ?? 0), angularInset: 1)
-                        .foregroundStyle(kind.tint)
+                ZStack {
+                    // The inset is the ground showing between two slices: neighbours change with
+                    // the month, and two close colours side by side still read as two.
+                    Chart(kinds, id: \.self) { kind in
+                        SectorMark(angle: .value("Spent", month.spent[kind] ?? 0), angularInset: 1)
+                            .foregroundStyle(kind.tint)
+                    }
+                    ForEach(month.slices, id: \.kind) { slice in
+                        let lift: Double = hovered == slice.kind ? 1 : 0
+                        Wedge(from: slice.from, to: slice.to, lift: lift)
+                            .fill(slice.kind.tint)
+                            .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                            .opacity(lift)
+                    }
                 }
                 .frame(width: Self.pie, height: Self.pie)
+                .animation(.easeOut(duration: 0.15), value: hovered)
                 .padding(.top, over - radius)
+            }
+            .overlay(alignment: .top) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: Self.pie, height: Self.pie)
+                    .onContinuousHover { phase in
+                        if case .active(let point) = phase {
+                            hovered = month.kind(at: CGPoint(x: point.x - radius, y: point.y - radius), radius: radius)
+                        } else {
+                            hovered = nil
+                        }
+                    }
+                    .padding(.top, over - radius)
             }
             ForEach(Money.Kind.allCases.filter { month.covered[$0] != nil || month.awaited[$0] != nil },
                     id: \.self) { kind in through(kind) }
+        }
+    }
+
+    /// A slice as the pointer raises it (asked 2026-10-12): `lift` of the way past the rim and
+    /// over its neighbours either side, drawn over the pie with a bright edge. Turns clockwise
+    /// from twelve o'clock, as `Month.slices` gives them.
+    private struct Wedge: Shape {
+        let from: Double
+        let to: Double
+        var lift: Double
+
+        static let rise: Double = 5
+        static let spread: Double = 2
+
+        var animatableData: Double {
+            get { lift }
+            set { lift = newValue }
+        }
+
+        func path(in rect: CGRect) -> Path {
+            let centre = CGPoint(x: rect.midX, y: rect.midY)
+            let radius = rect.width / 2 + Self.rise * lift
+            // A month of one kind is a disc: a wedge of a whole turn would draw its seam.
+            guard to - from < 1 else {
+                return Path(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius,
+                                              width: 2 * radius, height: 2 * radius))
+            }
+            let wider = Self.spread * lift / radius
+            var path = Path()
+            path.move(to: centre)
+            path.addArc(center: centre, radius: radius,
+                        startAngle: .radians(2 * .pi * from - .pi / 2 - wider),
+                        endAngle: .radians(2 * .pi * to - .pi / 2 + wider), clockwise: false)
+            path.closeSubpath()
+            return path
         }
     }
 

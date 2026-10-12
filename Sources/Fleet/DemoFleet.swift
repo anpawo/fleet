@@ -103,13 +103,14 @@ enum DemoFleet {
         ]
         try? JSONSerialization.data(withJSONObject: school).write(to: folder.appending(path: "state.json"))
 
-        // This month and the one before, so SPENDING has its heading and something to set it against.
+        // This month and the two before, so SPENDING has its heading, something to set it against
+        // and a month left behind its button.
         let month = DateFormatter()
         month.dateFormat = "yyyy-MM"
         let spent = [("Groceries & bakeries", 310.0), ("\"Restaurants, fast food & coffee\"", 140),
                      ("Train", 85), ("Leisure & sport", 70), ("Clothes", 60),
                      ("Subscriptions & apps", 45), ("Health", 20)]
-        let lines = [0, -1].flatMap { back in
+        let lines = [0, -1, -2].flatMap { back in
             let id = month.string(from: Calendar.current.date(byAdding: .month, value: back, to: now) ?? now)
             return spent.map { "\(id)-05,-\($0.1 - Double(back) * 15),\($0.0),demo" }
         }

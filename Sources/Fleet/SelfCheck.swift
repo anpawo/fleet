@@ -63,7 +63,7 @@ enum SelfCheck {
         // would sit on top of one another.
         let crowded = Money.Month(id: "2026-10", spent: [.food: 62, .transport: 12, .leisure: 9,
                                                          .clothes: 8, .subscriptions: 6, .health: 3])
-        let callouts = crowded.callouts(radius: 48, reach: 10, line: 11.5, longest: 34)
+        let callouts = crowded.callouts(radius: 48, reach: 10, line: { _ in 11.5 }, longest: 34)
         expect(callouts.filter(\.right).map(\.kind) == [.food] && callouts.count == 6, true,
                "money: a slice's name on its side of the pie")
         // The quarter up to twelve o'clock, where the small slices end: each name over the last.
@@ -71,6 +71,17 @@ enum SelfCheck {
         expect(heights.count == 4 && zip(heights, heights.dropFirst()).allSatisfy { $1 - $0 >= 11.499 }
                && callouts.allSatisfy { $0.length >= 10 && $0.length <= 34 }, true,
                "money: names that would touch part, each further out along its own radius")
+        // The same month at the pie's own size, every name but the largest slice's with its
+        // figures under it.
+        let tall = crowded.callouts(radius: 65, reach: 12, line: { $0 == .food ? 11.5 : 25 }, longest: 90)
+        let stacked = tall.filter { $0.turn > 0.75 }.map { -$0.point(radius: 65, past: $0.length).y }
+        expect(zip(stacked, stacked.dropFirst()).allSatisfy { $1 - $0 >= 24.999 }
+               && tall.allSatisfy { $0.length <= 90 }, true,
+               "money: a name two lines tall is given two lines of room")
+        expect(crowded.kind(at: CGPoint(x: 10, y: 0), radius: 65) == .food
+               && crowded.kind(at: CGPoint(x: -1, y: -40), radius: 65) == .health
+               && crowded.kind(at: CGPoint(x: 0, y: 66), radius: 65) == nil, true,
+               "money: the slice under the pointer, and none past the rim")
 
         let passing = Money.months(csv: """
         date,amount,category,merchant
