@@ -113,6 +113,9 @@ enum SelfCheck {
         let rest = grid.unfolding([4, 1, 2], room: 838) { CGFloat($0) * 100 }.rest(3)
         expect(rest.frames.map(\.minY) == [0, 652, 426] && rest.height == 838, true,
                "grid: unfolded directories lead, the other sessions under them")
+        func tall(_ count: Int) -> CGFloat { GroupTile.height(holding: count, spacing: 26) }
+        expect(tall(1) == tall(3) && tall(4) - tall(3) == SessionTile.groupedHeight + 26, true,
+               "grid: an unfolded directory stands its sessions three to a row")
     }
 
     // MARK: - Money
