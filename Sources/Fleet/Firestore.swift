@@ -57,9 +57,14 @@ enum Firestore {
 
     /// One login-Keychain item, by account name under the `com.mr.fleet` service.
     static func keychain(_ account: String) -> String? {
+        output(of: "/usr/bin/security", ["find-generic-password", "-s", "com.mr.fleet", "-a", account, "-w"])
+    }
+
+    /// What a command prints, trimmed. Nil when it fails or prints nothing.
+    static func output(of executable: String, _ arguments: [String]) -> String? {
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        task.arguments = ["find-generic-password", "-s", "com.mr.fleet", "-a", account, "-w"]
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -108,6 +113,13 @@ enum Firestore {
     static func collection(_ name: String, pageSize: Int = 300,
                            reusing age: TimeInterval = 0) async throws -> [Document] {
         if let kept = try withoutAsking(name, reusing: age) { return kept }
+        // One read before one per document: see `Stamp`.
+        let live = await Stamps.shared.current()
+        if let kept = kept(name), stands(keptCount(name), against: live?.sure == true ? live?.counts[name] ?? 0 : nil) {
+            try? FileManager.default.setAttributes([.modificationDate: Date()],
+                                                   ofItemAtPath: store.appending(path: name + ".json").path)
+            return kept
+        }
         var request = URLRequest(url: Firestore.documents
             .appending(path: name)
             .appending(queryItems: [URLQueryItem(name: "pageSize", value: String(pageSize))]))
@@ -117,9 +129,141 @@ enum Firestore {
         let documents = try JSONDecoder().decode(Page.self, from: page).documents
         room()
         try? page.write(to: store.appending(path: name + ".json"), options: .atomic)
+        // The count as it stood before the read: a write that lands during it is read again.
+        if let live {
+            try? String(live.counts[name] ?? 0)
+                .write(to: store.appending(path: name + ".count"), atomically: true, encoding: .utf8)
+        }
         // A read is billed a document, and an empty answer one.
         spend(max(1, documents.count))
         return documents
+    }
+
+    // MARK: - The stamp
+
+    /// `settings/stamp`: a count per collection, and every writer adds one to it with each
+    /// write — `patch`, `create` and `delete` below, my-hub's engines, the todo skill, and the
+    /// phone from the release that sets `phone`. One document then says whether a kept copy
+    /// still stands, where reading the collection again says it at a read per document.
+    struct Stamp {
+        let counts: [String: Int]
+        /// Whether every writer counts. The phone is the last to learn, and until a release of
+        /// it has written once, a count that has not moved proves nothing.
+        let sure: Bool
+
+        init(_ doc: Document?) {
+            counts = (doc?.fields ?? [:]).compactMapValues { $0.integerValue.flatMap(Int.init) }
+            sure = doc?.bool("phone") ?? false
+        }
+    }
+
+    /// How long a kept copy may stand on the count alone. A writer that does not count (the
+    /// Toudou widget, a script run by hand) is seen at the next read, and this is how far off
+    /// that read can be.
+    static let uncounted: TimeInterval = 6 * 3600
+
+    /// Whether a copy read when the count was `kept.count` still stands now that it is `live`:
+    /// nil for a count that could not be read, or that not every writer keeps.
+    static func stands(_ kept: (count: Int, read: Date)?, against live: Int?, now: Date = Date()) -> Bool {
+        guard let kept, let live else { return false }
+        return kept.count == live && now.timeIntervalSince(kept.read) < uncounted
+    }
+
+    /// The count a kept copy was read under, and when: the file is written by a read of
+    /// Firestore and by nothing else.
+    static func keptCount(_ name: String) -> (count: Int, read: Date)? {
+        let file = store.appending(path: name + ".count")
+        guard let count = (try? String(contentsOf: file, encoding: .utf8)).flatMap(Int.init),
+              let read = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+        else { return nil }
+        return (count, read)
+    }
+
+    static func readStamp() async -> Stamp? {
+        guard reads, spent() < dailyReads, let token = try? await FirestoreAuth.shared.token() else { return nil }
+        var request = URLRequest(url: documents.appending(path: "settings/stamp"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let doc = try await send(request, decoding: Document.self)
+            spend(1)
+            return Stamp(doc)
+        } catch Failure.http(status: 404, body: _) {
+            spend(1)
+            return Stamp(nil)
+        } catch {
+            return nil
+        }
+    }
+
+    /// One more write in a collection, said where every reader looks first.
+    private static func count(_ collection: String) {
+        // This Mac's own copy does not hold the write either, whatever becomes of the count.
+        try? FileManager.default.removeItem(at: store.appending(path: collection + ".count"))
+        Task {
+            do {
+                var request = URLRequest(url: URL(string: documents.absoluteString + ":commit")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
+                                 forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                // The mask names `fleet` alone, so the other counts are left as they are.
+                request.httpBody = try JSONSerialization.data(withJSONObject: ["writes": [[
+                    "update": ["name": "projects/\(projectID)/databases/(default)/documents/settings/stamp",
+                               "fields": ["fleet": ["booleanValue": true]]],
+                    "updateMask": ["fieldPaths": ["fleet"]],
+                    "updateTransforms": [["fieldPath": collection, "increment": ["integerValue": "1"]]],
+                ]]])
+                _ = try await send(request)
+            } catch {
+                NSLog("Fleet: \(collection) written and not counted — \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - The mirror
+
+    /// A private GitHub repository my-hub's sync job writes Firestore's pages into, a few times
+    /// a day (`tools/mirror-firestore.mjs` over there). Older than Firestore, so never asked
+    /// first: asked when Firestore will not answer. On 2026-10-12 the day's reads were spent at
+    /// 15:44, and a Fleet restarted after that had no mail and no todos until 09:00.
+    static let mirror = "anpawo/firestore"
+    static let mirrored = ["mail", "todos", "rules", "factcheck"]
+
+    /// Take from the mirror every collection it holds a later read of than the kept copy.
+    /// True when one landed.
+    static func pullMirror() async -> Bool {
+        // The login `gh` already holds: nothing to set up on a Mac that pushes to GitHub, and
+        // no second copy of a token to go stale.
+        guard reads,
+              let gh = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
+                  .first(where: FileManager.default.isExecutableFile(atPath:)),
+              let token = output(of: gh, ["auth", "token"]) else { return false }
+        var landed = false
+        for name in mirrored {
+            let file = store.appending(path: name + ".json")
+            let etag = store.appending(path: name + ".etag")
+            var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(mirror)/contents/\(name).json")!,
+                                     cachePolicy: .reloadIgnoringLocalCacheData)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/vnd.github.raw", forHTTPHeaderField: "Accept")
+            // A file that has not changed answers 304, which GitHub does not count.
+            if let seen = try? String(contentsOf: etag, encoding: .utf8) {
+                request.setValue(seen, forHTTPHeaderField: "If-None-Match")
+            }
+            guard let (page, response) = try? await URLSession.shared.data(for: request),
+                  let answer = response as? HTTPURLResponse, answer.statusCode == 200,
+                  let read = (try? JSONDecoder().decode(Page.self, from: page))?.readAt else { continue }
+            room()
+            try? answer.value(forHTTPHeaderField: "Etag")?.write(to: etag, atomically: true, encoding: .utf8)
+            guard read > keptAt(name) ?? .distantPast else { continue }
+            guard (try? page.write(to: file, options: .atomic)) != nil else { continue }
+            // Dated by the read it holds, like any kept copy, and vouched for by no count.
+            try? FileManager.default.setAttributes([.modificationDate: read], ofItemAtPath: file.path)
+            try? FileManager.default.removeItem(at: store.appending(path: name + ".count"))
+            landed = true
+        }
+        if landed { NSLog("Fleet: Firestore not answering, drawn from the mirror") }
+        return landed
     }
 
     // MARK: - The day's reads
@@ -207,6 +351,7 @@ enum Firestore {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["fields": fields])
         _ = try await send(request)
+        count(String(path.prefix { $0 != "/" }))
     }
 
     /// A new document in a collection, with Firestore picking the id — the POST the phone's
@@ -220,7 +365,9 @@ enum Firestore {
                          forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["fields": fields])
-        return try await send(request, decoding: Document.self)
+        let written = try await send(request, decoding: Document.self)
+        count(collection)
+        return written
     }
 
     /// Gone for good, on every device. The only write here the phone cannot take back.
@@ -230,6 +377,7 @@ enum Firestore {
         request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
                          forHTTPHeaderField: "Authorization")
         _ = try await send(request)
+        count(String(path.prefix { $0 != "/" }))
     }
 
     /// Firestore's wire form for a timestamp. The phone writes a server timestamp, which over
@@ -261,14 +409,17 @@ enum Firestore {
 
     struct Page: Decodable {
         let documents: [Document]
+        /// When Firestore was read, on a page the mirror kept. Firestore's own carry none.
+        let readAt: Date?
 
         // Absent, not empty, when the collection has nothing in it.
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             documents = try container.decodeIfPresent([Document].self, forKey: .documents) ?? []
+            readAt = try container.decodeIfPresent(String.self, forKey: .readAt).flatMap(Firestore.date)
         }
 
-        enum CodingKeys: String, CodingKey { case documents }
+        enum CodingKeys: String, CodingKey { case documents, readAt }
     }
 
     /// A document with its fields left in Firestore's typed-value form, unwrapped on demand by
@@ -296,15 +447,30 @@ enum Firestore {
             fields[key]?.integerValue.flatMap(Int.init) ?? fallback
         }
 
-        func date(_ key: String) -> Date? {
-            guard let text = fields[key]?.timestampValue else { return nil }
-            // Firestore prints fractional seconds only when it has them, and
-            // `ISO8601DateFormatter` refuses whichever of the two shapes it was not told to
-            // expect — so both are tried rather than assumed.
-            let withFraction = ISO8601DateFormatter()
-            withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
-        }
+        func date(_ key: String) -> Date? { fields[key]?.timestampValue.flatMap(Firestore.date) }
+    }
+
+    static func date(_ text: String) -> Date? {
+        // Firestore prints fractional seconds only when it has them, and
+        // `ISO8601DateFormatter` refuses whichever of the two shapes it was not told to
+        // expect — so both are tried rather than assumed.
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+}
+
+/// The stamp, read once for the three or four collections a load asks about together.
+actor Stamps {
+    static let shared = Stamps()
+
+    private var last: (at: Date, read: Task<Firestore.Stamp?, Never>)?
+
+    func current() async -> Firestore.Stamp? {
+        if let last, Date().timeIntervalSince(last.at) < 30 { return await last.read.value }
+        let read = Task { await Firestore.readStamp() }
+        last = (Date(), read)
+        return await read.value
     }
 }
 

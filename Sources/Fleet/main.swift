@@ -372,7 +372,12 @@ if CommandLine.arguments.contains("--todos") {
         let hub = HubStore()
         hub.refresh()
         while !hub.loaded, hub.failure == nil { try? await Task.sleep(for: .milliseconds(100)) }
-        if let failure = hub.failure { print(failure); exit(1) }
+        // A failure with the column drawn all the same (a kept copy, the mirror) is said on
+        // stderr, and the column printed.
+        if let failure = hub.failure {
+            FileHandle.standardError.write(Data((failure + "\n").utf8))
+            if !hub.loaded { exit(1) }
+        }
         let day = DateFormatter()
         day.dateFormat = "dd/MM HH:mm"
         var section: Todo.Bucket?

@@ -75,6 +75,23 @@ enum SelfCheck {
         Firestore.spend(1)
         expect(outcome(600) == "budget", true, "reads: the share spent, refused before the network")
         expect(Firestore.spent(Date().addingTimeInterval(86_400)) == 0, true, "reads: and a new day starts at nothing")
+
+        // The stamp: one read that says whether the kept copy still stands.
+        let hourAgo = Date().addingTimeInterval(-3600)
+        expect(Firestore.stands((7, hourAgo), against: 7), true, "stamp: nothing written since the copy was read, it stands")
+        expect(Firestore.stands((7, hourAgo), against: 8), false, "stamp: one write since, it is read again")
+        expect(Firestore.stands((7, hourAgo), against: nil), false, "stamp: a count not every writer keeps proves nothing")
+        expect(Firestore.stands(nil, against: 7), false, "stamp: a copy from the mirror has no count to stand on")
+        expect(Firestore.stands((7, Date().addingTimeInterval(-7 * 3600)), against: 7), false,
+               "stamp: after six hours a writer that does not count gets its read")
+        let stampDoc = try? JSONDecoder().decode(Firestore.Document.self, from: Data(
+            #"{"name":"p/settings/stamp","fields":{"todos":{"integerValue":"12"},"phone":{"booleanValue":true},"fleet":{"booleanValue":true}}}"#.utf8))
+        let read = Firestore.Stamp(stampDoc)
+        expect(read.counts == ["todos": 12] && read.sure, true, "stamp: counts are the integers, and the phone's flag makes them sure")
+        expect(Firestore.Stamp(nil).sure, false, "stamp: no document yet, nothing is sure")
+        let mirrored = try? JSONDecoder().decode(Firestore.Page.self, from: Data(
+            #"{"readAt":"2026-10-12T04:05:19.000Z","documents":[]}"#.utf8))
+        expect(mirrored?.readAt == stamp.date(from: "2026-10-12T04:05:19Z"), true, "mirror: its page says when Firestore was read")
     }
 
     // MARK: - Grid

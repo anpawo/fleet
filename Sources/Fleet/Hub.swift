@@ -939,15 +939,21 @@ final class HubStore: ObservableObject {
             default: refused = false
             }
             let why = error.localizedDescription
-            failure = loaded && !refused ? "offline" : why
             // Nothing on screen yet — a restart with the reads refused, or the network out:
             // what the last read kept, however old, rather than two empty columns until
-            // Firestore answers again.
-            if !loaded, age < .infinity {
-                await load(reusing: .infinity)
-                failure = loaded && !refused ? "offline" : why
-                return
+            // Firestore answers again. The mirror first: it may hold a later read than that,
+            // and than what is on screen. The failure is said once that has been tried, so
+            // that whoever waits on it (`--todos`) is not answered before the columns are.
+            if age < .infinity {
+                let later = await Firestore.pullMirror()
+                guard !Task.isCancelled else { return }
+                if !loaded || later {
+                    await load(reusing: .infinity)
+                    failure = loaded && !refused ? "offline" : why
+                    return
+                }
             }
+            failure = loaded && !refused ? "offline" : why
         }
         inFlight = nil
     }
