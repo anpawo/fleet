@@ -100,22 +100,46 @@ enum SelfCheck {
     /// sessions first, a smaller one where that one does not fit, none on a grid already full.
     private static func grid(_ expect: (Bool, Bool, String) -> Void) {
         let grid = FleetLayout(tile: CGSize(width: 310, height: 186), spacing: 26, columns: 2,
-                               openHeight: 0, progress: 0)
-        // A group of four, a session alone, a group of two — unfolded, 100pt a session.
+                               openSize: .zero, openHeight: 0, progress: 0)
+        // A group of four, a session alone, a group of two — unfolded, 100pt a session, and
+        // 150 on the larger cards.
+        func laid(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> FleetLayout {
+            grid.unfolding(sizes, room: room) { CGSize(width: 646, height: CGFloat($0) * ($1 ? 150 : 100)) }
+        }
         func unfolded(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> [Bool] {
-            grid.unfolding(sizes, room: room) { CGFloat($0) * 100 }.wide.map { $0 != nil }
+            laid(sizes, room: room).wide.map { $0 != nil }
         }
         expect(unfolded(room: 838) == [true, false, true], true, "grid: both directories unfolded when both fit")
         expect(unfolded(room: 837) == [true, false, false], true, "grid: the bigger one alone when both do not")
         expect(unfolded(room: 611) == [false, false, true], true, "grid: the smaller one when the bigger does not fit")
         expect(unfolded(room: 411) == [false, false, false], true, "grid: none when neither fits")
         expect(unfolded([2, 2], room: 425) == [true, false], true, "grid: of two the same size, the first")
-        let rest = grid.unfolding([4, 1, 2], room: 838) { CGFloat($0) * 100 }.rest(3)
+        let rest = laid(room: 838).rest(3)
         expect(rest.frames.map(\.minY) == [0, 652, 426] && rest.height == 838, true,
                "grid: unfolded directories lead, the other sessions under them")
-        func tall(_ count: Int) -> CGFloat { GroupTile.height(holding: count, spacing: 26) }
-        expect(tall(1) == tall(3) && tall(4) - tall(3) == SessionTile.groupedHeight + GroupTile.gap(26), true,
+        expect(laid(room: 838).large == [] && laid(room: 938).large == [2] && laid(room: 1138).large == [0, 2], true,
+               "grid: the larger cards where room is left once every directory that fits is unfolded")
+        func size(_ count: Int, large: Bool = false) -> CGSize {
+            GroupTile.size(holding: count, large: large, in: 646, spacing: 26)
+        }
+        expect(size(1).height == size(3).height
+               && size(4).height - size(3).height == SessionTile.groupedHeight(large: false) + GroupTile.gap(26), true,
                "grid: an unfolded directory stands its sessions three to a row")
+        expect(size(1, large: true).height == size(2, large: true).height
+               && size(3, large: true).height - size(2, large: true).height
+                   == SessionTile.groupedHeight(large: true) + GroupTile.gap(26), true,
+               "grid: and two to a row on the larger cards")
+        expect(size(2).width == 439 && size(3).width == 646 && size(2, large: true).width == 646, true,
+               "grid: an unfolded directory is no wider than its fullest row")
+        expect(size(4).width == 439 && size(4).height == size(5).height && size(5).width == 646, true,
+               "grid: four stand two and two, in the rows three and one would take")
+        expect(size(4, large: true).height + 26 + 186 <= 658, true,
+               "grid: four on the larger cards stand over one row of the grid on a laptop screen")
+        let two = GroupTile.alone(holding: 2, room: 258, in: 646, spacing: 26)
+        let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
+        expect(two.large && two.size == CGSize(width: 646, height: 258)
+               && !eight.large && eight.size == CGSize(width: 646, height: 300), true,
+               "grid: a directory given the block takes what its cards need of it, and no more than the block")
     }
 
     // MARK: - Money
