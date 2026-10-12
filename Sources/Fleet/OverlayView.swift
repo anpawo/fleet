@@ -44,7 +44,7 @@ struct OverlayView: View {
     @State private var gridSpace: CGFloat = 0
 
     /// Which directory is unfolded. On the controller, not here: Esc and the panel chord fold
-    /// it before they dismiss, and a piece of `@State` is not something they can reach. It is
+    /// it as they dismiss, and a piece of `@State` is not something they can reach. It is
     /// also rebuilt-proof — every row is rebuilt each tick, so a fold kept on a row would snap
     /// shut once a second.
     /// The open directory — but only while it still *is* a directory. A group that drops to

@@ -176,7 +176,7 @@ final class AppController: ObservableObject {
     @Published private(set) var commandHeld = false
 
     /// The one directory group showing its sessions, if any. On the controller rather than on
-    /// the view: Esc and the panel chord fold it before they take the panel away, and a piece
+    /// the view: Esc and the panel chord fold it as they take the panel away, and a piece
     /// of `@State` inside `OverlayView` is not something they can reach.
     @Published var openGroup: String? {
         didSet {
@@ -339,9 +339,7 @@ final class AppController: ObservableObject {
         HotKey.register(Settings.panelChord, id: 1) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.isPanelVisible {
-                    if !self.foldOpenGroup() { self.hidePanel() }
-                } else { self.forceShow() }
+                if self.isPanelVisible { self.hidePanel() } else { self.forceShow() }
             }
         }
     }
@@ -593,13 +591,12 @@ final class AppController: ObservableObject {
         guard isPanelVisible else { return }
         if hub.stopEditing() { return }
         if hub.stopComposing() { return }
-        if foldOpenGroup() { return }
         hidePanel()
     }
 
-    /// Folds the open directory, and says whether there was one. What Esc and the panel chord
-    /// do before they dismiss: an open group is a step you took inside the panel, and backing
-    /// out of it should not also take the fleet off screen.
+    /// Folds the open directory, and says whether there was one. What the `fleet` command and
+    /// Spotlight do before they dismiss. Esc and the panel chord did too until 2026-10-12:
+    /// asked to put the panel away, they now do, whatever is open in it.
     @discardableResult
     func foldOpenGroup() -> Bool {
         guard openGroup != nil else { return false }
