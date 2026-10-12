@@ -343,13 +343,19 @@ enum SelfCheck {
                "and no second one for as long as it stands")
         _ = auto.due([], failing: [], now: 90_010)
         _ = auto.due(["edsquare"], failing: [], now: 90_020)
-        expect(auto.due(["edsquare"], failing: [], now: 90_020 + Fixer.autoAfter).count == 1, true,
-               "gone and back is a new failure: another")
+        expect(auto.due(["edsquare"], failing: [], now: 90_020 + Fixer.autoAfter).isEmpty, true,
+               "off the bar for the seconds of a restart, it has not gone")
         _ = auto.due([], failing: [], now: 91_000)
-        _ = auto.due(["edsquare"], failing: [], now: 91_010)
-        expect(auto.due(["edsquare"], failing: [], now: 91_010 + Fixer.autoAfter).isEmpty, true,
+        _ = auto.due([], failing: [], now: 91_000 + Fixer.autoAfter)
+        _ = auto.due(["edsquare"], failing: [], now: 91_610)
+        expect(auto.due(["edsquare"], failing: [], now: 91_610 + Fixer.autoAfter).count == 1, true,
+               "ten minutes off it and back is a new failure: another")
+        _ = auto.due([], failing: [], now: 93_000)
+        _ = auto.due([], failing: [], now: 93_000 + Fixer.autoAfter)
+        _ = auto.due(["edsquare"], failing: [], now: 93_610)
+        expect(auto.due(["edsquare"], failing: [], now: 93_610 + Fixer.autoAfter).isEmpty, true,
                "but not within three hours of the last")
-        expect(auto.due(["edsquare"], failing: [], now: 90_620 + Fixer.autoGap).count == 1, true,
+        expect(auto.due(["edsquare"], failing: [], now: 92_210 + Fixer.autoGap).count == 1, true,
                "three hours after it, yes")
         var routine = Fixer.Auto()
         _ = routine.due(["s14.x"], failing: ["s14.x"], now: 0)

@@ -56,6 +56,11 @@ final class Fixer: ObservableObject {
         var gone: Set<String> = []
         /// When each alert on the bar was first seen there.
         var since: [String: Double] = [:]
+        /// When each one that had its Claude was first seen off it. Gone takes as long as
+        /// standing does: a launch draws the bar before its first fetch has answered, and on
+        /// 12-10 a line that had stood since 15:44 read as gone at each `install.sh`, and got
+        /// a second Claude.
+        var away: [String: Double] = [:]
 
         /// The alerts to send a Claude after now. `failing` names the routines whose last run
         /// failed: Fleet's own retry takes one off the bar while it runs, and that is not the
@@ -64,7 +69,12 @@ final class Fixer: ObservableObject {
             let onBar = Set(alerts.map(Fixer.subject))
             since = since.filter { onBar.contains($0.key) }
             let standing = onBar.union(failing)
-            gone.formUnion(sent.keys.filter { !standing.contains($0) })
+            away = away.filter { sent[$0.key] != nil && !standing.contains($0.key) }
+            for subject in sent.keys where !standing.contains(subject) {
+                let first = away[subject] ?? now
+                away[subject] = first
+                if now - first >= Fixer.autoAfter { gone.insert(subject) }
+            }
             for subject in gone where now - (sent[subject] ?? 0) >= Fixer.autoGap {
                 sent[subject] = nil
                 gone.remove(subject)
@@ -83,19 +93,18 @@ final class Fixer: ObservableObject {
     }
 
     /// Kept across launches: `install.sh` is a launch, and an alert that stands would get a
-    /// Claude at each one.
+    /// Claude at each one. What has gone is not kept: each launch counts the ten minutes off
+    /// the bar again, and the `alertFixesGone` written until 12-10 holds a line that never left.
     private var record = Auto(
-        sent: UserDefaults.standard.dictionary(forKey: "alertFixes") as? [String: Double] ?? [:],
-        gone: Set(UserDefaults.standard.stringArray(forKey: "alertFixesGone") ?? []))
+        sent: UserDefaults.standard.dictionary(forKey: "alertFixes") as? [String: Double] ?? [:])
 
     /// On every tick, with what the bar shows that a Claude can do something about.
     func auto(_ alerts: [String], crons: [Launchd.Job]) {
         let before = record
         let due = record.due(alerts, failing: crons.filter(\.failing).map(\.name),
                              now: Date().timeIntervalSince1970)
-        if record.sent != before.sent || record.gone != before.gone {
+        if record.sent != before.sent {
             UserDefaults.standard.set(record.sent, forKey: "alertFixes")
-            UserDefaults.standard.set(Array(record.gone), forKey: "alertFixesGone")
         }
         for alert in due {
             NSLog("Fleet: ALERT \"\(alert)\" has stood \(Int(Self.autoAfter / 60)) min, a Claude is out on it")
