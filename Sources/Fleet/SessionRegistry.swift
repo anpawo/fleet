@@ -576,8 +576,13 @@ final class TerminalWatch {
         // xhigh effort)" — and a session eight minutes into one sat under NEEDS YOU (07-10).
         // Or, before any request has gone out, the hooks it is waiting on: "(running
         // SessionStart hooks… 6/7 · 10s)" — all a prompt held behind them has to show.
+        // The counter itself is missing until the turn's first block lands: a first thought
+        // shows "✱ Billowing… (4m 39s · deep in thought with xhigh effort)" for as long as it
+        // lasts (12-10: 2 min 20 s of NEEDS YOU), so the elapsed time counts too, on a line
+        // that is neither a prompt nor a reply.
         if tail.contains("esc to interrupt")
             || tail.range(of: #"[↓↑] ?[\d.,]+[km]? tokens"#, options: .regularExpression) != nil
+            || tail.range(of: #"(?m)^[^\s❯⏺] [^\n]*… \(\d+[hms]\b"#, options: .regularExpression) != nil
             || tail.range(of: #"\(running \w+ hooks?…"#, options: .regularExpression) != nil {
             return .working
         }

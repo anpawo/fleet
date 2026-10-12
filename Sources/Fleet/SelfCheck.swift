@@ -409,6 +409,11 @@ enum SelfCheck {
         expect(TerminalWatch.read(thinking) == .working, true, "a long thought, words after the token counter, is work")
         let writing = "❯ call it spending\n\n· Precipitating… (3m 7s · ↓ 12.0k tokens)\n\n" + box
         expect(TerminalWatch.read(writing) == .working, true, "the plain spinner is still work")
+        // The screen of 12-10: a first thought, no token counter until its block lands.
+        let silent = "❯ make the circle bigger\n\n✱ Billowing… (4m 39s · deep in thought with xhigh effort)\n\n" + box
+        expect(TerminalWatch.read(silent) == .working, true, "a spinner with no token counter yet is work")
+        let quoted = "❯ why blue on Billowing… (4m 39s · deep in thought with xhigh effort)\n\n" + box
+        expect(TerminalWatch.read(quoted) == .unknown, true, "a spinner quoted in a prompt is not one")
     }
 
     private static func queuedPrompt(_ expect: (Int, Int, String) -> Void) {

@@ -887,7 +887,9 @@ struct GroupTile: View {
                 // Built at the click, the cards were most of what that click's frame cost —
                 // 17 to 29 ms for three sessions, against 6 with them already there
                 // (`--bench-panel`, 12-10) — and the move starts once that frame is out.
-                sessions(in: full)
+                Cards(name: name, sessions: sessions, open: open, inner: inner, spacing: spacing,
+                      size: full, scrolling: scrolling, scrolled: $scrolled,
+                      onActivate: onActivate)
                     // Held to the card's own size as far as the stack goes: left to their
                     // full one, they pushed the count and the arrow out past the border.
                     .frame(width: box.size.width, height: box.size.height, alignment: .topLeading)
@@ -967,68 +969,91 @@ struct GroupTile: View {
     /// The sessions, under the name. Scrolled, not stacked: nine sessions are five rows and the
     /// card is the height of the block, so without this the rows ran straight through its own
     /// border and over whatever the grid had underneath.
-    @ViewBuilder private func sessions(in size: CGSize) -> some View {
-        let rows = VStack(alignment: .leading, spacing: spacing) {
-            ForEach(self.rows, id: \.first?.id) { row in
-                HStack(alignment: .top, spacing: spacing) {
-                    ForEach(row) { session in
-                        // Inside a directory the card wears its topic: the directory is what
-                        // these sessions have in common, and a row of cards all saying
-                        // "portfolio" is a row you cannot choose from.
-                        SessionTile(session: session, heading: session.label ?? session.topic,
-                                    main: session.id == head?.id, grouped: true) {
-                            onActivate(session)
+    ///
+    /// A view of its own, handed nothing that changes while the card grows: a frame of the
+    /// fold re-runs the card's body for its new size, finds these inputs as they were, and
+    /// leaves the cards alone instead of going through every one of them again.
+    private struct Cards: View {
+        let name: String
+        let sessions: [Session]
+        let open: Bool
+        let inner: CGFloat
+        let spacing: CGFloat
+        let size: CGSize
+        let scrolling: Bool
+        @Binding var scrolled: CGFloat
+        let onActivate: (Session) -> Void
+
+        var body: some View {
+            let head = Session.heads[name]
+            let ordered = GroupTile.ordered(sessions, head: head)
+            let pairs = stride(from: 0, to: ordered.count, by: 2).map {
+                Array(ordered[$0 ..< min($0 + 2, ordered.count)])
+            }
+            let rows = VStack(alignment: .leading, spacing: spacing) {
+                ForEach(pairs, id: \.first?.id) { row in
+                    HStack(alignment: .top, spacing: spacing) {
+                        ForEach(row) { session in
+                            // Inside a directory the card wears its topic: the directory is
+                            // what these sessions have in common, and a row of cards all
+                            // saying "portfolio" is a row you cannot choose from.
+                            SessionTile(session: session, heading: session.label ?? session.topic,
+                                        main: session.id == head, grouped: true) {
+                                onActivate(session)
+                            }
+                            .frame(width: inner)
                         }
-                        .frame(width: inner)
                     }
                 }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Every gap the cards keep is inside the scroll view, not around it: a scroll view
-        // clips its own content, so room left outside it is room the hover glow never reaches
-        // — the top-left card lost its glow on the two sides facing the border. The distances
-        // are the ones that were here before; what moved is where the clip falls, which is now
-        // the group's own border.
-        //
-        // Clear of the name, which is drawn over this rather than above it — and clear by a
-        // margin: a row of cards starting five points under the title read as its underline.
-        .padding(.top, spacing + Self.nameLine + 34)
-        .padding([.horizontal, .bottom], spacing + Self.aura)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Every gap the cards keep is inside the scroll view, not around it: a scroll view
+            // clips its own content, so room left outside it is room the hover glow never
+            // reaches — the top-left card lost its glow on the two sides facing the border.
+            // The distances are the ones that were here before; what moved is where the clip
+            // falls, which is now the group's own border.
+            //
+            // Clear of the name, which is drawn over this rather than above it — and clear by
+            // a margin: a row of cards starting five points under the title read as its
+            // underline.
+            .padding(.top, spacing + GroupTile.nameLine + 34)
+            .padding([.horizontal, .bottom], spacing + GroupTile.aura)
 
-        Group {
-            if scrolling {
-                ScrollViewReader { reader in
-                    ScrollView(.vertical) { rows.id(Self.cards) }
-                        .scrollIndicators(.hidden)
-                        .scrollBounceBehavior(.basedOnSize)
-                        // The name is drawn over this rather than in it — see `body` — so it
-                        // has to be told how far the cards have moved. Clipped by the group's
-                        // own border on the way out, which is where a heading should go.
-                        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
-                            _, y in scrolled = y
-                        }
-                        // The cards outlive the fold now, and so does how far they were
-                        // scrolled: sent back up as the group opens, before they can be seen.
-                        .onChange(of: open) { if open { reader.scrollTo(Self.cards, anchor: .top) } }
+            Group {
+                if scrolling {
+                    ScrollViewReader { reader in
+                        ScrollView(.vertical) { rows.id(GroupTile.cards) }
+                            .scrollIndicators(.hidden)
+                            .scrollBounceBehavior(.basedOnSize)
+                            // The name is drawn over this rather than in it — see the card's
+                            // `body` — so it has to be told how far the cards have moved.
+                            // Clipped by the group's own border on the way out, which is
+                            // where a heading should go.
+                            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
+                                _, y in scrolled = y
+                            }
+                            // The cards outlive the fold now, and so does how far they were
+                            // scrolled: sent back up as the group opens, before they can be
+                            // seen.
+                            .onChange(of: open) {
+                                if open { reader.scrollTo(GroupTile.cards, anchor: .top) }
+                            }
+                    }
+                } else {
+                    rows
                 }
-            } else {
-                rows
             }
+            .frame(width: size.width, height: size.height, alignment: .top)
         }
-        .frame(width: size.width, height: size.height, alignment: .top)
     }
 
     /// The head first, top left, whatever it was touched last: it is the card you came for.
     /// One order for the folded lines and the open cards, so the first of either is what ⌘ opens.
-    private var ordered: [Session] { sessions.sorted { a, _ in a.id == head?.id } }
-
-    private var rows: [[Session]] {
-        let ordered = ordered
-        return stride(from: 0, to: ordered.count, by: 2).map {
-            Array(ordered[$0 ..< min($0 + 2, ordered.count)])
-        }
+    static func ordered(_ sessions: [Session], head: pid_t?) -> [Session] {
+        sessions.sorted { a, _ in a.id == head }
     }
+
+    private var ordered: [Session] { Self.ordered(sessions, head: head?.id) }
 
     /// A plain click unfolds, which costs nothing and undoes itself. ⌘ goes straight to the
     /// head's terminal, which closes the panel and can change Space with nothing to click to
