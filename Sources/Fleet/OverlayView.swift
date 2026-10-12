@@ -148,7 +148,7 @@ struct OverlayView: View {
 
     /// Measured as the panel goes up — see `OverlayWindowController.show` — not at every pass
     /// over the body: finding the screen is a round trip to the window server, and a pass
-    /// asks eight times. It was 2 ms of the 11 a click on a group took (sampled 2026-10-12).
+    /// asks six times. It was 2 ms of the 11 a click on a group took (sampled 2026-10-12).
     static var columnHeight: CGFloat = measuredColumnHeight()
 
     static func measuredColumnHeight() -> CGFloat {
