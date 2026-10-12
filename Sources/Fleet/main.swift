@@ -890,6 +890,33 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
                                   backing: .buffered, defer: false)
             window.contentView = host
             for _ in 0 ..< 10 { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            // `FLEET_POINTER=<x>,<y>`, from the top left: the panel as it is with the pointer
+            // there — what a hover unfolds or lights, which no flag reaches. A window that is
+            // not on screen tracks no pointer, so the view is handed the events itself, and
+            // SwiftUI hovers nothing before its tracking area has been entered: the number
+            // such an event carries is that area's address.
+            host.updateTrackingAreas()
+            let now = ProcessInfo.processInfo.systemUptime
+            if let at = ProcessInfo.processInfo.environment["FLEET_POINTER"]?
+                .split(separator: ",").compactMap({ Double($0) }), at.count == 2,
+               let area = host.trackingAreas.first,
+               let enter = NSEvent.enterExitEvent(with: .mouseEntered,
+                                                  location: CGPoint(x: at[0], y: size.height - at[1]),
+                                                  modifierFlags: [], timestamp: now,
+                                                  windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                  trackingNumber: Int(bitPattern: Unmanaged.passUnretained(area).toOpaque()),
+                                                  userData: nil),
+               let move = NSEvent.mouseEvent(with: .mouseMoved, location: enter.locationInWindow,
+                                             modifierFlags: [], timestamp: now,
+                                             windowNumber: window.windowNumber, context: nil,
+                                             eventNumber: 0, clickCount: 0, pressure: 0) {
+                host.mouseEntered(with: enter)
+                // Twice: what the first move unfolds is under the pointer only once it has.
+                for _ in 0 ..< 2 {
+                    host.mouseMoved(with: move)
+                    for _ in 0 ..< 12 { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+                }
+            }
             host.layoutSubtreeIfNeeded()
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
                 print("render failed"); exit(1)
