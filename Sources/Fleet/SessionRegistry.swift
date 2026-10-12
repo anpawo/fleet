@@ -250,17 +250,21 @@ final class SessionRegistry {
         lastWideScan = now
 
         let candidates = TranscriptStore.recentTranscripts(within: Config.rescueScanWindow)
-        guard !candidates.isEmpty else { return }
         var claimed = Set(bindings.values)
 
         for proc in unbound {
-            let match = candidates.first { file in
+            let recent = candidates.first { file in
                 !claimed.contains(file.path) && store.info(for: file.path)?.cwd == proc.cwd
-            }
-            guard let match else { continue }
-            bindings[proc.pid] = match.path
-            claimed.insert(match.path)
-            NSLog("Fleet: rescued pid \(proc.pid) (\(proc.cwd)) -> \(match.path)")
+            }?.path
+            // Failing that, `claude --resume <id>` names its file whichever folder holds it and
+            // however long ago it was written: the window loses a session that sat idle through
+            // a Fleet restart (12-10: trading, in a renamed folder, "No conversation yet").
+            guard let match = recent ?? resumeID(for: proc.pid)
+                      .flatMap({ $0.contains("/") ? nil : transcript(sessionID: $0) }),
+                  !claimed.contains(match) else { continue }
+            bindings[proc.pid] = match
+            claimed.insert(match)
+            NSLog("Fleet: rescued pid \(proc.pid) (\(proc.cwd)) -> \(match)")
         }
     }
 
@@ -274,6 +278,14 @@ final class SessionRegistry {
               idx + 1 < args.count else { return nil }
         let value = args[idx + 1]
         return value.hasPrefix("-") ? nil : value
+    }
+
+    /// Where `<id>.jsonl` is filed, in whichever project folder holds it.
+    private func transcript(sessionID: String) -> String? {
+        let root = TranscriptStore.projectsRoot
+        let dirs = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+        return dirs.lazy.map { "\(root)/\($0)/\(sessionID).jsonl" }
+            .first { FileManager.default.fileExists(atPath: $0) }
     }
 
     // MARK: - State derivation
