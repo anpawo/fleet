@@ -163,11 +163,14 @@ ok "a Stop keeps the folder the shell stood in"       '[ "$(cat "$S/$SID.cwd")" 
 ok "started again elsewhere: the session is told"     'said "$FAKE"'
 ok "started again in that folder: nothing said"       '[ -z "$(at SessionStart start "$FAKE/proj")" ]'
 echo "4242 777 /bin/claude" > "$S/$SID.shell"; echo "$SID" > "$FAKE/.claude/fleet/restart/777"
+echo "half a sentence" > "$S/$SID.draft"
 at SessionEnd end "$FAKE" >/dev/null
 ok "the end a relaunch causes keeps the folder"       '[ -f "$S/$SID.cwd" ]'
+ok "and the text left unsent in the prompt"           '[ "$(cat "$S/$SID.draft")" = "half a sentence" ]'
 echo "4242 777 /bin/claude" > "$S/$SID.shell"; rm -f "$FAKE/.claude/fleet/restart/777"
 at SessionEnd end "$FAKE" >/dev/null
 ok "any other end drops it"                           '[ ! -f "$S/$SID.cwd" ]'
+ok "and the text with it"                             '[ ! -f "$S/$SID.draft" ]'
 
 [ $fail = 0 ] && echo "all good" || echo "FAILED"
 exit $fail

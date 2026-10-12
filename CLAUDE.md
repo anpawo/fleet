@@ -42,6 +42,10 @@ affiché. Une app qui redémarre n'est pas un hook qui marche.
 Quand le changement touche la relance des sessions (`relaunch` dans le hook, la fonction
 fish `claude`), lancer aussi `./test-restart.sh`.
 
+Quand le changement touche le mod (`modFiles` : le texte tapé et pas encore envoyé, gardé à
+travers une relance), lancer aussi `./test-draft.py` : une vraie session dans un pty, sans
+fenêtre, un tour haiku.
+
 Quand le changement touche le bloc EPITECH ou la barre d'alerte, lancer aussi
 `./test-epitech.sh` : il rejoue les formes que peuvent prendre `state.json` et
 `sources.json` et vérifie ce que la barre dit de chacune.

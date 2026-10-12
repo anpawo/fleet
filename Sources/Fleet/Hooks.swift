@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 21
+    static let version = 22
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -245,7 +245,7 @@ enum Hooks {
         let cutoff = Date().addingTimeInterval(-staleAfter)
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: stateDirectory) else { return }
-        for name in names where name.hasSuffix(".json") {
+        for name in names where name.hasSuffix(".json") || name.hasSuffix(".draft") {
             let path = (stateDirectory as NSString).appendingPathComponent(name)
             guard let attrs = try? fm.attributesOfItem(atPath: path),
                   let mtime = attrs[.modificationDate] as? Date, mtime < cutoff else { continue }
@@ -331,6 +331,7 @@ enum Hooks {
             hooks[event] = groups
         }
         settings["hooks"] = hooks
+        try installMod(into: &settings)
 
         let data = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
@@ -339,6 +340,111 @@ enum Hooks {
         prune()
         return settingsPath
     }
+
+    static var modDirectory: String { (home as NSString).appendingPathComponent("mod") }
+    /// As settings.json names it; Claude Code expands the `~`.
+    private static let modEntry = "~/.claude/fleet/mod"
+    private static let modKey = "CLAUDE_CODE_PLUGIN_DIRS"
+
+    /// The part of a relaunch only the session itself can play: the text typed in its prompt
+    /// and not sent yet. No hook is handed it, and the prompt box is already gone when a session
+    /// is told to end — it reads as empty at `SessionEnd` (2.1.296) — so a mod keeps the text on
+    /// disk as it changes, and puts it back when the session starts again.
+    private static func installMod(into settings: inout [String: Any]) throws {
+        let fm = FileManager.default
+        for (name, content) in modFiles {
+            let file = (modDirectory as NSString).appendingPathComponent(name)
+            // Left alone when nothing changed: a session reloads a mod whose files were written.
+            guard (try? String(contentsOfFile: file, encoding: .utf8)) != content else { continue }
+            try fm.createDirectory(atPath: (file as NSString).deletingLastPathComponent,
+                                   withIntermediateDirectories: true)
+            try content.write(toFile: file, atomically: true, encoding: .utf8)
+        }
+        var env = (settings["env"] as? [String: Any]) ?? [:]
+        var dirs = ((env[modKey] as? String) ?? "").split(separator: ":").map(String.init)
+        // First, where a sorted list has it: another installer that sorts these leaves it be.
+        if !dirs.contains(modEntry) { dirs.insert(modEntry, at: 0) }
+        env[modKey] = dirs.joined(separator: ":")
+        settings["env"] = env
+    }
+
+    private static let modFiles: [(name: String, content: String)] = [
+        (".claude-plugin/plugin.json", """
+        {
+          "name": "fleet",
+          "version": "0.1.0",
+          "description": "Keeps the text typed in the prompt and not sent yet through a restart of the session by Fleet"
+        }
+
+        """),
+        ("hooks/hooks.json", """
+        { "modules": ["./register.ts"] }
+
+        """),
+        ("hooks/register.ts", """
+        // Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
+        import type { Register, Timer } from 'claude-code'
+
+        // Fleet ends an idle session to start it again on new settings (`relaunch` in session-state.sh),
+        // and the text typed in the prompt and not sent yet went with the process. Nothing outside it
+        // can read the prompt box, and the box is already gone when the session is told to end: the
+        // text is kept on disk as it changes, and put back when the session starts again.
+        export const register: Register = on => {
+          // Starts the look at the prompt box, once a session Fleet may end has started.
+          let watch = () => {}
+
+          on('session.start', async ($, e, next) => {
+            const started = await next(e)
+            const home = await $.env.get('HOME')
+            // Only a session Fleet's `claude` function started is ever ended.
+            const shell = await $.env.get('FLEET_SHELL')
+            if (!e.isInteractive || home === undefined || shell === undefined) return started
+            const fleet = `${home}/.claude/fleet`
+            // Asked for at each use: a /clear goes on under another id.
+            const file = async () => `${fleet}/state/${await $.session.id()}.draft`
+            let last = ''
+            let saved = await $.fs.read(await file()).catch(() => '')
+            let timer: Timer | undefined
+
+            const look = async () => {
+              const { text } = await $.prompt.read()
+              if (saved !== '') {
+                // Refused while a dialog has the keys: tried again at the next look.
+                if (text !== saved && !(await $.prompt.fill({ text: saved })).isFilled) return
+                last = saved
+                saved = ''
+                return
+              }
+              // A session being ended has no box left and reads as empty: Fleet's note for its shell is
+              // there from before the kill until the resume.
+              if (text === '' && (await $.fs.exists(`${fleet}/restart/${shell}`))) return
+              if (text !== last) {
+                last = text
+                await $.fs.write(await file(), text)
+              }
+              // A look costs 3 ms, 0.5 % of a core at this rate (2.1.296): none while the box is empty.
+              if (text === '') {
+                timer?.cancel()
+                timer = undefined
+              }
+            }
+            watch = () => {
+              timer ??= $.clock.every(500, look)
+            }
+            if (saved !== '') watch()
+            return started
+          })
+
+          // The box also changes with no edit (sent, emptied, an older prompt called back), so an edit
+          // only starts the look, which reads the box itself until it is empty again.
+          on('prompt.edit', ($, e, next) => {
+            watch()
+            return next(e)
+          })
+        }
+
+        """),
+    ]
 
     static let fishFunctionPath = (NSHomeDirectory() as NSString)
         .appendingPathComponent(".config/fish/functions/claude.fish")
@@ -418,10 +524,16 @@ enum Hooks {
         }
         guard removed else { return false }
         settings["hooks"] = hooks
+        if var env = settings["env"] as? [String: Any], let dirs = env[modKey] as? String {
+            let kept = dirs.split(separator: ":").filter { $0 != modEntry }
+            if kept.isEmpty { env[modKey] = nil } else { env[modKey] = kept.joined(separator: ":") }
+            settings["env"] = env
+        }
         let out = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try out.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)
         try? fm.removeItem(atPath: scriptPath)
+        try? fm.removeItem(atPath: modDirectory)
         if (try? String(contentsOfFile: fishFunctionPath, encoding: .utf8))?.hasPrefix(fishMarker) == true {
             try? fm.removeItem(atPath: fishFunctionPath)
         }
@@ -438,7 +550,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 21
+    # fleet-hook-version: 22
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -476,6 +588,7 @@ enum Hooks {
     # claude keeps what it started on. A prompt typed in that second wins; a busy session is
     # caught at the Stop that ends its turn, and one waiting on background work or on a wake-up
     # it scheduled (`<id>.bg`) at the first turn that ends with neither: ending it would lose them.
+    # The text typed in its prompt and not sent comes back with it: `<id>.draft`, Fleet's mod.
     # A session closed by hand in that second is gone, and nothing brings it back.
     relaunch() {
         [ -f "$dir/$1.shell" ] || return 0
@@ -553,9 +666,10 @@ enum Hooks {
     cwd() { /usr/bin/perl -MJSON::PP -e 'local $/; my $in = eval { decode_json(<STDIN>) }; print $in->{cwd} // "" if ref $in eq "HASH"'; }
 
     if [ "$state" = "end" ]; then
-        # That folder outlives the end a relaunch causes: its note is written before the kill.
+        # That folder outlives the end a relaunch causes, and so does the text left unsent in the
+        # prompt, which Fleet's mod keeps beside it: the note is written before the kill.
         grep -qx -- "$sid" "$HOME/.claude/fleet/restart/$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" 2>/dev/null ||
-            rm -f "$dir/$sid.cwd"
+            rm -f "$dir/$sid.cwd" "$dir/$sid.draft"
         rm -f "$dir/$sid.json" "$dir/$sid.nudge" "$dir/$sid.stopped" "$dir/$sid.prompted" "$dir/$sid.held" "$dir/$sid.reel" "$dir/$sid.context" "$dir/$sid.cfg" "$dir/$sid.ask" "$dir/$sid.answer" "$dir/$sid.shell" "$dir/$sid.bg"
         exit 0
     fi
