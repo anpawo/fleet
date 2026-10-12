@@ -63,7 +63,7 @@ enum SelfCheck {
         // would sit on top of one another.
         let crowded = Money.Month(id: "2026-10", spent: [.food: 62, .transport: 12, .leisure: 9,
                                                          .clothes: 8, .subscriptions: 6, .health: 3])
-        let callouts = crowded.callouts(radius: 48, reach: 10, line: { _ in 11.5 }, longest: 34)
+        let callouts = crowded.callouts(of: Set(crowded.ranked), radius: 48, reach: 10, line: 11.5, longest: 34)
         expect(callouts.filter(\.right).map(\.kind) == [.food] && callouts.count == 6, true,
                "money: a slice's name on its side of the pie")
         // The quarter up to twelve o'clock, where the small slices end: each name over the last.
@@ -71,17 +71,36 @@ enum SelfCheck {
         expect(heights.count == 4 && zip(heights, heights.dropFirst()).allSatisfy { $1 - $0 >= 11.499 }
                && callouts.allSatisfy { $0.length >= 10 && $0.length <= 34 }, true,
                "money: names that would touch part, each further out along its own radius")
-        // The same month at the pie's own size, every name but the largest slice's with its
-        // figures under it.
-        let tall = crowded.callouts(radius: 65, reach: 12, line: { $0 == .food ? 11.5 : 25 }, longest: 90)
-        let stacked = tall.filter { $0.turn > 0.75 }.map { -$0.point(radius: 65, past: $0.length).y }
-        expect(zip(stacked, stacked.dropFirst()).allSatisfy { $1 - $0 >= 24.999 }
+        // The same month at the pie's own size: the largest slice holds its name, the others
+        // have theirs past the rim, two lines each.
+        let tall = crowded.callouts(of: Set(crowded.ranked).subtracting([.food]), radius: 100, reach: 16,
+                                    line: 25, longest: 90)
+        let stacked = tall.filter { $0.turn > 0.75 }.map { -$0.point(radius: 100, past: $0.length).y }
+        expect(tall.map(\.kind) == [.transport, .leisure, .clothes, .subscriptions, .health]
+               && zip(stacked, stacked.dropFirst()).allSatisfy { $1 - $0 >= 24.999 }
                && tall.allSatisfy { $0.length <= 90 }, true,
-               "money: a name two lines tall is given two lines of room")
-        expect(crowded.kind(at: CGPoint(x: 10, y: 0), radius: 65) == .food
-               && crowded.kind(at: CGPoint(x: -1, y: -40), radius: 65) == .health
-               && crowded.kind(at: CGPoint(x: 0, y: 66), radius: 65) == nil, true,
+               "money: an arrow for the slices named and no other, two lines of room each")
+        expect(crowded.kind(at: CGPoint(x: 10, y: 0), radius: 100) == .food
+               && crowded.kind(at: CGPoint(x: -1, y: -40), radius: 100) == .health
+               && crowded.kind(at: CGPoint(x: 0, y: 101), radius: 100) == nil, true,
                "money: the slice under the pointer, and none past the rim")
+        // A name over its figures, two lines 45 wide: the largest slice holds them at the first
+        // place tried, a sliver nowhere. At six o'clock, where a label lies across its slice,
+        // 12% holds lines 40 wide further out and none 60 wide.
+        let across = Money.seat([40, 40], line: 11, from: 0.44, to: 0.56, radius: 100)
+        expect(Money.seat([45, 45], line: 11, from: 0, to: 0.62, radius: 100) == 60
+               && Money.seat([45, 45], line: 11, from: 0.97, to: 1, radius: 100) == nil
+               && Money.seat([60, 60], line: 11, from: 0.44, to: 0.56, radius: 100) == nil
+               && across.map { $0 > 60 && $0 <= 97 } == true, true,
+               "money: a name sits inside the slice wide enough for it, as near the middle as it fits")
+        // Each line is held to its own width: 15% at eight o'clock has room for a long name
+        // over shorter figures, not for two lines as long as the name.
+        expect(Money.seat([60, 50], line: 9.5, from: 0.615, to: 0.765, radius: 100) != nil
+               && Money.seat([60, 60], line: 9.5, from: 0.615, to: 0.765, radius: 100) == nil, true,
+               "money: a short line under a long one sits where two long ones would not")
+        // A large slice of a small pie: the label goes back towards the centre.
+        expect(Money.seat([50, 50], line: 9.5, from: 0, to: 0.46, radius: 70).map { $0 < 42 } == true, true,
+               "money: a label too long for the outer half of its slice sits nearer the centre")
 
         let passing = Money.months(csv: """
         date,amount,category,merchant
