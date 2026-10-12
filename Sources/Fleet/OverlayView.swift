@@ -952,7 +952,7 @@ struct GroupTile: View {
                     .accessibilityHidden(!open)
                 // A dot per session said how many and in what state and nothing about what
                 // any of them was doing — on a group of ten, the one thing worth the space.
-                // A line each says it, and the ones past the fourth are scrolled to.
+                // A line each says it, and the ones past the third row are scrolled to.
                 folded
                     .padding(.horizontal, 12)
                     .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 16)
@@ -1135,11 +1135,15 @@ struct GroupTile: View {
 
 
 
-    /// One line per session, under the name: its state as a dot, then what it is doing. The
+    /// A line per session, under the name: its state as a dot, then what it is doing. The
     /// head is the brighter line, and the one ⌘ is aimed at — which is why it lights up while
     /// ⌘ is down rather than only once the click has been spent.
     @ViewBuilder private var folded: some View {
-        let rows = VStack(alignment: .leading, spacing: 3) {
+        // Two to a row past three: the card has room for three rows, and a group of seven
+        // showed three of its sessions. Row by row, as the open cards are laid.
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 0),
+                            count: ordered.count > 3 ? 2 : 1)
+        let rows = LazyVGrid(columns: columns, alignment: .leading, spacing: 3) {
             ForEach(ordered) { session in
                 let isHead = session.id == head?.id
                 HStack(spacing: 7) {
