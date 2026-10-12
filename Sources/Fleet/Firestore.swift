@@ -79,11 +79,17 @@ enum Firestore {
     enum Failure: LocalizedError {
         case noKey
         case http(status: Int, body: String)
+        case unread
+        case budget
 
         var errorDescription: String? {
             switch self {
             case .noKey:
                 return "No Firebase key in the Keychain"
+            case .unread:
+                return "nothing kept to draw from, and this run does not read Firestore"
+            case .budget:
+                return "Fleet's share of the day's reads is spent, back at 09:00"
             case .http(429, _):
                 return "daily read quota exhausted, resets at 09:00"
             case .http(let status, let body):
@@ -96,13 +102,93 @@ enum Firestore {
     /// more machinery than the data deserves: `mail` holds a dozen documents and `todos` a
     /// couple of dozen. Everything is filtered on this side, which also sidesteps needing a
     /// composite index for every ordering the panel might want.
-    static func collection(_ name: String, pageSize: Int = 300) async throws -> [Document] {
+    ///
+    /// `age` is how old a kept copy of it may be and still stand in for the read: what the
+    /// caller would have waited before asking again anyway, so that a restart costs nothing.
+    static func collection(_ name: String, pageSize: Int = 300,
+                           reusing age: TimeInterval = 0) async throws -> [Document] {
+        if let kept = try withoutAsking(name, reusing: age) { return kept }
         var request = URLRequest(url: Firestore.documents
             .appending(path: name)
             .appending(queryItems: [URLQueryItem(name: "pageSize", value: String(pageSize))]))
         request.setValue("Bearer \(try await FirestoreAuth.shared.token())",
                          forHTTPHeaderField: "Authorization")
-        return try await send(request, decoding: Page.self).documents
+        let page = try await send(request)
+        let documents = try JSONDecoder().decode(Page.self, from: page).documents
+        room()
+        try? page.write(to: store.appending(path: name + ".json"), options: .atomic)
+        // A read is billed a document, and an empty answer one.
+        spend(max(1, documents.count))
+        return documents
+    }
+
+    // MARK: - The day's reads
+
+    /// What Fleet lets itself read in one of Firestore's days, in documents, of the 50k the
+    /// project is given. The rest is the phone's: on 2026-10-12 this Mac had spent all of it
+    /// before 16:00 — some sixty loads of four whole collections, half of them renders and
+    /// benches — and nothing anywhere could read a todo until the day turned.
+    static let dailyReads = 35_000
+
+    /// Whether this process asks Firestore at all, or draws from the copies the last read
+    /// kept. Turned off by the modes that draw the panel offscreen: a picture does not need
+    /// this minute's mail, and thirty of them a day cost what the app itself does.
+    static var reads = true
+
+    /// Where the last read of each collection is kept, and the day's count beside them.
+    static var store = URL(fileURLWithPath: Hooks.home).appending(path: "hub")
+
+    /// What a read comes to before anything goes near the network: the kept copy, a refusal,
+    /// or nil — ask Firestore. An `age` without end is "the kept copy or nothing".
+    static func withoutAsking(_ name: String, reusing age: TimeInterval) throws -> [Document]? {
+        let asks = reads && age < .infinity
+        if let kept = kept(name, within: asks ? age : .infinity) { return kept }
+        guard asks else { throw Failure.unread }
+        guard spent() < dailyReads else { throw Failure.budget }
+        return nil
+    }
+
+    /// The last read of a collection, if it is no older than `age`.
+    static func kept(_ name: String, within age: TimeInterval = .infinity) -> [Document]? {
+        guard let read = keptAt(name), Date().timeIntervalSince(read) <= age,
+              let page = try? Data(contentsOf: store.appending(path: name + ".json")) else { return nil }
+        return (try? JSONDecoder().decode(Page.self, from: page))?.documents
+    }
+
+    /// When that read was made.
+    static func keptAt(_ name: String) -> Date? {
+        let file = store.appending(path: name + ".json").path
+        return (try? FileManager.default.attributesOfItem(atPath: file))?[.modificationDate] as? Date
+    }
+
+    /// Firestore's day, which turns at midnight in California — 09:00 in Paris.
+    static func quotaDay(_ now: Date = Date()) -> String {
+        let day = DateFormatter()
+        day.locale = Locale(identifier: "en_US_POSIX")
+        day.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        day.dateFormat = "yyyy-MM-dd"
+        return day.string(from: now)
+    }
+
+    /// Documents read so far in Firestore's day, by every Fleet process on this Mac.
+    static func spent(_ now: Date = Date()) -> Int {
+        let parts = (try? String(contentsOf: store.appending(path: "reads"), encoding: .utf8))?
+            .split(whereSeparator: \.isWhitespace) ?? []
+        return parts.count == 2 && parts[0] == quotaDay(now) ? Int(parts[1]) ?? 0 : 0
+    }
+
+    // ponytail: read, add, write. Two processes reading in the same instant lose one of the
+    // two counts; a lock, the day more than the app and the Reels job read.
+    static func spend(_ documents: Int, _ now: Date = Date()) {
+        room()
+        try? "\(quotaDay(now)) \(spent(now) + documents)"
+            .write(to: store.appending(path: "reads"), atomically: true, encoding: .utf8)
+    }
+
+    /// The mail and the todos in the clear: nobody else's to read.
+    private static func room() {
+        try? FileManager.default.createDirectory(at: store, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
     }
 
     /// Change some fields of one document, leaving the rest alone.

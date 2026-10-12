@@ -631,15 +631,15 @@ final class HubStore: ObservableObject {
     func pollReelsIfDue() {
         guard isConfigured, !pretending, Date().timeIntervalSince(reelsFetchedAt) > Config.reelPoll else { return }
         reelsFetchedAt = Date()
-        Task { await syncReels() }
+        Task { await syncReels(reusing: Config.reelPoll) }
     }
 
     /// Read the collection, show what is worth showing, and start a check on the newest Reel
     /// nobody has managed yet. A finished check calls this again, which is how the backlog
     /// drains one Reel at a time without a queue of its own.
-    func syncReels() async {
+    func syncReels(reusing age: TimeInterval = 0) async {
         do {
-            let all = try await Firestore.collection("factcheck").map(Reel.init)
+            let all = try await Firestore.collection("factcheck", reusing: age).map(Reel.init)
             guard !Task.isCancelled else { return }
             reelsFetchedAt = Date()
             reels = all.filter { !$0.seen }.sorted(by: Reel.before)
@@ -801,7 +801,7 @@ final class HubStore: ObservableObject {
         guard isConfigured,
               inFlight == nil,
               Date().timeIntervalSince(fetchedAt) > freshness else { return }
-        refresh()
+        refresh(reusing: freshness)
     }
 
     private var epitechWritten: Date?
@@ -847,10 +847,12 @@ final class HubStore: ObservableObject {
         loaded = true
     }
 
-    func refresh() {
+    /// `age`: how old a kept copy may be and still do — see `Firestore.collection`. None, for
+    /// a refresh somebody asked for.
+    func refresh(reusing age: TimeInterval = 0) {
         guard isConfigured, !pretending else { return }
         inFlight?.cancel()
-        inFlight = Task { await load() }
+        inFlight = Task { await load(reusing: age) }
     }
 
     /// How soon first, then the dated ones soonest first, then the rest in the order you left
@@ -867,20 +869,21 @@ final class HubStore: ObservableObject {
         return a.rank != b.rank ? a.rank < b.rank : a.id < b.id
     }
 
-    private func load() async {
+    private func load(reusing age: TimeInterval = 0) async {
         // Off the disk, before anything goes near the network: the Epitech block has no fetch
         // of its own and must not be held up by — or lost with — the one the columns make.
         epitech = Epitech.read()
         NSLog("Fleet: epitech — \(epitech?.modules.count ?? -1) modules")
         // Stamped on the attempt, not on the success: a fetch that fails must still close the
         // freshness window, or an outage turns every panel opening into three more reads.
-        fetchedAt = Date()
+        let asked = Date()
+        fetchedAt = asked
         do {
             // All three at once: they are independent collections and the panel is already
             // on screen waiting for them.
-            async let mailDocs = Firestore.collection("mail")
-            async let todoDocs = Firestore.collection("todos")
-            async let ruleDocs = Firestore.collection("rules")
+            async let mailDocs = Firestore.collection("mail", reusing: age)
+            async let todoDocs = Firestore.collection("todos", reusing: age)
+            async let ruleDocs = Firestore.collection("rules", reusing: age)
             let (mailPage, todoPage, rulePage) = try await (mailDocs, todoDocs, ruleDocs)
             guard !Task.isCancelled else { return }
 
@@ -907,19 +910,44 @@ final class HubStore: ObservableObject {
             todos = all.filter(\.open).sorted(by: Self.before)
             // The first opening after a launch has nothing to light until this lands.
             if spotlightID == nil { advanceSpotlight() }
-            file(all.filter { $0.state == Todo.Pile.done })
+            // Filing writes, so only on what Firestore has just said: a kept copy may hold as
+            // done a todo reopened since.
+            if (Firestore.keptAt("todos") ?? .distantPast) >= asked {
+                file(all.filter { $0.state == Todo.Pile.done })
+            }
             failure = nil
             loaded = true
+            // A kept copy counts from the read it came from: a restart then changes nothing
+            // about when the next read falls due.
+            if age < .infinity, let read = Firestore.keptAt("mail"), asked.timeIntervalSince(read) <= age {
+                fetchedAt = read
+            }
             // Its own fetch, after the two the panel is waiting on: a verdict is not what the
             // panel opened for, and a check it may start must not hold the columns up.
-            Task { await syncReels() }
+            Task { await syncReels(reusing: age) }
         } catch {
             guard !Task.isCancelled else { return }
             NSLog("Fleet: hub fetch failed — \(error.localizedDescription)")
             // Whatever arrived last stays on screen. Empty piles are a claim, and the wrong
             // one: showing this morning's inbox is a small lie, showing "nothing to read" is
             // a large one.
-            failure = loaded ? "offline" : error.localizedDescription
+            // Said as "offline", unless the day's reads are what ran out: that word sends you
+            // to the wifi, and the answer is 09:00.
+            let refused: Bool
+            switch error {
+            case Firestore.Failure.budget, Firestore.Failure.http(status: 429, body: _): refused = true
+            default: refused = false
+            }
+            let why = error.localizedDescription
+            failure = loaded && !refused ? "offline" : why
+            // Nothing on screen yet — a restart with the reads refused, or the network out:
+            // what the last read kept, however old, rather than two empty columns until
+            // Firestore answers again.
+            if !loaded, age < .infinity {
+                await load(reusing: .infinity)
+                failure = loaded && !refused ? "offline" : why
+                return
+            }
         }
         inFlight = nil
     }

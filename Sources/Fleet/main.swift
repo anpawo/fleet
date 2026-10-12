@@ -185,6 +185,9 @@ if CommandLine.arguments.contains("--bench-panel") {
         // read 5 ms on one run and 15 on the next.
         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
         _ = NSApplication.shared
+        // The columns as the app last read them: a bench is run in rounds, and each one was a
+        // load of four whole collections off the day's reads.
+        Firestore.reads = false
         let controller = AppController()
         let registry = SessionRegistry()
         controller.injectSessions(registry.refresh())
@@ -801,6 +804,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
     let outPath = CommandLine.arguments[i + 1]
     MainActor.assumeIsolated {
         _ = NSApplication.shared
+        // A picture is drawn from what the app last read, never from a read of its own —
+        // see `Firestore.reads`.
+        Firestore.reads = false
         let registry = SessionRegistry()
         _ = registry.refresh()
         let controller = AppController()

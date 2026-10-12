@@ -27,9 +27,54 @@ enum SelfCheck {
         repairs(expect)
         money(expect)
         grid(expect)
+        reads(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
+    }
+
+    // MARK: - Reads
+
+    /// What stands between Fleet and the day's Firestore reads: a run that does not read is
+    /// handed the kept copy, a kept copy young enough spares the read, a spent share refuses.
+    private static func reads(_ expect: (Bool, Bool, String) -> Void) {
+        let real = (Firestore.store, Firestore.reads)
+        defer { (Firestore.store, Firestore.reads) = real }
+        Firestore.store = FileManager.default.temporaryDirectory.appending(path: "fleet-selftest-\(getpid())")
+        try? FileManager.default.removeItem(at: Firestore.store)
+        defer { try? FileManager.default.removeItem(at: Firestore.store) }
+        func outcome(_ age: TimeInterval) -> String {
+            do { return try Firestore.withoutAsking("mail", reusing: age).map { "kept \($0.count)" } ?? "ask" }
+            catch { return "\(error)" }
+        }
+
+        Firestore.reads = false
+        expect(outcome(0) == "unread", true, "reads: a run that does not read, with nothing kept, is refused")
+        Firestore.reads = true
+        expect(outcome(600) == "ask", true, "reads: with nothing kept, the app asks Firestore")
+
+        // A copy read two hours ago.
+        try? FileManager.default.createDirectory(at: Firestore.store, withIntermediateDirectories: true)
+        let copy = Firestore.store.appending(path: "mail.json")
+        try? Data(#"{"documents":[{"name":"p/mail/a","fields":{}}]}"#.utf8).write(to: copy)
+        try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-7200)],
+                                               ofItemAtPath: copy.path)
+        expect(outcome(6 * 3600) == "kept 1", true, "reads: a copy two hours old spares the six-hourly read")
+        expect(outcome(600) == "ask", true, "reads: and is too old for a panel that opens")
+        expect(outcome(.infinity) == "kept 1", true, "reads: a restart with the reads refused draws it, however old")
+        Firestore.reads = false
+        expect(outcome(0) == "kept 1", true, "reads: a render draws the kept copy and never asks")
+        Firestore.reads = true
+
+        let stamp = ISO8601DateFormatter()
+        expect(Firestore.quotaDay(stamp.date(from: "2026-10-12T06:59:00Z")!) == "2026-10-11"
+               && Firestore.quotaDay(stamp.date(from: "2026-10-12T07:00:00Z")!) == "2026-10-12", true,
+               "reads: Firestore's day turns at 09:00 in Paris")
+        Firestore.spend(Firestore.dailyReads - 1)
+        expect(outcome(600) == "ask", true, "reads: one document short of the share, still asking")
+        Firestore.spend(1)
+        expect(outcome(600) == "budget", true, "reads: the share spent, refused before the network")
+        expect(Firestore.spent(Date().addingTimeInterval(86_400)) == 0, true, "reads: and a new day starts at nothing")
     }
 
     // MARK: - Grid
