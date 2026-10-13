@@ -77,6 +77,12 @@ fire ConfigChange config;        check "idle session relaunched on a settings ch
 fire SessionStart start
 model fable
 fire Stop ready bare;            check "session outside the fish function never ended" kept
+# The view a session opens in is read once, at launch, like its model.
+fire SessionStart start
+printf '{"model":"fable","modelSettings":{"claude-opus-5-5":{"effortLevel":"xhigh"}},"viewMode":"focus"}' \
+    > "$FAKE/.claude/settings.json"
+fire Stop ready;                 check "a view mode set since the session started: relaunched" "$SID --model fable" "settings.json changed"
+model fable
 
 export BIN="$FAKE/binary"
 touch -t 202001010000 "$BIN"

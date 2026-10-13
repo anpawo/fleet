@@ -561,13 +561,14 @@ enum Hooks {
     dir="$HOME/.claude/fleet/state"
 
     # A session runs on the settings, the mods and the binary it had at launch: the model never
-    # changes under a live process, `--resume` brings the old one back, `env` and the mods it
-    # names are read once, and a display patch or an update replaces the binary on disk, not the
-    # one running. Settings and mods are recorded at start, so a later edit can be told apart
-    # from them; the binary is compared with the time the process started.
+    # changes under a live process, `--resume` brings the old one back, `viewMode` only picks the
+    # view a session opens in, `env` and the mods it names are read once, and a display patch or
+    # an update replaces the binary on disk, not the one running. Settings and mods are recorded
+    # at start, so a later edit can be told apart from them; the binary is compared with the time
+    # the process started.
     settings="$HOME/.claude/settings.json"
     cfg() {
-        for k in model modelSettings outputStyle env; do
+        for k in model modelSettings outputStyle viewMode env; do
             # xml1, not json: plutil refuses to print a bare string as JSON.
             plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
         done
