@@ -315,10 +315,17 @@ struct CronColumn: View {
     @ViewBuilder private func detail(of jobs: [Launchd.Job], inset: Bool = true) -> some View {
         if commandHeld, let job = jobs.first(where: { $0.id == hovered }) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(job.note)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
+                // A note of several lines is a list (see `Launchd.ownNote`): a line that opens
+                // on a dot hangs under it when it wraps.
+                ForEach(Array(job.note.split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if line.hasPrefix("• ") { Text("•") }
+                        Text(line.hasPrefix("• ") ? line.dropFirst(2) : line)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.55))
                 if let state = job.hung.map({ "hung — running for \(Launchd.span($0))" })
                     ?? (job.deferred ? "deferred — no network" : nil) {
                     Text(state)

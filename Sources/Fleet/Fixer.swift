@@ -148,7 +148,7 @@ final class Fixer: ObservableObject {
         let facts: String
         if let job = crons.first(where: { $0.name == subject(alert) }) {
             facts = """
-            It is the launchd routine `\(job.id)` (\(job.note)). \
+            It is the launchd routine `\(job.id)` (\(job.note.prefix { $0 != "\n" })). \
             ~/Library/LaunchAgents/\(job.id).plist names its program and its log; \
             `launchctl print gui/\(getuid())/\(job.id)` has its last exit and whether a run is \
             going now. Fleet has already started it again once, and that run failed too — or \

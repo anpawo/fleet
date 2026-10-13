@@ -115,10 +115,22 @@ enum Launchd {
                       from: data, format: nil) as? [String: Any] else { return nil }
             let state = live[label]
             var job = judge(label, plist, state, age: state?.pid.flatMap { ages[$0] })
+            if let own = ownNote(label) { job.note = own }
             job.address = state?.pid.flatMap { ports[$0] }
                 .map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" }
             return job
         }.sorted { $0.name < $1.name }
+    }
+
+    /// A routine whose sentence moves with what it holds writes it itself, in
+    /// `~/.claude/fleet/notes/<label>`: `mac.checker` lists what it is watching, one line each,
+    /// and that list changes with every answer. Read at each scan, where `routines.json` is
+    /// read once.
+    private static func ownNote(_ label: String) -> String? {
+        let file = URL(fileURLWithPath: Hooks.home).appending(path: "notes/\(label)")
+        guard let text = (try? String(contentsOf: file, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
     }
 
     /// What launchd's word on one agent means — the plist, and `launchctl list`'s pid and last
