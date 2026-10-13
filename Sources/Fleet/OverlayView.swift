@@ -1563,12 +1563,18 @@ struct SessionTile: View {
     private var statePill: some View {
         // A workflow's progress rides in the pill that says the session is waiting on it.
         let label = session.state.label
-        let text = session.workflow.map { "\(label): \($0.pill())" }
+        let text = session.workflow.map { Text("\(label): \($0.pill())") }
             ?? session.delegatedSince.map {
-                "\(label) · \(WorkflowProgress.duration(Date().timeIntervalSince($0))) in"
+                let age = WorkflowProgress.duration(Date().timeIntervalSince($0))
+                // Under any state but its own the shell is named, in its colour: a bare
+                // "WORKING · 28m in" read as a turn 28 minutes long (asked 2026-10-13). And no
+                // "in" after the age: with it, a group's card cut the label from an hour on.
+                return session.state == .delegated
+                    ? Text("\(label) · \(age)")
+                    : Text("\(label) · ") + Text("BG-TASK \(age)").foregroundStyle(Self.subagentTint)
             }
-            ?? label
-        return Text(text)
+            ?? Text(label)
+        return text
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             // Never broken over two lines: "BACKGROUN / D" beside a sub-agent pill is what a

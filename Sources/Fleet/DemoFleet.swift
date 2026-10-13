@@ -58,7 +58,8 @@ enum DemoFleet {
                                               step: "Grep contrast-ratio",
                                               lastActivity: Date())]
             }
-            if state == .delegated {
+            // A working one with no agent out has a shell out too: the pill then names both.
+            if state == .delegated || (state == .running && i % 3 != 1) {
                 info.backgroundShellsStartedAt = [Date().addingTimeInterval(-22 * 60)]
             }
 
