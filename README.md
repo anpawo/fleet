@@ -14,6 +14,7 @@ by what it's doing:
 | 🟩 **green** | finished its turn, ready for a new prompt |
 | 🟥 **red** | a tool is running right now |
 | 🟦 **blue** | blocked on you — a question or a permission approval |
+| ⬜ **white** | just started, nothing asked of it yet |
 
 A tile is deliberately close to empty: the project name, the border colour, the state, and —
 only while it's working — the one step in flight. When a session has handed work to a sub-agent

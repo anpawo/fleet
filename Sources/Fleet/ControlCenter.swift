@@ -116,7 +116,7 @@ struct ControlCenterView: View {
     private var fleetSummary: String {
         let sessions = controller.sessions
         guard !sessions.isEmpty else { return "No Claude Code sessions running" }
-        let parts = [SessionState.awaitingAnswer, .apiError, .delegated, .paused, .ready, .running]
+        let parts = [SessionState.awaitingAnswer, .apiError, .delegated, .paused, .ready, .running, .fresh]
             .compactMap {
             state -> String? in
             let n = sessions.filter { $0.state == state }.count

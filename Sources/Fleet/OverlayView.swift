@@ -16,6 +16,9 @@ extension SessionState {
         // Yellow, not the amber beside it: amber is a request failing, yellow is Fleet holding
         // the session on purpose until memory frees up.
         case .paused: return Color(red: 1.00, green: 0.88, blue: 0.20)
+        // No hue at all: every one is spoken for by a state or a block, and a blank page is
+        // what the session is.
+        case .fresh: return .white
         }
     }
 
@@ -27,6 +30,7 @@ extension SessionState {
         case .apiError: return "API ERROR"
         case .delegated: return "BACKGROUND-TASK"
         case .paused: return "PAUSED"
+        case .fresh: return "NEW"
         }
     }
 }
@@ -430,6 +434,8 @@ struct OverlayView: View {
         // card read as a key. Kept as small as the dots allow — it is furniture, not a
         // control, and it sits on a line with a name and a count either side of it.
         HStack(spacing: 9) {
+            // Ahead of the spectrum it has no place in, and where a session starts.
+            legend(.fresh)
             legend(.ready)
             // Where the spectrum puts it — the key runs green, blue, violet, red, amber,
             // yellow, and teal sits between the first two. A colour parked on the end

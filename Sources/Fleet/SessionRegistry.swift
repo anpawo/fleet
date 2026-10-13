@@ -80,6 +80,9 @@ final class SessionRegistry {
                screens.verdict(proc, now: now, recheck: Config.terminalReadInterval) == .working {
                 state = .running
             }
+            // Last, over what is left of `ready`: a turn that ended and one that never began
+            // are both a session at its prompt, and only the first has anything to read.
+            if state == .ready, info?.untouched ?? true { state = .fresh }
             sessions.append(Session(
                 proc: proc,
                 transcript: info,

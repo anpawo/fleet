@@ -20,7 +20,7 @@ enum DemoFleet {
     static func sessions(_ count: Int, folders: [Int]? = nil) -> [Session] {
         let names = ["portfolio", "atlas", "video-code", "my-hub", "fleet", "siege",
                      "orchard", "lantern", "harbour", "quarry", "meridian", "tessera"]
-        let states: [SessionState] = [.ready, .running, .delegated, .awaitingAnswer, .apiError, .paused]
+        let states: [SessionState] = [.ready, .running, .delegated, .awaitingAnswer, .apiError, .paused, .fresh]
 
         return (0 ..< count).map { i in
             let state = states[i % states.count]
@@ -62,7 +62,7 @@ enum DemoFleet {
                 info.backgroundShellsStartedAt = [Date().addingTimeInterval(-22 * 60)]
             }
 
-            return Session(proc: proc, transcript: info, state: state,
+            return Session(proc: proc, transcript: state == .fresh ? nil : info, state: state,
                            cpuPercent: state == .running ? 4 : 0)
         }
     }

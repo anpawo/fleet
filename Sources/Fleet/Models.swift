@@ -191,6 +191,7 @@ enum SessionState {
     case apiError       // amber — the request failed and Claude Code is retrying it
     case delegated      // purple — sub-agents or background shells are working, the main thread is free
     case paused         // yellow — held by Fleet at a tool call until the machine has room
+    case fresh          // white — started, and nothing asked of it yet
 
     /// How much a state wants you, most first. The tiles are laid out by number rather than by
     /// this — a grid that rearranges itself as sessions finish their turns is a grid you cannot
@@ -212,6 +213,8 @@ enum SessionState {
         // Nothing to answer and it resumes by itself; stuck, but not on anything of yours.
         case .paused: return 4
         case .running: return 5
+        // Nothing to answer, nothing to read, nothing going on: it has no claim on you at all.
+        case .fresh: return 6
         }
     }
 }
@@ -340,6 +343,9 @@ struct TranscriptInfo {
     /// How recently this session did something, as everything reading it means the question:
     /// the last conversation entry, or the file itself when there is no stamp to go on.
     var lastWord: Date { lastMessageAt ?? lastActivity }
+    /// Nothing asked and nothing answered. A local command (`/model`, `/mcp`) leaves user
+    /// lines and a stamp behind it and starts no turn, so neither can be what is tested.
+    var untouched: Bool { lastPromptAt == nil && preview.allSatisfy { $0.kind == .user } }
     var preview: [PreviewLine]
     /// Sub-agents spawned and not yet finished. Filled in after the parse — it needs the
     /// sub-agents' own files, which the main transcript only points at.

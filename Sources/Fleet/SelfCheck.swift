@@ -18,6 +18,7 @@ enum SelfCheck {
         subagents(expect)
         cutLine(expect)
         queuedPrompt(expect)
+        freshSession(expect)
         heldPrompt(expect)
         ghosts(expect)
         ports(expect)
@@ -582,6 +583,19 @@ enum SelfCheck {
         let before = Hooks.Record(state: .ready, at: Date(timeIntervalSince1970: floor(stop.timeIntervalSince1970) + 1), pids: [])
         expect(SessionRegistry.ranked(before, heuristic: .running, info: info, cpu: 0, now: Date()) == .ready ? 1 : 0, 1,
                "and a Stop after the prompt still reads ready")
+    }
+
+    private static func freshSession(_ expect: (Int, Int, String) -> Void) {
+        let path = NSTemporaryDirectory() + "fleet-selftest-fresh-\(getpid()).jsonl"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let local = #"{"type":"user","timestamp":"2026-10-13T09:00:00.000Z","cwd":"/tmp","message":{"content":[{"type":"text","text":"<command-name>/model</command-name>"}]}}"# + "\n"
+        try? local.write(toFile: path, atomically: true, encoding: .utf8)
+        expect(TranscriptStore().info(for: path)?.untouched == true ? 1 : 0, 1,
+               "a session that has only run a local command is still new")
+        let reply = #"{"type":"assistant","timestamp":"2026-10-13T09:00:05.000Z","cwd":"/tmp","message":{"id":"m1","content":[{"type":"text","text":"Done."}]}}"# + "\n"
+        try? (local + reply).write(toFile: path, atomically: true, encoding: .utf8)
+        expect(TranscriptStore().info(for: path)?.untouched == false ? 1 : 0, 1,
+               "and one Claude has answered is not")
     }
 
     // MARK: - Sub-agents
