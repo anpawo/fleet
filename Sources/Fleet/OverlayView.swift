@@ -434,8 +434,6 @@ struct OverlayView: View {
         // card read as a key. Kept as small as the dots allow — it is furniture, not a
         // control, and it sits on a line with a name and a count either side of it.
         HStack(spacing: 9) {
-            // Ahead of the spectrum it has no place in, and where a session starts.
-            legend(.fresh)
             legend(.ready)
             // Where the spectrum puts it — the key runs green, blue, violet, red, amber,
             // yellow, and teal sits between the first two. A colour parked on the end
@@ -446,6 +444,9 @@ struct OverlayView: View {
             legend(.running)
             legend(.apiError)
             legend(.paused)
+            // After yellow, the lightest of the set: beside green it did not blend (asked
+            // 2026-10-13).
+            legend(.fresh)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
