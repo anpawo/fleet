@@ -136,11 +136,11 @@ enum SelfCheck {
                "grid: four stand two and two, in the rows three and one would take")
         expect(size(4, large: true).height + 26 + 186 <= 658, true,
                "grid: four on the larger cards stand over one row of the grid on a laptop screen")
-        let two = GroupTile.alone(holding: 2, room: 258, in: 646, spacing: 26)
+        let two = GroupTile.alone(holding: 2, room: 700, in: 646, spacing: 26)
         let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
-        expect(two.large && two.size == CGSize(width: 646, height: 258)
+        expect(two.large && two.size == CGSize(width: 646, height: 700)
                && !eight.large && eight.size == CGSize(width: 646, height: 300), true,
-               "grid: a directory given the block takes what its cards need of it, and no more than the block")
+               "grid: a directory given the block takes the whole of it, whatever its cards need")
     }
 
     // MARK: - Money

@@ -751,8 +751,8 @@ struct PromptBar: View {
 
 /// The fleet's grid, placed by hand.
 ///
-/// Two columns of a fixed card, and — when a directory is open — that one card grown at the top
-/// left to what its sessions need while every other card is placed past the bottom edge, where
+/// Two columns of a fixed card, and — when a directory is open — that one card grown from the
+/// top left to the whole block while every other card is placed past the bottom edge, where
 /// the block clips them away.
 ///
 /// Written as a `Layout` rather than as stacks because the opening has to be one card moving: in
@@ -779,7 +779,7 @@ struct FleetLayout: Layout {
     /// through the close, since a card that loses its place the moment you click has nothing
     /// to shrink back from.
     var open: Int?
-    /// What the open card is given: what its cards need of the room the grid has.
+    /// What the open card is given: the room the grid has, all of it.
     var openSize: CGSize
     /// That room, which the other cards leave past.
     var openHeight: CGFloat
@@ -917,7 +917,7 @@ enum FleetCell: Identifiable {
 
 /// One working directory, as a card: folded, its name, a dot per session in that session's own
 /// state colour, and the count — the same rectangle a session gets, in the one colour no state
-/// wears. Open, the same rectangle grown to what its cards need, with its sessions inside its own
+/// wears. Open, the same rectangle grown to the whole block, with its sessions inside its own
 /// border: the directory is the thing you are looking at, and the rest of the fleet is pushed
 /// out the bottom rather than left half-visible underneath it. One that fits is open from the
 /// start, in the grid and only as tall as its cards — see `FleetLayout.unfolding`.
@@ -975,13 +975,13 @@ struct GroupTile: View {
             width: 2 * margin(spacing) + across * (inner(width, large: large, spacing: spacing) + gap(spacing)) - gap(spacing),
             height: top(spacing) + rows * (SessionTile.groupedHeight(large: large) + gap(spacing)) - gap(spacing) + margin(spacing))
     }
-    /// What it takes of a block `room` tall that it has to itself: the larger cards where
-    /// they all fit, and no taller than the block, past which they scroll.
+    /// What it takes of a block `room` tall that it has to itself: the whole of it (asked
+    /// 2026-10-13), not what its cards need, which left the block half empty under a short
+    /// directory. On the larger cards where they all fit; past the block they scroll.
     static func alone(holding count: Int, room: CGFloat, in width: CGFloat,
                       spacing: CGFloat) -> (large: Bool, size: CGSize) {
         let large = size(holding: count, large: true, in: width, spacing: spacing).height <= room
-        let fit = size(holding: count, large: large, in: width, spacing: spacing)
-        return (large, CGSize(width: fit.width, height: min(fit.height, room)))
+        return (large, CGSize(width: width, height: room))
     }
     /// The most sessions that stand side by side inside the open card. Two, on larger
     /// cards, where there is the room for it (asked 2026-10-12); three where there is not,
