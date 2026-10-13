@@ -133,6 +133,12 @@ echo types > "$FAKE/mod/.claude-plugin/types/index.d.ts"
 fire Stop ready;                 check "the types Claude Code writes into a mod: left alone" kept
 echo two > "$FAKE/mod/hooks/register.tsx"
 fire Stop ready;                 check "mod edited since the session started: relaunched" "$SID --model fable" "a mod was edited"
+# A mod's sum does not depend on the locale the hook runs under: a `claude -p` that Fleet starts
+# under launchd has none, and these two names change places between C and UTF-8.
+echo store > "$FAKE/mod/.DS_Store"; echo plugin > "$FAKE/mod/.claude-plugin/plugin.json"
+LC_ALL=C fire SessionStart start
+LC_ALL=en_US.UTF-8 fire Stop ready
+check "a turn ending under another locale than the session started in: left alone" kept
 # The sessions that did not make the edit fire no hook for it: another session's turn ending does.
 fire SessionStart start
 LIFE=4 fire Stop ready &

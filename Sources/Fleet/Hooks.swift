@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 22
+    static let version = 23
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -550,7 +550,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 22
+    # fleet-hook-version: 23
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -573,12 +573,16 @@ enum Hooks {
             plutil -extract "$k" xml1 -o - "$settings" 2>/dev/null; echo
         done
         # Each mod by content. Not .claude-plugin/types: Claude Code rewrites it at every load,
-        # and one session starting would then relaunch all the others.
+        # and one session starting would then relaunch all the others. The order is pinned:
+        # `sort` follows the caller's locale and a `claude -p` under launchd has none, so its sum
+        # was another one, and the Stop of each turn Fleet runs itself relaunched the sessions
+        # that had just gone idle (2026-10-13). This locale and not C: it gives the order the
+        # sessions already open had recorded.
         plutil -extract env.CLAUDE_CODE_PLUGIN_DIRS raw -o - "$settings" 2>/dev/null | tr ':' '\\n' |
             while read -r d; do
                 case $d in '~'*) d=$HOME${d#'~'} ;; esac
                 [ -d "$d" ] || continue
-                find -L "$d" -type f ! -path '*/.claude-plugin/types/*' -print0 | sort -z | xargs -0 cat | cksum
+                find -L "$d" -type f ! -path '*/.claude-plugin/types/*' -print0 | LC_ALL=en_US.UTF-8 sort -z | xargs -0 cat | cksum
             done
     }
 
