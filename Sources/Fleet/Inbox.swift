@@ -28,7 +28,7 @@ final class Inbox: NSObject, ObservableObject {
     /// The line, as wide as its text and never cut, and under it the date, the count and the round buttons with
     /// their names. The window is wider than any line and clear around them, for the shadow.
     static let barHeight: CGFloat = 56
-    static let bubble: CGFloat = 48
+    static let bubble: CGFloat = 38
     static let gap: CGFloat = 12
     static let window = NSSize(width: 1380, height: 210)
     static let margin: CGFloat = 30
@@ -289,15 +289,13 @@ struct InboxView: View {
 
     private static let done = Color(red: 0.24, green: 0.82, blue: 0.35)
     private static let needs = Color(red: 1.00, green: 0.62, blue: 0.15)
-    private static let day: DateFormatter = {
+    /// Today's line by its hour alone, written the French way (10h40); an older one with its day (13/10 10h40).
+    static func when(_ ms: Double, now: Date = Date()) -> String {
+        let date = Date(timeIntervalSince1970: ms / 1000)
         let f = DateFormatter()
-        f.dateFormat = "dd/MM HH:mm"
-        return f
-    }()
-    private static let keys: [(symbol: String, label: String, key: Int)] = [
-        ("chevron.left", "prev", kVK_LeftArrow), ("chevron.right", "next", kVK_RightArrow),
-        ("return", "open", kVK_Return), ("checkmark", "done", kVK_UpArrow), ("trash", "trash", kVK_Delete),
-    ]
+        f.dateFormat = Calendar.current.isDate(date, inSameDayAs: now) ? "HH'h'mm" : "dd/MM HH'h'mm"
+        return f.string(from: date)
+    }
 
     var body: some View {
         // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
@@ -347,90 +345,74 @@ struct InboxView: View {
         }
     }
 
-    /// Under the line: when it came on the left, which one of how many in the middle, its keys on the right.
+    /// Under the line: when it came on the left, which one of how many in the middle between the arrows that move
+    /// through them, what can be done with it on the right.
     private var controls: some View {
         HStack(alignment: .top) {
             if let item = inbox.current {
-                Text(Self.day.string(from: Date(timeIntervalSince1970: item.at / 1000)))
-                    .chip()
+                Text(Self.when(item.at)).chip()
             }
             Spacer(minLength: 24)
-            VStack(spacing: 5) {
-                GlassGroup {
-                    HStack(spacing: Inbox.gap) {
-                        ForEach(Self.keys, id: \.label) { key in
-                            KeyBubble(symbol: key.symbol, off: off(key.key),
-                                      tint: key.key == kVK_Delete && inbox.confirming != nil ? .red : nil) {
-                                _ = inbox.key(UInt16(key.key))
-                            }
-                        }
-                    }
-                }
-                // Outside the glass and in the desktop's own label style: they stand on the wallpaper.
-                HStack(spacing: Inbox.gap) {
-                    ForEach(Self.keys, id: \.label) { key in
-                        Text(key.key == kVK_Delete && inbox.confirming != nil ? "sure?" : key.label)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
-                            .frame(width: Inbox.bubble)
-                            .opacity(off(key.key) ? 0.5 : 1)
-                    }
-                }
+            HStack(alignment: .top, spacing: Inbox.gap) {
+                key("return", "open", kVK_Return)
+                key("checkmark", "done", kVK_UpArrow)
+                key("trash", inbox.confirming == nil ? "trash" : "sure?", kVK_Delete,
+                    tint: inbox.confirming == nil ? nil : .red)
             }
         }
         .overlay(alignment: .top) {
-            Text("\(inbox.items.isEmpty ? 0 : inbox.index + 1) / \(inbox.items.count)")
-                .monospacedDigit()
-                .chip()
+            HStack(alignment: .top, spacing: Inbox.gap) {
+                key("chevron.left", "prev", kVK_LeftArrow)
+                Text("\(inbox.items.isEmpty ? 0 : inbox.index + 1) / \(inbox.items.count)")
+                    .monospacedDigit()
+                    .chip()
+                key("chevron.right", "next", kVK_RightArrow)
+            }
         }
     }
 
-    private func off(_ key: Int) -> Bool {
-        inbox.current == nil || ((key == kVK_LeftArrow || key == kVK_RightArrow) && inbox.items.count < 2)
+    private func key(_ symbol: String, _ label: String, _ code: Int, tint: Color? = nil) -> some View {
+        let off = inbox.current == nil || ((code == kVK_LeftArrow || code == kVK_RightArrow) && inbox.items.count < 2)
+        return KeyBubble(symbol: symbol, label: label, off: off, tint: tint) { _ = inbox.key(UInt16(code)) }
     }
 }
 
-/// One of the keys, as a round glass button, as Spotlight puts its own.
+/// One of the keys, as a round glass button, as Spotlight puts its own, and its name under it in the desktop's
+/// label style (white, with a shadow): it stands on the wallpaper, whatever its colour.
 private struct KeyBubble: View {
     let symbol: String
+    let label: String
     var off = false
     var tint: Color?
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(tint ?? .primary.opacity(0.75))
-                .frame(width: Inbox.bubble, height: Inbox.bubble)
-                .contentShape(Circle())
+        VStack(spacing: 4) {
+            Button(action: action) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(tint ?? .primary.opacity(0.8))
+                    .frame(width: Inbox.bubble, height: Inbox.bubble)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
+                .fixedSize()
         }
-        .buttonStyle(.plain)
-        .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
+        .frame(width: Inbox.bubble)
         .opacity(off ? 0.45 : 1)
         .disabled(off)
-    }
-}
-
-/// Spotlight's own material: Liquid Glass on macOS 26, grouped so that the shapes blend as Spotlight's do; the
-/// frosted material before it.
-private struct GlassGroup<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: Inbox.gap) { content }
-        } else {
-            content
-        }
     }
 }
 
 private extension View {
     /// A small glass block for the date and the count, as tall as the buttons beside it.
     func chip() -> some View {
-        font(.system(size: 13, weight: .medium))
+        font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .frame(height: Inbox.bubble)

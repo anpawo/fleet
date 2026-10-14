@@ -75,6 +75,12 @@ enum SelfCheck {
         _ = inbox.key(UInt16(kVK_Delete))
         expect(inbox.items.map(\.id) == ["a"] && inbox.confirming == "a", true, "inbox: any other key between the two ⌫ keeps it, Esc included")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
+        var noon = DateComponents(calendar: .current, year: 2026, month: 10, day: 14, hour: 12)
+        let now = noon.date!
+        noon.hour = 9; noon.minute = 5
+        let morning = noon.date!.timeIntervalSince1970 * 1000
+        expect(InboxView.when(morning, now: now) == "09h05" && InboxView.when(morning - 86_400_000, now: now) == "13/10 09h05", true,
+               "inbox: today's line by its hour, written 09h05; an older one with its day")
 
         // The entrance, read at every frame on a panel put off every screen, where nothing of it can be seen.
         NSApplication.shared.setActivationPolicy(.accessory)
