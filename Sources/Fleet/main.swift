@@ -567,7 +567,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         Inbox.render(items, asking: true, to: path.replacingOccurrences(of: ".png", with: "-trash.png"))
         Inbox.render(items, asking: false, to: path.replacingOccurrences(of: ".png", with: "-done.png"))
         Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
-        Inbox.render(items, dark: true, to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
+        Inbox.render(items, on: "dark", to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
+        Inbox.render(items, on: "white", to: path.replacingOccurrences(of: ".png", with: "-white.png"))
         Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
         exit(0)
     }

@@ -271,23 +271,27 @@ final class Inbox: NSObject, ObservableObject {
 
     /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is. The glass
     /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
-    static func render(_ items: [InboxItem], index: Int = 0, asking: Bool? = nil, dark: Bool = false, to path: String) {
+    /// What the render stands on: his wallpaper's kind of light gradient, a dark one, or a white window.
+    static let backdrops: [String: [Color]] = [
+        "light": [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
+        "dark": [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)],
+        "white": [.white, .white],
+    ]
+
+    static func render(_ items: [InboxItem], index: Int = 0, asking: Bool? = nil, on backdrop: String = "light", to path: String) {
         flat = true
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
         inbox.asking = asking.flatMap { trash in inbox.current.map { Ask(id: $0.id, trash: trash) } }
-        let backdrop = LinearGradient(colors: dark ? [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)]
-                                                   : [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
-                                      startPoint: .top, endPoint: .bottom)
-        let view = NSHostingView(rootView: InboxView(inbox: inbox).background(backdrop))
-        view.appearance = NSAppearance(named: .aqua)
-        view.frame = NSRect(origin: .zero, size: view.fittingSize)
-        view.layoutSubtreeIfNeeded()
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: rep)
+        let backdrop = LinearGradient(colors: backdrops[backdrop] ?? [.gray], startPoint: .top, endPoint: .bottom)
+        // SwiftUI's own renderer: a hosting view's `cacheDisplay` drew a short line off both ends of every stroked
+        // capsule, which the screen does not.
+        let renderer = ImageRenderer(content: InboxView(inbox: inbox).background(backdrop).environment(\.colorScheme, .light))
+        renderer.scale = 2
+        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-        print("wrote \(path) \(view.bounds.size)")
+        print("wrote \(path) \(image.size)")
     }
 
     /// The menu bar badges at 0, 3 and 12, black on white at 4×.
@@ -543,8 +547,16 @@ private extension View {
             .glass(in: Capsule())
     }
 
+    /// The glass, edged twice: a dark hairline outside that holds it on a white window, a light one inside that
+    /// holds it on a dark wallpaper.
+    func glass<S: InsettableShape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+        material(in: shape, tint: tint, interactive: interactive)
+            .overlay(shape.strokeBorder(Color.black.opacity(0.18), lineWidth: 1))
+            .overlay(shape.inset(by: 1).strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
+    }
+
     @ViewBuilder
-    func glass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+    private func material<S: Shape>(in shape: S, tint: Color?, interactive: Bool) -> some View {
         if Inbox.flat {
             background((tint ?? .white).opacity(0.55), in: shape)
         } else if #available(macOS 26.0, *) {
