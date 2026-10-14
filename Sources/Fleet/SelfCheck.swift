@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import Foundation
 
@@ -64,6 +65,25 @@ enum SelfCheck {
         _ = inbox.key(UInt16(kVK_Delete))
         expect(inbox.items.map(\.id) == ["a"] && opened.count == 2, true, "inbox: ⌫ takes the line shown, opening nothing")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
+
+        // The entrance, read at every frame on a panel put off every screen, where nothing of it can be seen.
+        NSApplication.shared.setActivationPolicy(.accessory)
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 100),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let place = NSRect(x: -30000, y: -30000, width: 400, height: 100)
+        Inbox.present(panel, at: place)
+        var alphas: [CGFloat] = [], ys: [CGFloat] = []
+        let end = Date().addingTimeInterval(Inbox.entrance + 0.15)
+        while Date() < end {
+            RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 120))
+            alphas.append(panel.alphaValue)
+            ys.append(panel.frame.minY)
+        }
+        panel.orderOut(nil)
+        let oneWay = zip(alphas, alphas.dropFirst()).allSatisfy { $0 <= $1 } && zip(ys, ys.dropFirst()).allSatisfy { $0 <= $1 }
+        print("        entrance: \(Set(alphas).count) alphas, \(Set(ys).count) heights over \(alphas.count) frames")
+        expect(oneWay && alphas.last == 1 && ys.last == place.minY && Set(ys).count > 3 && Set(alphas).count > 3, true,
+               "inbox: fades in while it rises into its place, in steps, each going one way only")
     }
 
     // MARK: - Reads

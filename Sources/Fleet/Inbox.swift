@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import QuartzCore
 import SwiftUI
 
 /// One line the watcher of awaited answers (`~/.claude/skills/checker`) left for Marius: a headless follow-up that
@@ -24,7 +25,12 @@ struct InboxItem: Decodable, Equatable {
 final class Inbox: NSObject, ObservableObject {
 
     static let chord = Settings.Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey))
-    static let size = NSSize(width: 1000, height: 56)
+    /// The bar, and the clear room around it that its shadow is drawn in.
+    static let bar = NSSize(width: 1000, height: 56)
+    static let margin: CGFloat = 40
+    /// It fades in while rising these last points into its place.
+    static let rise: CGFloat = 14
+    static let entrance: TimeInterval = 0.22
 
     @Published private(set) var items: [InboxItem] = []
     @Published private(set) var index = 0
@@ -41,19 +47,16 @@ final class Inbox: NSObject, ObservableObject {
         self.folder = folder
     }
 
-    /// The menu bar item, hidden while there is nothing. Not in `init`: `--render-inbox` and the selftest build an
+    /// The menu bar item, always there, 0 included. Not in `init`: `--render-inbox` and the selftest build an
     /// inbox too, and must put nothing in his menu bar.
     func start() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "tray.full.fill", accessibilityDescription: "Watcher")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
-            button.image?.isTemplate = true
-            button.imagePosition = .imageLeading
-            button.target = self
-            button.action = #selector(toggle)
-            button.toolTip = "What the watcher of awaited answers found — \(Self.chord.label)"
-        }
+        // macOS keeps a status item's last visibility in the app's defaults, and the first version of this one
+        // hid itself at 0: it would come back hidden.
+        item.isVisible = true
+        item.button?.target = self
+        item.button?.action = #selector(toggle)
+        item.button?.toolTip = "What the watcher of awaited answers found — \(Self.chord.label)"
         status = item
         refresh(force: true)
     }
@@ -70,8 +73,31 @@ final class Inbox: NSObject, ObservableObject {
             .compactMap { try? JSONDecoder().decode(InboxItem.self, from: Data(contentsOf: $0)) }
             .sorted { $0.at < $1.at }
         index = items.firstIndex { $0.id == was } ?? min(index, max(items.count - 1, 0))
-        status?.isVisible = !items.isEmpty
-        status?.button?.title = items.isEmpty ? "" : " \(items.count)"
+        status?.button?.image = Self.badge(items.count)
+    }
+
+    /// The count in a rounded square: drawn hollow at 0, filled with the figure cut out of it once something waits.
+    /// A template, so the menu bar paints it to match itself.
+    static func badge(_ count: Int) -> NSImage {
+        let text = "\(count)" as NSString
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)
+        let size = text.size(withAttributes: [.font: font])
+        let image = NSImage(size: NSSize(width: max(17, ceil(size.width) + 9), height: 16), flipped: false) { rect in
+            let box = NSBezierPath(roundedRect: rect.insetBy(dx: 0.75, dy: 0.75), xRadius: 4.5, yRadius: 4.5)
+            let at = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
+            NSColor.black.set()
+            if count == 0 {
+                box.lineWidth = 1.5
+                box.stroke()
+            } else {
+                box.fill()
+                NSGraphicsContext.current?.compositingOperation = .destinationOut
+            }
+            text.draw(at: at, withAttributes: [.font: font, .foregroundColor: NSColor.black])
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     /// Every key the panel takes; the others go on.
@@ -87,7 +113,7 @@ final class Inbox: NSObject, ObservableObject {
         return true
     }
 
-    private func step(_ by: Int) {
+    func step(_ by: Int) {
         guard !items.isEmpty else { return }
         index = (index + by + items.count) % items.count
     }
@@ -134,22 +160,38 @@ final class Inbox: NSObject, ObservableObject {
         self.panel = panel
         // Where Spotlight sits: centred, a third of the way down the screen the pointer is on.
         let screen = OverlayWindowController.activeScreen().visibleFrame
-        panel.setFrameOrigin(NSPoint(x: screen.midX - Self.size.width / 2,
-                                     y: screen.maxY - screen.height / 3 - Self.size.height / 2))
-        panel.orderFrontRegardless()
+        let size = panel.frame.size
+        Self.present(panel, at: NSRect(x: screen.midX - size.width / 2,
+                                       y: screen.maxY - screen.height / 3 - size.height / 2,
+                                       width: size.width, height: size.height))
         panel.makeKey()
+    }
+
+    /// Fades in while it rises the last few points into its place.
+    static func present(_ panel: NSWindow, at place: NSRect) {
+        panel.alphaValue = 0
+        panel.setFrame(place.offsetBy(dx: 0, dy: -rise), display: false)
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = entrance
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+            panel.animator().setFrame(place, display: true)
+        }
     }
 
     func hide() { panel?.orderOut(nil) }
 
-    /// Non-activating, as Spotlight: it takes the keys without taking the app in front away from him.
+    /// Non-activating, as Spotlight: it takes the keys without taking the app in front away from him. No window
+    /// shadow: the bar draws its own, in the clear margin around it.
     private func makePanel() -> InboxPanel {
-        let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: Self.size),
+        let size = NSSize(width: Self.bar.width + 2 * Self.margin, height: Self.bar.height + 2 * Self.margin)
+        let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.animationBehavior = .none
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
@@ -160,12 +202,13 @@ final class Inbox: NSObject, ObservableObject {
 
     // MARK: - Render
 
-    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen.
+    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a dark backdrop. The glass
+    /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
     static func render(_ items: [InboxItem], index: Int = 0, to path: String) {
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
-        let view = NSHostingView(rootView: InboxView(inbox: inbox).padding(30).background(Color(white: 0.35)))
+        let view = NSHostingView(rootView: InboxView(inbox: inbox).background(Color(white: 0.3)))
         view.appearance = NSAppearance(named: .darkAqua)
         view.frame = NSRect(origin: .zero, size: view.fittingSize)
         view.layoutSubtreeIfNeeded()
@@ -173,6 +216,28 @@ final class Inbox: NSObject, ObservableObject {
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         print("wrote \(path) \(view.bounds.size)")
+    }
+
+    /// The menu bar badges at 0, 3 and 12, black on white at 4×.
+    static func renderBadges(to path: String) {
+        let size = NSSize(width: 90, height: 24)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 360, pixelsHigh: 96, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        var x: CGFloat = 6
+        for n in [0, 3, 12] {
+            let image = badge(n)
+            image.draw(in: NSRect(x: x, y: 4, width: image.size.width, height: 16))
+            x += image.size.width + 10
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        print("wrote \(path)")
     }
 }
 
@@ -201,14 +266,15 @@ struct InboxView: View {
     private static let needs = Color(red: 1.00, green: 0.62, blue: 0.15)
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             if let item = inbox.current {
                 Circle()
                     .fill(item.kind == "done" ? Self.done : Self.needs)
                     .frame(width: 9, height: 9)
-                (Text(item.subject).foregroundColor(.white.opacity(0.5))
+                    .padding(.trailing, 2)
+                (Text(item.subject).foregroundColor(.secondary)
                  + Text("   ")
-                 + Text(item.line).foregroundColor(.white))
+                 + Text(item.line).foregroundColor(.primary))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help("\(item.subject) — \(item.line)")
@@ -216,25 +282,59 @@ struct InboxView: View {
                 if inbox.items.count > 1 {
                     Text("\(inbox.index + 1)/\(inbox.items.count)")
                         .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 2)
+                    KeyBubble(glyph: "←", help: "Previous") { inbox.step(-1) }
+                    KeyBubble(glyph: "→", help: "Next") { inbox.step(1) }
                 }
-                Text("↩ open  ⌫ clear")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.3))
+                KeyBubble(glyph: "↩", help: "Open its session") { inbox.openCurrent() }
+                KeyBubble(glyph: "⌫", help: "Clear it") { inbox.clearCurrent() }
             } else {
                 Text("Nothing from the watcher")
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.secondary)
                 Spacer()
             }
         }
         .font(.system(size: 15))
-        .padding(.horizontal, 20)
-        .frame(width: Inbox.size.width, height: Inbox.size.height)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color(red: 0.07, green: 0.07, blue: 0.09)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.12)))
-        .contentShape(Rectangle())
+        .padding(.leading, 22)
+        .padding(.trailing, 13)
+        .frame(width: Inbox.bar.width, height: Inbox.bar.height)
+        .modifier(Glass())
+        .contentShape(Capsule())
         .onTapGesture { inbox.openCurrent() }
+        .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
+        .padding(Inbox.margin)
+    }
+}
+
+/// A key the bar answers to, in a round bubble at its right end, as Spotlight puts its actions; a click on it
+/// does what the key does.
+private struct KeyBubble: View {
+    let glyph: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(glyph)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.primary.opacity(0.1)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+/// Spotlight's glass where the system has it (macOS 26), its frosted material before.
+private struct Glass: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content.background(.ultraThinMaterial, in: Capsule())
+        }
     }
 }

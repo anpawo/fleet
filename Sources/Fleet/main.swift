@@ -557,12 +557,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
             InboxItem(id: subject, at: 0, kind: kind, subject: subject, line: line, dir: "/", options: [], prompt: nil)
         }
         let items = [
-            item("needs", "WhatsApp Maman: photo of her ID", "Photo saved; the ANTS request needs your FranceConnect login"),
-            item("done", "Gmail: CROUS deposit refund", "Refund of 412 € confirmed by CROUS, todo ticked, the reply filed in the ARPEJ folder with its date"),
+            item("needs", "photo of her ID", "Mum sent her ID; the licence request now needs your FranceConnect login."),
+            item("done", "CROUS deposit refund", "CROUS confirmed the 412 € refund, so the todo is ticked and its reply is filed with the ARPEJ papers."),
         ]
         Inbox.render(items, to: path)
         Inbox.render(items, index: 1, to: path.replacingOccurrences(of: ".png", with: "-next.png"))
+        Inbox.render([items[0]], to: path.replacingOccurrences(of: ".png", with: "-one.png"))
         Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
+        Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
         exit(0)
     }
 }
