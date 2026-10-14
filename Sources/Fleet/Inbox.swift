@@ -30,7 +30,7 @@ final class Inbox: NSObject, ObservableObject {
     static let barHeight: CGFloat = 56
     static let bubble: CGFloat = 38
     static let gap: CGFloat = 12
-    static let window = NSSize(width: 1380, height: 210)
+    static let window = NSSize(width: 1380, height: 260)
     static let margin: CGFloat = 30
     /// It fades in while rising these last points into its place.
     static let rise: CGFloat = 14
@@ -109,6 +109,8 @@ final class Inbox: NSObject, ObservableObject {
 
     /// The line ⌫ was pressed on once: a second ⌫ removes it for good, any other key keeps it.
     @Published private(set) var confirming: String?
+    /// The key just pressed on the keyboard, for a moment: its button gives under it, as under a click.
+    @Published private(set) var pressed: Int?
 
     /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, ←→ move and keep every
     /// line, ↑ sets the shown one aside as done for now (`done/`, still on disk), ⌫ twice removes it.
@@ -125,6 +127,11 @@ final class Inbox: NSObject, ObservableObject {
             guard let item = current else { break }
             if armed == item.id { take(item, keep: false) } else { confirming = item.id }
         default: return false
+        }
+        let code = Int(code)
+        pressed = code
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            if self?.pressed == code { self?.pressed = nil }
         }
         return true
     }
@@ -299,9 +306,11 @@ struct InboxView: View {
 
     var body: some View {
         // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
+            subject
             bar.frame(maxWidth: .infinity)
             controls.frame(maxWidth: .infinity)
+                .padding(.top, 2)
         }
         .fixedSize()
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
@@ -309,14 +318,30 @@ struct InboxView: View {
         .frame(width: Inbox.window.width, height: Inbox.window.height, alignment: .top)
     }
 
-    /// The line itself, whole: what it is about, then where it stands. Every line of the list is laid under it,
-    /// unseen, with the question ⌫ asks: the bar keeps the widest, so neither the arrows nor ⌫ move anything.
+    /// What the line is about, in its own block above it. Every subject of the list is laid under it unseen: the
+    /// block keeps the widest, so the arrows change its words and not its size.
+    private var subject: some View {
+        ZStack {
+            ForEach(inbox.items, id: \.id) { Text($0.subject).hidden() }
+            Text(inbox.current?.subject ?? "Watcher")
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .lineLimit(1)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 22)
+        .frame(height: 34)
+        .glass(in: Capsule())
+    }
+
+    /// Where it stands, whole and centred, the dot that says done or his on its left. Every line of the list is
+    /// laid under it unseen, with the question ⌫ asks: the bar keeps the widest, so nothing moves.
     private var bar: some View {
-        ZStack(alignment: .leading) {
-            ForEach(inbox.items, id: \.id) { line($0, asking: false).hidden() }
+        ZStack {
+            ForEach(inbox.items, id: \.id) { Text($0.line).hidden() }
             if let item = inbox.current {
-                line(item, asking: true).hidden()
-                line(item, asking: inbox.confirming == item.id)
+                Text(Self.asking).hidden()
+                Text(inbox.confirming == item.id ? Self.asking : item.line)
+                    .foregroundStyle(inbox.confirming == item.id ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
             } else {
                 Text("Nothing from the watcher")
                     .foregroundStyle(.secondary)
@@ -324,26 +349,24 @@ struct InboxView: View {
         }
         .font(.system(size: 15))
         .lineLimit(1)
-        .padding(.horizontal, 24)
-        // Never narrower than the row under it needs, the count centred between the date and the keys.
-        .frame(minWidth: 720, minHeight: Inbox.barHeight, alignment: .leading)
+        .multilineTextAlignment(.center)
+        // As much room on the right as the dot takes on the left: the words stay in the middle.
+        .padding(.horizontal, 44)
+        .frame(minWidth: 620, minHeight: Inbox.barHeight)
+        .overlay(alignment: .leading) {
+            if let item = inbox.current {
+                Circle()
+                    .fill(item.kind == "done" ? Self.done : Self.needs)
+                    .frame(width: 9, height: 9)
+                    .padding(.leading, 22)
+            }
+        }
         .glass(in: Capsule())
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
 
-    private func line(_ item: InboxItem, asking: Bool) -> some View {
-        HStack(spacing: 14) {
-            Circle()
-                .fill(item.kind == "done" ? Self.done : Self.needs)
-                .frame(width: 8, height: 8)
-            Text(item.subject)
-                .fontWeight(.semibold)
-            Divider().frame(height: 22)
-            Text(asking ? "Remove it for good? ⌫ again, any other key keeps it." : item.line)
-                .foregroundStyle(asking ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
-        }
-    }
+    private static let asking = "Remove it for good? ⌫ again, any other key keeps it."
 
     /// Under the line: when it came on the left, which one of how many in the middle between the arrows that move
     /// through them, what can be done with it on the right.
@@ -373,39 +396,65 @@ struct InboxView: View {
 
     private func key(_ symbol: String, _ label: String, _ code: Int, tint: Color? = nil) -> some View {
         let off = inbox.current == nil || ((code == kVK_LeftArrow || code == kVK_RightArrow) && inbox.items.count < 2)
-        return KeyBubble(symbol: symbol, label: label, off: off, tint: tint) { _ = inbox.key(UInt16(code)) }
+        return KeyBubble(symbol: symbol, label: label, off: off, tint: tint, pressed: inbox.pressed == code) {
+            _ = inbox.key(UInt16(code))
+        }
     }
 }
 
-/// One of the keys, as a round glass button, as Spotlight puts its own, and its name under it in the desktop's
-/// label style (white, with a shadow): it stands on the wallpaper, whatever its colour.
+/// One of the keys, as a round glass button, as Spotlight puts its own, with its name under it on a glass chip of
+/// its own: on the wallpaper bare, white or black, it was lost on one colour or the other.
 private struct KeyBubble: View {
     let symbol: String
     let label: String
     var off = false
     var tint: Color?
+    var pressed = false
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             Button(action: action) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(tint ?? .primary.opacity(0.8))
                     .frame(width: Inbox.bubble, height: Inbox.bubble)
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
+            .buttonStyle(Bouncy(tint: tint, pressed: pressed, hovering: hovering && !off))
+            .onHover { hovering = $0 }
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
+                .foregroundStyle(.primary.opacity(0.85))
                 .fixedSize()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .glass(in: Capsule())
         }
         .frame(width: Inbox.bubble)
         .opacity(off ? 0.45 : 1)
         .disabled(off)
+    }
+}
+
+/// Round and springy: a light rim on its upper edge and a shadow under it give the glass its curve, it swells a
+/// little under the pointer and gives under a click or its key, overshooting on the way back.
+private struct Bouncy: ButtonStyle {
+    let tint: Color?
+    let pressed: Bool
+    let hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let down = configuration.isPressed || pressed
+        configuration.label
+            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
+            .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0)],
+                                                          startPoint: .top, endPoint: .center), lineWidth: 1.2))
+            .shadow(color: .black.opacity(0.18), radius: 5, y: 3)
+            .scaleEffect(down ? 0.84 : hovering ? 1.1 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.42), value: down)
+            .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovering)
     }
 }
 
