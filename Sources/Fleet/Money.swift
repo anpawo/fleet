@@ -488,6 +488,25 @@ private struct MoneyMonth: View {
         (text as NSString).size(withAttributes: [.font: font]).width
     }
 
+    /// Where a name past the rim is drawn: just past the tip of its arrow, which points at the
+    /// middle of its two lines (asked 2026-10-14 — written beside the tip, the lines stood
+    /// either side of it). From the pie's centre, y down, with where the tip meets the lines
+    /// across them, 0 at their left edge: each line is drawn from that point.
+    ///
+    /// ponytail: `Month.callouts` parts the tips, not the lines. A wide name near three or
+    /// nine o'clock under a narrow one could come a few points closer than it; part the lines
+    /// themselves if a month ever draws that.
+    private func spot(_ callout: Money.Callout, in labels: [Placed], radius: Double) -> (x: Double, y: Double, across: Double) {
+        let width = labels.first { $0.kind == callout.kind }?.width ?? 0
+        let tip = callout.point(radius: radius, past: callout.length)
+        let way = (x: sin(2 * .pi * callout.turn), y: -cos(2 * .pi * callout.turn))
+        // From the middle of the lines out to their edge, back along the arrow; their ink is
+        // a point short of their line boxes, top and bottom.
+        let edge = min(width / 2 / abs(way.x), (Self.pitch - 1) / abs(way.y))
+        let out = edge + 3
+        return (tip.x + out * way.x, tip.y + out * way.y, 0.5 - way.x * edge / max(width, 1))
+    }
+
     /// Where the labels go for a pie of that radius, and whether the ones past the rim all
     /// have their room beside it.
     private func plan(radius: Double) -> (labels: [Placed], callouts: [Money.Callout], fits: Bool) {
@@ -536,8 +555,8 @@ private struct MoneyMonth: View {
                                       reach: Self.reach, line: 2 * Self.pitch + 3, longest: Self.longest)
         let fits = callouts.allSatisfy { callout in
             let label = labels.first { $0.kind == callout.kind }?.width ?? 0
-            // 3pt over is taken off the gap between the arrow and the name.
-            return abs(callout.point(radius: radius, past: callout.length).x) + 4 + label <= width / 2 + 3
+            // 3pt over: the edge pushes the name that much towards the pie.
+            return abs(spot(callout, in: labels, radius: radius).x) + label / 2 <= width / 2 + 3
         }
         return (labels, callouts, fits)
     }
@@ -546,10 +565,10 @@ private struct MoneyMonth: View {
         let radius = Self.radii.first { plan(radius: $0).fits } ?? Self.radii[Self.radii.count - 1]
         let (labels, callouts, _) = plan(radius: radius)
         // The room over and under the pie is what the names past its rim take, and no more.
-        let tips = callouts.map { $0.point(radius: radius, past: $0.length).y }
+        let names = callouts.map { spot($0, in: labels, radius: radius).y }
         let bare = radius + 3
-        let over = max(bare, Self.heading + Self.pitch + 2.75 - (tips.min() ?? .infinity))
-        let under = max(bare, Self.pitch + 2.75 + (tips.max() ?? -.infinity))
+        let over = max(bare, Self.heading + Self.pitch + 2.75 - (names.min() ?? .infinity))
+        let under = max(bare, Self.pitch + 2.75 + (names.max() ?? -.infinity))
         VStack(alignment: .leading, spacing: 6) {
             // The arrow in the slice's colour, the name in the panel's own grey: the colour says
             // which, the text stays text.
@@ -611,13 +630,15 @@ private struct MoneyMonth: View {
                         // ponytail: a name the edge would still cut round the smallest pie is
                         // held inside it, over its own arrow. Give `radii` a smaller one if a
                         // month ever draws that.
-                        let x = callout.right ? min(tip.x + 4, size.width - label.width) : max(tip.x - 4, label.width)
-                        let anchor: UnitPoint = callout.right ? .leading : .trailing
+                        let spot = spot(callout, in: labels, radius: radius)
+                        let left = min(max(centre.x + spot.x - label.width / 2, 0), size.width - label.width)
+                        let x = left + spot.across * label.width, y = centre.y + spot.y
+                        let anchor = UnitPoint(x: spot.across, y: 0.5)
                         context.draw(name.foregroundStyle(.white.opacity(lit ? 0.95 : 0.5)),
-                                     at: CGPoint(x: x, y: tip.y - Self.pitch / 2), anchor: anchor)
+                                     at: CGPoint(x: x, y: y - Self.pitch / 2), anchor: anchor)
                         context.draw(percent.foregroundStyle(.white.opacity(0.85))
                                          + price.foregroundStyle(.white.opacity(0.75)),
-                                     at: CGPoint(x: x, y: tip.y + Self.pitch / 2), anchor: anchor)
+                                     at: CGPoint(x: x, y: y + Self.pitch / 2), anchor: anchor)
                     }
                 }
             }
