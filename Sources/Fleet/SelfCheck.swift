@@ -40,8 +40,8 @@ enum SelfCheck {
     // MARK: - Inbox
 
     /// The watcher's lines, from files as the checker writes them: in time order, ←→ wrap and take nothing away,
-    /// ↵ and ↑ set the shown one aside in `done/` (↵ only once its terminal has started), ⌫ removes it only when
-    /// pressed twice in a row.
+    /// ↵ opens and sets the line aside in `done/` once its terminal has started; ↑ and ↓ only ask, ↵ says yes (↑ to
+    /// `done/`, ↓ for good), the same key again says yes only once the question has been up a moment.
     private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -55,28 +55,34 @@ enum SelfCheck {
         var opened: [String] = [], starts = false
         inbox.launch = { opened.append($0.id); return starts }
         let kept = { (id: String) in FileManager.default.fileExists(atPath: folder.appending(path: "done/\(id).json").path) }
+        func press(_ code: Int) { _ = inbox.key(UInt16(code)) }
         inbox.refresh()
         expect(inbox.items.map(\.id) == ["a", "b", "c", "d"], true, "inbox: read in time order, a file not yet renamed in left out")
-        _ = inbox.key(UInt16(kVK_LeftArrow))
+        press(kVK_LeftArrow)
         expect(inbox.current?.id == "d" && inbox.items.count == 4, true, "inbox: ← from the first wraps to the last, nothing taken")
-        _ = inbox.key(UInt16(kVK_Return))
+        press(kVK_Return)
         expect(opened == ["d"] && inbox.items.count == 4, true, "inbox: an open whose terminal did not start keeps its line")
         starts = true
-        _ = inbox.key(UInt16(kVK_Return))
+        press(kVK_Return)
         expect(inbox.items.map(\.id) == ["a", "b", "c"] && kept("d"), true, "inbox: an open that started sets its line aside as done")
-        _ = inbox.key(UInt16(kVK_UpArrow))
-        expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↑ sets the line shown aside as done, opening nothing")
-        _ = inbox.key(UInt16(kVK_Delete))
-        expect(inbox.items.count == 2 && inbox.confirming == "b", true, "inbox: ⌫ once only asks")
-        _ = inbox.key(UInt16(kVK_Delete))
-        expect(inbox.items.count == 2 && inbox.confirming == "b", true, "inbox: a second ⌫ at once (a double click, a held key) still asks")
+        press(kVK_UpArrow)
+        expect(inbox.items.count == 3 && inbox.asking == Inbox.Ask(id: "c", trash: false), true, "inbox: ↑ only asks")
+        press(kVK_Return)
+        expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↵ after ↑ sets it aside as done, opening nothing")
+        press(kVK_DownArrow)
+        press(kVK_DownArrow)
+        expect(inbox.items.count == 2 && inbox.asking == Inbox.Ask(id: "b", trash: true), true, "inbox: ↓ asks, and ↓ again at once (a double click, a held key) still asks")
+        press(kVK_Return)
+        expect(inbox.items.map(\.id) == ["a"] && !kept("b") && opened.count == 2, true, "inbox: ↵ after ↓ removes it for good")
+        starts = false
+        press(kVK_DownArrow)
+        press(kVK_Escape)
+        press(kVK_Return)
+        expect(inbox.items.map(\.id) == ["a"] && opened.count == 3, true, "inbox: Esc after ↓ keeps it, and ↵ then opens")
+        press(kVK_UpArrow)
         inbox.askedAt = Date().addingTimeInterval(-Inbox.settle)
-        _ = inbox.key(UInt16(kVK_Delete))
-        expect(inbox.items.map(\.id) == ["a"] && !kept("b"), true, "inbox: ⌫ again once the question is up removes it for good")
-        _ = inbox.key(UInt16(kVK_Delete))
-        _ = inbox.key(UInt16(kVK_Escape))
-        _ = inbox.key(UInt16(kVK_Delete))
-        expect(inbox.items.map(\.id) == ["a"] && inbox.confirming == "a", true, "inbox: any other key between the two ⌫ keeps it, Esc included")
+        press(kVK_UpArrow)
+        expect(inbox.items.isEmpty && kept("a"), true, "inbox: the same key again, once the question is up, says yes")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
         var noon = DateComponents(calendar: .current, year: 2026, month: 10, day: 14, hour: 12)
         let now = noon.date!

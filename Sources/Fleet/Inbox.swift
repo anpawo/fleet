@@ -49,6 +49,7 @@ final class Inbox: NSObject, ObservableObject {
     private var seen: Date?
     private var status: NSStatusItem?
     private var panel: InboxPanel?
+    private var warming = false
 
     init(folder: URL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".local/state/checker/inbox")) {
         self.folder = folder
@@ -66,6 +67,30 @@ final class Inbox: NSObject, ObservableObject {
         item.button?.toolTip = "What the watcher of awaited answers found — \(Self.chord.label)"
         status = item
         refresh(force: true)
+        prewarm()
+    }
+
+    /// Glass fades in from black the first time it is drawn, before it has read what is behind it. Drawn once here,
+    /// at 1 % opacity where it will stand and through to clicks, it is ready by the first ⌘⌥K.
+    private func prewarm() {
+        let panel = makePanel()
+        self.panel = panel
+        warming = true
+        panel.alphaValue = 0.01
+        panel.ignoresMouseEvents = true
+        panel.setFrame(place(panel), display: true)
+        panel.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, warming else { return }
+            endWarming()
+            panel.orderOut(nil)
+        }
+    }
+
+    private func endWarming() {
+        warming = false
+        panel?.alphaValue = 1
+        panel?.ignoresMouseEvents = false
     }
 
     /// Cheap enough for every tick: the folder is read again only when its date moved, which a file added or
@@ -107,30 +132,33 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// The line ⌫ was pressed on once: a second ⌫ removes it for good, any other key keeps it. The second counts
-    /// only once the question has been up `settle`: a double click or a key held down is not an answer.
-    @Published private(set) var confirming: String?
+    /// What ↑ or ↓ asked about the line shown: ↑ to set it aside as done, ↓ to remove it for good. ↵ says yes, any
+    /// other key keeps it as it is. The same key or button again says yes too, once the question has been up
+    /// `settle`: a double click or a key held down is not an answer.
+    struct Ask: Equatable {
+        let id: String
+        let trash: Bool
+    }
+    @Published private(set) var asking: Ask?
     var askedAt = Date.distantPast
     static let settle: TimeInterval = 0.4
     /// The key just pressed on the keyboard, for a moment: its button gives under it, as under a click.
     @Published private(set) var pressed: Int?
 
-    /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, ←→ move and keep every
-    /// line, ↑ sets the shown one aside as done for now (`done/`, still on disk), ⌫ twice removes it.
+    /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, or says yes to a question;
+    /// ←→ move and keep every line; ↑ asks to set the shown one aside as done (`done/`, still on disk), ↓ asks to
+    /// remove it for good.
     func key(_ code: UInt16) -> Bool {
-        let armed = confirming
-        confirming = nil
+        let was = asking
+        asking = nil
         switch Int(code) {
-        case kVK_Escape: if armed == nil { hide() }
+        case kVK_Escape: if was == nil { hide() }
         case kVK_LeftArrow: step(-1)
         case kVK_RightArrow: step(1)
-        case kVK_Return, kVK_ANSI_KeypadEnter: openCurrent()
-        case kVK_UpArrow: if let item = current { take(item, keep: true) }
-        case kVK_Delete, kVK_ForwardDelete:
-            guard let item = current else { break }
-            if armed == item.id, Date().timeIntervalSince(askedAt) >= Self.settle { take(item, keep: false); break }
-            if armed != item.id { askedAt = Date() }
-            confirming = item.id
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            if let was, let item = current, was.id == item.id { take(item, keep: !was.trash) } else { openCurrent() }
+        case kVK_UpArrow: ask(trash: false, was)
+        case kVK_DownArrow: ask(trash: true, was)
         default: return false
         }
         let code = Int(code)
@@ -139,6 +167,14 @@ final class Inbox: NSObject, ObservableObject {
             if self?.pressed == code { self?.pressed = nil }
         }
         return true
+    }
+
+    private func ask(trash: Bool, _ was: Ask?) {
+        guard let item = current else { return }
+        let question = Ask(id: item.id, trash: trash)
+        if was == question, Date().timeIntervalSince(askedAt) >= Self.settle { return take(item, keep: !trash) }
+        if was != question { askedAt = Date() }
+        asking = question
     }
 
     private func step(_ by: Int) {
@@ -186,17 +222,21 @@ final class Inbox: NSObject, ObservableObject {
     // MARK: - Panel
 
     @objc func toggle() {
-        if panel?.isVisible == true { return hide() }
+        if panel?.isVisible == true, !warming { return hide() }
+        if warming { endWarming() }
         refresh(force: true)
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        // Where Spotlight sits: centred, a third of the way down the screen the pointer is on.
+        Self.present(panel, at: place(panel))
+        panel.makeKey()
+    }
+
+    /// Where Spotlight sits: centred, a third of the way down the screen the pointer is on.
+    private func place(_ panel: NSWindow) -> NSRect {
         let screen = OverlayWindowController.activeScreen().visibleFrame
         let size = panel.frame.size
-        Self.present(panel, at: NSRect(x: screen.midX - size.width / 2,
-                                       y: screen.maxY - screen.height / 3 - size.height / 2,
-                                       width: size.width, height: size.height))
-        panel.makeKey()
+        return NSRect(x: screen.midX - size.width / 2, y: screen.maxY - screen.height / 3 - size.height / 2,
+                      width: size.width, height: size.height)
     }
 
     /// Fades in while it rises the last few points into its place.
@@ -236,12 +276,12 @@ final class Inbox: NSObject, ObservableObject {
 
     /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is. The glass
     /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
-    static func render(_ items: [InboxItem], index: Int = 0, confirming: Bool = false, dark: Bool = false, to path: String) {
+    static func render(_ items: [InboxItem], index: Int = 0, asking: Bool? = nil, dark: Bool = false, to path: String) {
         flat = true
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
-        inbox.confirming = confirming ? inbox.current?.id : nil
+        inbox.asking = asking.flatMap { trash in inbox.current.map { Ask(id: $0.id, trash: trash) } }
         let backdrop = LinearGradient(colors: dark ? [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)]
                                                    : [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
                                       startPoint: .top, endPoint: .bottom)
@@ -347,9 +387,14 @@ struct InboxView: View {
         ZStack {
             ForEach(inbox.items, id: \.id) { Text($0.line).hidden() }
             if let item = inbox.current {
-                Text(Self.asking).hidden()
-                Text(inbox.confirming == item.id ? Self.asking : item.line)
-                    .foregroundStyle(inbox.confirming == item.id ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+                Text(Self.question(trash: false)).hidden()
+                Text(Self.question(trash: true)).hidden()
+                if let ask = inbox.asking, ask.id == item.id {
+                    Text(Self.question(trash: ask.trash))
+                        .foregroundStyle(ask.trash ? Self.trash : Self.yes)
+                } else {
+                    Text(item.line)
+                }
             } else {
                 Text("Nothing from the watcher")
                     .foregroundStyle(.secondary)
@@ -369,12 +414,18 @@ struct InboxView: View {
                     .padding(.leading, 22)
             }
         }
-        .glass(in: Capsule(), tint: inbox.confirming == nil ? nil : .red.opacity(0.18))
+        .glass(in: Capsule(), tint: inbox.asking.map { ($0.trash ? Self.trash : Self.done).opacity(0.18) })
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
 
-    private static let asking = "Remove it for good? ⌫ again, any other key keeps it."
+    private static let trash = Color(red: 0.92, green: 0.20, blue: 0.20)
+    /// The dot's green, darker: as text on light glass the dot's own is too pale to read.
+    private static let yes = Color(red: 0.10, green: 0.56, blue: 0.24)
+
+    private static func question(trash: Bool) -> String {
+        (trash ? "Remove it for good?" : "Set it aside as done?") + " ↵ to confirm, any other key keeps it."
+    }
 
     /// Under the line: when it came on the left, which one of how many in the middle between the arrows that move
     /// through them, what can be done with it on the right.
@@ -385,10 +436,14 @@ struct InboxView: View {
             }
             Spacer(minLength: 24)
             HStack(alignment: .top, spacing: Inbox.gap) {
-                key("return", "open", kVK_Return)
-                key("checkmark", "done", kVK_UpArrow)
-                key("trash", inbox.confirming == nil ? "trash" : "sure?", kVK_Delete,
-                    tint: inbox.confirming == nil ? nil : .red)
+                // While ↑ or ↓ asks, ↵ is the yes: its button says so in the question's colour.
+                let ask = inbox.asking
+                let colour = ask.map { $0.trash ? Self.trash : Self.done }
+                key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour)
+                key("checkmark", ask?.trash == false ? "sure?" : "done", kVK_UpArrow,
+                    tint: ask?.trash == false ? Self.done : nil)
+                key("trash", ask?.trash == true ? "sure?" : "trash", kVK_DownArrow,
+                    tint: ask?.trash == true ? Self.trash : nil)
             }
         }
         .overlay(alignment: .top) {
@@ -427,8 +482,6 @@ private struct KeyBubble: View {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(tint ?? .primary.opacity(0.8))
-                    .frame(width: Inbox.bubble, height: Inbox.bubble)
-                    .contentShape(Circle())
             }
             .buttonStyle(Bouncy(tint: tint, pressed: pressed, hovering: hovering && !off))
             .onHover { hovering = $0 }
@@ -455,13 +508,18 @@ private struct Bouncy: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let down = configuration.isPressed || pressed
+        // The glass comes from the circle's frame, so the circle itself grows and shrinks, around its centre,
+        // inside a frame that does not move: a scale effect grew the icon and left the glass where it was.
+        let scale: CGFloat = down ? 0.84 : hovering ? 1.1 : 1
         configuration.label
+            .scaleEffect(scale)
+            .frame(width: Inbox.bubble * scale, height: Inbox.bubble * scale)
             .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
             .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0)],
                                                           startPoint: .top, endPoint: .center), lineWidth: 1.2))
-            .scaleEffect(down ? 0.84 : hovering ? 1.1 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.42), value: down)
-            .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovering)
+            .frame(width: Inbox.bubble, height: Inbox.bubble)
+            .contentShape(Circle())
+            .animation(.spring(response: 0.3, dampingFraction: down ? 0.42 : 0.55), value: scale)
     }
 }
 
