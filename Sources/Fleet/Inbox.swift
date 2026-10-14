@@ -18,7 +18,7 @@ struct InboxItem: Decodable, Equatable {
     let prompt: String?
 }
 
-/// What the watcher found, counted in the menu bar and shown one line at a time on ⌘⌥K, Spotlight-like. Arrows
+/// Echo: what the watcher found, counted in the menu bar and shown one line at a time on ⌘⌥K, Spotlight-like. Arrows
 /// only move, so what was skipped stays; a line goes once it is opened (its session resumed in a terminal) or
 /// cleared with ⌫.
 @MainActor
@@ -60,7 +60,7 @@ final class Inbox: NSObject, ObservableObject {
         item.isVisible = true
         item.button?.target = self
         item.button?.action = #selector(toggle)
-        item.button?.toolTip = "What the watcher of awaited answers found — \(Self.chord.label)"
+        item.button?.toolTip = "Echo: what the awaited answers brought back — \(Self.chord.label)"
         status = item
         refresh(force: true)
     }
@@ -309,8 +309,9 @@ final class InboxPanel: NSPanel {
 struct InboxView: View {
     @ObservedObject var inbox: Inbox
 
+    /// The icon of the key that comes next: ↵ when the line needs him, ✓ when it only tells him something is done.
+    private static let open = Color(red: 0.40, green: 0.70, blue: 1.00)
     private static let done = Color(red: 0.24, green: 0.82, blue: 0.35)
-    private static let needs = Color(red: 1.00, green: 0.62, blue: 0.15)
     /// Today's line by its hour alone, written the French way (10h40); an older one with its day (13/10 10h40).
     static func when(_ ms: Double, now: Date = Date()) -> String {
         let date = Date(timeIntervalSince1970: ms / 1000)
@@ -338,7 +339,7 @@ struct InboxView: View {
     private var subject: some View {
         ZStack {
             ForEach(inbox.items, id: \.id) { Text($0.subject).hidden() }
-            Text(inbox.current?.subject ?? "Watcher")
+            Text(inbox.current?.subject ?? "Echo")
         }
         .font(.system(size: 14, weight: .semibold))
         .lineLimit(1)
@@ -348,8 +349,8 @@ struct InboxView: View {
         .block(in: Capsule())
     }
 
-    /// Where it stands, whole and centred, the dot that says done or his on its left. Every line of the list is
-    /// laid under it unseen, with the question ⌫ asks: the bar keeps the widest, so nothing moves.
+    /// Where it stands, whole and centred. Every line of the list is laid under it unseen, with the questions ↑ and
+    /// ↓ ask: the bar keeps the widest, so nothing moves.
     private var bar: some View {
         ZStack {
             ForEach(inbox.items, id: \.id) { Text($0.line).hidden() }
@@ -362,24 +363,15 @@ struct InboxView: View {
                     Text(item.line)
                 }
             } else {
-                Text("Nothing from the watcher")
+                Text("Nothing has come back")
                     .foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 15))
         .lineLimit(1)
         .multilineTextAlignment(.center)
-        // As much room on the right as the dot takes on the left: the words stay in the middle.
-        .padding(.horizontal, 44)
+        .padding(.horizontal, 28)
         .frame(minWidth: 620, minHeight: Inbox.barHeight)
-        .overlay(alignment: .leading) {
-            if let item = inbox.current {
-                Circle()
-                    .fill(item.kind == "done" ? Self.done : Self.needs)
-                    .frame(width: 9, height: 9)
-                    .padding(.leading, 22)
-            }
-        }
         .block(in: Capsule(), fill: inbox.asking.map { Spotlight.fill.mix(with: $0.trash ? Self.trash : Self.yes, by: 0.4) })
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
@@ -397,17 +389,25 @@ struct InboxView: View {
     /// through them, what can be done with it on the right.
     private var controls: some View {
         HStack(alignment: .top) {
+            // Every date of the list laid under it unseen: the block keeps the widest, so it does not change size.
             if let item = inbox.current {
-                Text(Self.when(item.at)).chip()
+                ZStack {
+                    ForEach(inbox.items, id: \.id) { Text(Self.when($0.at)).hidden() }
+                    Text(Self.when(item.at))
+                }
+                .monospacedDigit()
+                .chip()
             }
             Spacer(minLength: 24)
             HStack(alignment: .top, spacing: Inbox.gap) {
                 // While ↑ or ↓ asks, ↵ is the yes: its button says so in the question's colour.
                 let ask = inbox.asking
                 let colour = ask.map { $0.trash ? Self.trash : Self.yes }
-                key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour)
+                let needs = ask == nil && inbox.current?.kind == "needs"
+                let done = ask == nil && inbox.current?.kind == "done"
+                key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour, icon: needs ? Self.open : nil)
                 key("checkmark", ask?.trash == false ? "sure?" : "done", kVK_UpArrow,
-                    tint: ask?.trash == false ? Self.yes : nil)
+                    tint: ask?.trash == false ? Self.yes : nil, icon: done ? Self.done : nil)
                 key("trash", ask?.trash == true ? "sure?" : "trash", kVK_DownArrow,
                     tint: ask?.trash == true ? Self.trash : nil)
             }
@@ -423,9 +423,9 @@ struct InboxView: View {
         }
     }
 
-    private func key(_ symbol: String, _ label: String, _ code: Int, tint: Color? = nil) -> some View {
+    private func key(_ symbol: String, _ label: String, _ code: Int, tint: Color? = nil, icon: Color? = nil) -> some View {
         let off = inbox.current == nil || ((code == kVK_LeftArrow || code == kVK_RightArrow) && inbox.items.count < 2)
-        return KeyBubble(symbol: symbol, label: label, off: off, tint: tint, pressed: inbox.pressed == code) {
+        return KeyBubble(symbol: symbol, label: label, off: off, tint: tint, icon: icon, pressed: inbox.pressed == code) {
             _ = inbox.key(UInt16(code))
         }
     }
@@ -433,12 +433,13 @@ struct InboxView: View {
 
 /// One of the keys, as a round button, as Spotlight puts its own, with its name under it on a chip of its own: on
 /// the wallpaper bare, white or black, it was lost on one colour or the other. Filled with its colour when it has
-/// one, the icon white on it.
+/// one, the icon white on it; or with only its icon coloured, when it is the key to press next.
 private struct KeyBubble: View {
     let symbol: String
     let label: String
     var off = false
     var tint: Color?
+    var icon: Color?
     var pressed = false
     let action: () -> Void
     @State private var hovering = false
@@ -448,7 +449,7 @@ private struct KeyBubble: View {
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(tint == nil ? Spotlight.ink : .white)
+                    .foregroundStyle(tint == nil ? icon ?? Spotlight.ink : .white)
             }
             .buttonStyle(Bouncy(tint: tint, pressed: pressed, hovering: hovering && !off))
             .onHover { hovering = $0 }
