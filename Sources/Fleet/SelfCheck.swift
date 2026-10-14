@@ -39,31 +39,41 @@ enum SelfCheck {
 
     // MARK: - Inbox
 
-    /// The watcher's lines, from files as the checker writes them: in time order, the arrows wrap and take nothing
-    /// away, ⌫ takes the one shown, an open takes it only once its terminal has started.
+    /// The watcher's lines, from files as the checker writes them: in time order, ←→ wrap and take nothing away,
+    /// ↵ and ↑ set the shown one aside in `done/` (↵ only once its terminal has started), ↓ removes it only when
+    /// pressed twice in a row.
     private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        for (id, at) in [("b", 2), ("a", 1), ("c", 3)] {
+        for (id, at) in [("b", 2), ("a", 1), ("d", 4), ("c", 3)] {
             try? Data(#"{"id":"\#(id)","at":\#(at),"kind":"done","subject":"s","line":"l","dir":"/","options":["--resume","x"]}"#.utf8)
                 .write(to: folder.appending(path: "\(id).json"))
         }
-        try? Data("{".utf8).write(to: folder.appending(path: ".d"))
+        try? Data("{".utf8).write(to: folder.appending(path: ".e"))
         let inbox = Inbox(folder: folder)
         var opened: [String] = [], starts = false
         inbox.launch = { opened.append($0.id); return starts }
+        let kept = { (id: String) in FileManager.default.fileExists(atPath: folder.appending(path: "done/\(id).json").path) }
         inbox.refresh()
-        expect(inbox.items.map(\.id) == ["a", "b", "c"], true, "inbox: read in time order, a file not yet renamed in left out")
+        expect(inbox.items.map(\.id) == ["a", "b", "c", "d"], true, "inbox: read in time order, a file not yet renamed in left out")
         _ = inbox.key(UInt16(kVK_LeftArrow))
-        expect(inbox.current?.id == "c" && inbox.items.count == 3, true, "inbox: ← from the first wraps to the last, nothing taken")
+        expect(inbox.current?.id == "d" && inbox.items.count == 4, true, "inbox: ← from the first wraps to the last, nothing taken")
         _ = inbox.key(UInt16(kVK_Return))
-        expect(opened == ["c"] && inbox.items.count == 3, true, "inbox: an open whose terminal did not start keeps its line")
+        expect(opened == ["d"] && inbox.items.count == 4, true, "inbox: an open whose terminal did not start keeps its line")
         starts = true
         _ = inbox.key(UInt16(kVK_Return))
-        expect(inbox.items.map(\.id) == ["a", "b"], true, "inbox: an open that started takes its line")
-        _ = inbox.key(UInt16(kVK_Delete))
-        expect(inbox.items.map(\.id) == ["a"] && opened.count == 2, true, "inbox: ⌫ takes the line shown, opening nothing")
+        expect(inbox.items.map(\.id) == ["a", "b", "c"] && kept("d"), true, "inbox: an open that started sets its line aside as done")
+        _ = inbox.key(UInt16(kVK_UpArrow))
+        expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↑ sets the line shown aside as done, opening nothing")
+        _ = inbox.key(UInt16(kVK_DownArrow))
+        expect(inbox.items.count == 2 && inbox.confirming == "b", true, "inbox: ↓ once only asks")
+        _ = inbox.key(UInt16(kVK_DownArrow))
+        expect(inbox.items.map(\.id) == ["a"] && !kept("b"), true, "inbox: ↓ twice removes it for good")
+        _ = inbox.key(UInt16(kVK_DownArrow))
+        _ = inbox.key(UInt16(kVK_Escape))
+        _ = inbox.key(UInt16(kVK_DownArrow))
+        expect(inbox.items.map(\.id) == ["a"] && inbox.confirming == "a", true, "inbox: any other key between the two ↓ keeps it, Esc included")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
 
         // The entrance, read at every frame on a panel put off every screen, where nothing of it can be seen.

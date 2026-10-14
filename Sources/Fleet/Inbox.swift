@@ -25,12 +25,19 @@ struct InboxItem: Decodable, Equatable {
 final class Inbox: NSObject, ObservableObject {
 
     static let chord = Settings.Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey))
-    /// The bar, and the clear room around it that its shadow is drawn in.
-    static let bar = NSSize(width: 1000, height: 56)
+    /// The text block, the round buttons beside it with their names under them, and the clear room around
+    /// them all that their shadow is drawn in.
+    static let bar = NSSize(width: 940, height: 56)
+    static let bubble: CGFloat = 56
+    static let gap: CGFloat = 12
+    static let row = NSSize(width: bar.width + 5 * (bubble + gap), height: bubble + 21)
     static let margin: CGFloat = 40
     /// It fades in while rising these last points into its place.
     static let rise: CGFloat = 14
     static let entrance: TimeInterval = 0.22
+    /// `--render-inbox` only: a plain light fill where the glass goes. Glass is drawn by the window server from
+    /// what is behind a window on screen, and an offscreen picture has neither, so it would show nothing at all.
+    static var flat = false
 
     @Published private(set) var items: [InboxItem] = []
     @Published private(set) var index = 0
@@ -100,39 +107,52 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// Every key the panel takes; the others go on.
+    /// The line ↓ was pressed on once: a second ↓ removes it for good, any other key keeps it.
+    @Published private(set) var confirming: String?
+
+    /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, ←→ move and keep every
+    /// line, ↑ sets the shown one aside as done for now (`done/`, still on disk), ↓ twice removes it.
     func key(_ code: UInt16) -> Bool {
+        let armed = confirming
+        confirming = nil
         switch Int(code) {
-        case kVK_Escape: hide()
-        case kVK_LeftArrow, kVK_UpArrow: step(-1)
-        case kVK_RightArrow, kVK_DownArrow: step(1)
+        case kVK_Escape: if armed == nil { hide() }
+        case kVK_LeftArrow: step(-1)
+        case kVK_RightArrow: step(1)
         case kVK_Return, kVK_ANSI_KeypadEnter: openCurrent()
-        case kVK_Delete, kVK_ForwardDelete: clearCurrent()
+        case kVK_UpArrow: if let item = current { take(item, keep: true) }
+        case kVK_DownArrow:
+            guard let item = current else { break }
+            if armed == item.id { take(item, keep: false) } else { confirming = item.id }
         default: return false
         }
         return true
     }
 
-    func step(_ by: Int) {
+    private func step(_ by: Int) {
         guard !items.isEmpty else { return }
         index = (index + by + items.count) % items.count
     }
 
-    func openCurrent() {
+    /// Opened is handled: the line is set aside as done once its terminal has started.
+    private func openCurrent() {
         guard let item = current else { return }
         hide()
-        if launch(item) { remove(item) }
+        if launch(item) { take(item, keep: true) }
     }
 
-    func clearCurrent() {
-        guard let item = current else { return }
-        remove(item)
-        if items.isEmpty { hide() }
-    }
-
-    private func remove(_ item: InboxItem) {
-        try? FileManager.default.removeItem(at: folder.appending(path: "\(item.id).json"))
+    private func take(_ item: InboxItem, keep: Bool) {
+        let file = folder.appending(path: "\(item.id).json")
+        if keep {
+            let done = folder.appending(path: "done")
+            try? FileManager.default.createDirectory(at: done, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: done.appending(path: "\(item.id).json"))
+            try? FileManager.default.moveItem(at: file, to: done.appending(path: "\(item.id).json"))
+        } else {
+            try? FileManager.default.removeItem(at: file)
+        }
         refresh(force: true)
+        if items.isEmpty { hide() }
     }
 
     /// The session it ended in, back in a Ghostty window of his login shell, as `spawn` opens one.
@@ -185,7 +205,7 @@ final class Inbox: NSObject, ObservableObject {
     /// Non-activating, as Spotlight: it takes the keys without taking the app in front away from him. No window
     /// shadow: the bar draws its own, in the clear margin around it.
     private func makePanel() -> InboxPanel {
-        let size = NSSize(width: Self.bar.width + 2 * Self.margin, height: Self.bar.height + 2 * Self.margin)
+        let size = NSSize(width: Self.row.width + 2 * Self.margin, height: Self.row.height + 2 * Self.margin)
         let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
@@ -202,14 +222,18 @@ final class Inbox: NSObject, ObservableObject {
 
     // MARK: - Render
 
-    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a dark backdrop. The glass
+    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is. The glass
     /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
-    static func render(_ items: [InboxItem], index: Int = 0, to path: String) {
+    static func render(_ items: [InboxItem], index: Int = 0, confirming: Bool = false, to path: String) {
+        flat = true
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
-        let view = NSHostingView(rootView: InboxView(inbox: inbox).background(Color(white: 0.3)))
-        view.appearance = NSAppearance(named: .darkAqua)
+        inbox.confirming = confirming ? inbox.current?.id : nil
+        let backdrop = LinearGradient(colors: [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
+                                      startPoint: .top, endPoint: .bottom)
+        let view = NSHostingView(rootView: InboxView(inbox: inbox).background(backdrop))
+        view.appearance = NSAppearance(named: .aqua)
         view.frame = NSRect(origin: .zero, size: view.fittingSize)
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -264,77 +288,127 @@ struct InboxView: View {
 
     private static let done = Color(red: 0.24, green: 0.82, blue: 0.35)
     private static let needs = Color(red: 1.00, green: 0.62, blue: 0.15)
+    private static let day: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "dd/MM HH:mm"
+        return f
+    }()
 
     var body: some View {
-        HStack(spacing: 10) {
+        GlassGroup {
+            HStack(alignment: .top, spacing: Inbox.gap) {
+                bar
+                let none = inbox.current == nil, alone = inbox.items.count < 2
+                KeyBubble(symbol: "chevron.left", label: "prev", off: alone) { _ = inbox.key(UInt16(kVK_LeftArrow)) }
+                KeyBubble(symbol: "chevron.right", label: "next", off: alone) { _ = inbox.key(UInt16(kVK_RightArrow)) }
+                KeyBubble(symbol: "return", label: "open", off: none) { _ = inbox.key(UInt16(kVK_Return)) }
+                KeyBubble(symbol: "checkmark", label: "done", off: none) { _ = inbox.key(UInt16(kVK_UpArrow)) }
+                KeyBubble(symbol: "trash", label: inbox.confirming == nil ? "trash" : "sure?", off: none,
+                          tint: inbox.confirming == nil ? nil : .red) { _ = inbox.key(UInt16(kVK_DownArrow)) }
+            }
+        }
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+        .padding(Inbox.margin)
+    }
+
+    /// The text block: when it came, what it is about, where it stands, each in its own column of one line.
+    private var bar: some View {
+        HStack(spacing: 14) {
             if let item = inbox.current {
                 Circle()
                     .fill(item.kind == "done" ? Self.done : Self.needs)
-                    .frame(width: 9, height: 9)
-                    .padding(.trailing, 2)
-                (Text(item.subject).foregroundColor(.secondary)
-                 + Text("   ")
-                 + Text(item.line).foregroundColor(.primary))
+                    .frame(width: 8, height: 8)
+                Text(Self.day.string(from: Date(timeIntervalSince1970: item.at / 1000)))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Text(item.subject)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .fixedSize()
+                Divider().frame(height: 22)
+                Text(inbox.confirming == item.id ? "Remove it for good? ↓ again, any other key keeps it." : item.line)
+                    .foregroundStyle(inbox.confirming == item.id ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .help("\(item.subject) — \(item.line)")
-                Spacer(minLength: 12)
+                    .help(item.line)
+                Spacer(minLength: 8)
                 if inbox.items.count > 1 {
                     Text("\(inbox.index + 1)/\(inbox.items.count)")
                         .monospacedDigit()
-                        .foregroundColor(.secondary)
-                        .padding(.trailing, 2)
-                    KeyBubble(glyph: "←", help: "Previous") { inbox.step(-1) }
-                    KeyBubble(glyph: "→", help: "Next") { inbox.step(1) }
+                        .foregroundStyle(.secondary)
                 }
-                KeyBubble(glyph: "↩", help: "Open its session") { inbox.openCurrent() }
-                KeyBubble(glyph: "⌫", help: "Clear it") { inbox.clearCurrent() }
             } else {
                 Text("Nothing from the watcher")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Spacer()
             }
         }
         .font(.system(size: 15))
-        .padding(.leading, 22)
-        .padding(.trailing, 13)
+        .padding(.horizontal, 22)
         .frame(width: Inbox.bar.width, height: Inbox.bar.height)
-        .modifier(Glass())
+        .glass(in: Capsule())
         .contentShape(Capsule())
-        .onTapGesture { inbox.openCurrent() }
-        .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
-        .padding(Inbox.margin)
+        .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
 }
 
-/// A key the bar answers to, in a round bubble at its right end, as Spotlight puts its actions; a click on it
-/// does what the key does.
+/// One of the keys, as a round glass button beside the bar, as Spotlight puts its own, with its name under it.
 private struct KeyBubble: View {
-    let glyph: String
-    let help: String
+    let symbol: String
+    let label: String
+    var off = false
+    var tint: Color?
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(glyph)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.primary.opacity(0.1)))
-                .contentShape(Circle())
+        VStack(spacing: 5) {
+            Button(action: action) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(tint ?? .primary.opacity(0.75))
+                    .frame(width: Inbox.bubble, height: Inbox.bubble)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.7))
         }
-        .buttonStyle(.plain)
-        .help(help)
+        .opacity(off ? 0.45 : 1)
+        .disabled(off)
     }
 }
 
-/// Spotlight's glass where the system has it (macOS 26), its frosted material before.
-private struct Glass: ViewModifier {
-    func body(content: Content) -> some View {
+/// Spotlight's own material: Liquid Glass on macOS 26, grouped so that the shapes blend as Spotlight's do; the
+/// frosted material before it.
+private struct GlassGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
         if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: Capsule())
+            GlassEffectContainer(spacing: Inbox.gap) { content }
         } else {
-            content.background(.ultraThinMaterial, in: Capsule())
+            content
         }
     }
+}
+
+private extension View {
+    @ViewBuilder
+    func glass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+        if Inbox.flat {
+            background((tint ?? .white).opacity(0.55), in: shape)
+        } else if #available(macOS 26.0, *) {
+            glassEffect(liquid(tint, interactive), in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+private func liquid(_ tint: Color?, _ interactive: Bool) -> Glass {
+    let glass = tint.map { Glass.regular.tint($0) } ?? .regular
+    return interactive ? glass.interactive() : glass
 }

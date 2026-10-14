@@ -554,7 +554,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         _ = NSApplication.shared
         let path = CommandLine.arguments[i + 1]
         func item(_ kind: String, _ subject: String, _ line: String) -> InboxItem {
-            InboxItem(id: subject, at: 0, kind: kind, subject: subject, line: line, dir: "/", options: [], prompt: nil)
+            InboxItem(id: subject, at: Date().timeIntervalSince1970 * 1000 - Double(subject.count) * 3_600_000, kind: kind,
+                      subject: subject, line: line, dir: "/", options: [], prompt: nil)
         }
         let items = [
             item("needs", "photo of her ID", "Mum sent her ID; the licence request now needs your FranceConnect login."),
@@ -563,6 +564,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         Inbox.render(items, to: path)
         Inbox.render(items, index: 1, to: path.replacingOccurrences(of: ".png", with: "-next.png"))
         Inbox.render([items[0]], to: path.replacingOccurrences(of: ".png", with: "-one.png"))
+        Inbox.render(items, confirming: true, to: path.replacingOccurrences(of: ".png", with: "-confirm.png"))
         Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
         Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
         exit(0)
