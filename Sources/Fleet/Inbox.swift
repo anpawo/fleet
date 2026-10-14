@@ -107,8 +107,11 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// The line ⌫ was pressed on once: a second ⌫ removes it for good, any other key keeps it.
+    /// The line ⌫ was pressed on once: a second ⌫ removes it for good, any other key keeps it. The second counts
+    /// only once the question has been up `settle`: a double click or a key held down is not an answer.
     @Published private(set) var confirming: String?
+    var askedAt = Date.distantPast
+    static let settle: TimeInterval = 0.4
     /// The key just pressed on the keyboard, for a moment: its button gives under it, as under a click.
     @Published private(set) var pressed: Int?
 
@@ -125,7 +128,9 @@ final class Inbox: NSObject, ObservableObject {
         case kVK_UpArrow: if let item = current { take(item, keep: true) }
         case kVK_Delete, kVK_ForwardDelete:
             guard let item = current else { break }
-            if armed == item.id { take(item, keep: false) } else { confirming = item.id }
+            if armed == item.id, Date().timeIntervalSince(askedAt) >= Self.settle { take(item, keep: false); break }
+            if armed != item.id { askedAt = Date() }
+            confirming = item.id
         default: return false
         }
         let code = Int(code)
@@ -279,7 +284,9 @@ final class InboxPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
     /// Ahead of every responder, as `PanelWindow` does: the hosting view would take the arrows first.
+    /// A key held down repeats only for the arrows: a repeated ⌫ answered its own question.
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.isARepeat, ![123, 124].contains(event.keyCode) { return }
         if event.type == .keyDown, onKey(event.keyCode) { return }
         super.sendEvent(event)
     }
@@ -306,14 +313,15 @@ struct InboxView: View {
 
     var body: some View {
         // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
-        VStack(spacing: 10) {
-            subject
-            bar.frame(maxWidth: .infinity)
-            controls.frame(maxWidth: .infinity)
-                .padding(.top, 2)
+        GlassGroup {
+            VStack(spacing: 10) {
+                subject
+                bar.frame(maxWidth: .infinity)
+                controls.frame(maxWidth: .infinity)
+                    .padding(.top, 2)
+            }
+            .fixedSize()
         }
-        .fixedSize()
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
         .padding(.top, Inbox.margin)
         .frame(width: Inbox.window.width, height: Inbox.window.height, alignment: .top)
     }
@@ -361,7 +369,7 @@ struct InboxView: View {
                     .padding(.leading, 22)
             }
         }
-        .glass(in: Capsule())
+        .glass(in: Capsule(), tint: inbox.confirming == nil ? nil : .red.opacity(0.18))
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
@@ -451,10 +459,24 @@ private struct Bouncy: ButtonStyle {
             .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
             .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0)],
                                                           startPoint: .top, endPoint: .center), lineWidth: 1.2))
-            .shadow(color: .black.opacity(0.18), radius: 5, y: 3)
             .scaleEffect(down ? 0.84 : hovering ? 1.1 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.42), value: down)
             .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovering)
+    }
+}
+
+/// Every glass shape of the panel in one container, as Apple asks: glass cannot sample glass, and two shapes
+/// drawn apart, a few points from each other, read each other's glass and turned dark on a white window. Spacing
+/// 0: no shape melts into its neighbour.
+private struct GlassGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if #available(macOS 26.0, *), !Inbox.flat {
+            GlassEffectContainer(spacing: 0) { content }
+        } else {
+            content
+        }
     }
 }
 
