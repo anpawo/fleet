@@ -132,16 +132,14 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// What ↑ or ↓ asked about the line shown: ↑ to set it aside as done, ↓ to remove it for good. ↵ says yes, any
-    /// other key keeps it as it is. The same key or button again says yes too, once the question has been up
-    /// `settle`: a double click or a key held down is not an answer.
+    /// What ↑ or ↓ asked about the line shown: ↑ to set it aside as done, ↓ to remove it for good. Only ↵ (or the
+    /// yes button) says yes: the same key twice, a double click, a key held down only ask again. Any other key keeps
+    /// the line as it is.
     struct Ask: Equatable {
         let id: String
         let trash: Bool
     }
     @Published private(set) var asking: Ask?
-    var askedAt = Date.distantPast
-    static let settle: TimeInterval = 0.4
     /// The key just pressed on the keyboard, for a moment: its button gives under it, as under a click.
     @Published private(set) var pressed: Int?
 
@@ -171,10 +169,7 @@ final class Inbox: NSObject, ObservableObject {
 
     private func ask(trash: Bool, _ was: Ask?) {
         guard let item = current else { return }
-        let question = Ask(id: item.id, trash: trash)
-        if was == question, Date().timeIntervalSince(askedAt) >= Self.settle { return take(item, keep: !trash) }
-        if was != question { askedAt = Date() }
-        asking = question
+        asking = Ask(id: item.id, trash: trash)
     }
 
     private func step(_ by: Int) {

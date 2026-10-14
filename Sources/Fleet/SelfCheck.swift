@@ -40,8 +40,8 @@ enum SelfCheck {
     // MARK: - Inbox
 
     /// The watcher's lines, from files as the checker writes them: in time order, ←→ wrap and take nothing away,
-    /// ↵ opens and sets the line aside in `done/` once its terminal has started; ↑ and ↓ only ask, ↵ says yes (↑ to
-    /// `done/`, ↓ for good), the same key again says yes only once the question has been up a moment.
+    /// ↵ opens and sets the line aside in `done/` once its terminal has started; ↑ and ↓ only ask, however often,
+    /// and only ↵ says yes (↑ to `done/`, ↓ for good).
     private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -80,9 +80,13 @@ enum SelfCheck {
         press(kVK_Return)
         expect(inbox.items.map(\.id) == ["a"] && opened.count == 3, true, "inbox: Esc after ↓ keeps it, and ↵ then opens")
         press(kVK_UpArrow)
-        inbox.askedAt = Date().addingTimeInterval(-Inbox.settle)
         press(kVK_UpArrow)
-        expect(inbox.items.isEmpty && kept("a"), true, "inbox: the same key again, once the question is up, says yes")
+        press(kVK_DownArrow)
+        press(kVK_DownArrow)
+        expect(inbox.items.map(\.id) == ["a"] && !kept("a"), true, "inbox: ↑↑ and ↓↓ only ask, however long apart")
+        press(kVK_UpArrow)
+        press(kVK_Return)
+        expect(inbox.items.isEmpty && kept("a"), true, "inbox: only ↵ says yes")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
         var noon = DateComponents(calendar: .current, year: 2026, month: 10, day: 14, hour: 12)
         let now = noon.date!
