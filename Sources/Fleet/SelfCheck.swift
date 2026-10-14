@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Foundation
 
 /// `fleet --selftest`. The pieces of this app whose rules only ever meet at runtime — whether a
@@ -29,9 +30,40 @@ enum SelfCheck {
         money(expect)
         grid(expect)
         reads(expect)
+        inbox(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
         return failures
+    }
+
+    // MARK: - Inbox
+
+    /// The watcher's lines, from files as the checker writes them: in time order, the arrows wrap and take nothing
+    /// away, ⌫ takes the one shown, an open takes it only once its terminal has started.
+    private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for (id, at) in [("b", 2), ("a", 1), ("c", 3)] {
+            try? Data(#"{"id":"\#(id)","at":\#(at),"kind":"done","subject":"s","line":"l","dir":"/","options":["--resume","x"]}"#.utf8)
+                .write(to: folder.appending(path: "\(id).json"))
+        }
+        try? Data("{".utf8).write(to: folder.appending(path: ".d"))
+        let inbox = Inbox(folder: folder)
+        var opened: [String] = [], starts = false
+        inbox.launch = { opened.append($0.id); return starts }
+        inbox.refresh()
+        expect(inbox.items.map(\.id) == ["a", "b", "c"], true, "inbox: read in time order, a file not yet renamed in left out")
+        _ = inbox.key(UInt16(kVK_LeftArrow))
+        expect(inbox.current?.id == "c" && inbox.items.count == 3, true, "inbox: ← from the first wraps to the last, nothing taken")
+        _ = inbox.key(UInt16(kVK_Return))
+        expect(opened == ["c"] && inbox.items.count == 3, true, "inbox: an open whose terminal did not start keeps its line")
+        starts = true
+        _ = inbox.key(UInt16(kVK_Return))
+        expect(inbox.items.map(\.id) == ["a", "b"], true, "inbox: an open that started takes its line")
+        _ = inbox.key(UInt16(kVK_Delete))
+        expect(inbox.items.map(\.id) == ["a"] && opened.count == 2, true, "inbox: ⌫ takes the line shown, opening nothing")
+        expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
     }
 
     // MARK: - Reads

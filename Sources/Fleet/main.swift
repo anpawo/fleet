@@ -546,6 +546,27 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
     }
 }
 
+// `--render-inbox <path.png>` draws the watcher's ⌘⌥K line offscreen, on lines that test it: one that
+// needs him, a second one, long enough to be cut, shown as the arrows reach it, and none at all.
+if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
+   i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        let path = CommandLine.arguments[i + 1]
+        func item(_ kind: String, _ subject: String, _ line: String) -> InboxItem {
+            InboxItem(id: subject, at: 0, kind: kind, subject: subject, line: line, dir: "/", options: [], prompt: nil)
+        }
+        let items = [
+            item("needs", "WhatsApp Maman: photo of her ID", "Photo saved; the ANTS request needs your FranceConnect login"),
+            item("done", "Gmail: CROUS deposit refund", "Refund of 412 € confirmed by CROUS, todo ticked, the reply filed in the ARPEJ folder with its date"),
+        ]
+        Inbox.render(items, to: path)
+        Inbox.render(items, index: 1, to: path.replacingOccurrences(of: ".png", with: "-next.png"))
+        Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
+        exit(0)
+    }
+}
+
 if CommandLine.arguments.contains("--selftest") {
     MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
 }
@@ -1034,7 +1055,7 @@ let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
-    "--live", "--money-open", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--screen",
+    "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]

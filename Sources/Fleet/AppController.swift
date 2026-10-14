@@ -215,6 +215,7 @@ final class AppController: ObservableObject {
     private let registry = SessionRegistry()
     private let notifier = Notifier()
     private let awake = AwakeHold()
+    private let inbox = Inbox()
     private var overlay: OverlayWindowController?
     private var controlCenter: ControlCenterController?
     private var statusItem: StatusItemController?
@@ -270,6 +271,7 @@ final class AppController: ObservableObject {
         }
         overlay = OverlayWindowController(controller: self)
         statusItem = StatusItemController(controller: self)
+        inbox.start()
         bindHotKeys()
         notifier.start()
         // A banner names a session; clicking it should land you in that session, which is the
@@ -341,6 +343,9 @@ final class AppController: ObservableObject {
                 guard let self else { return }
                 if self.isPanelVisible { self.hidePanel() } else { self.forceShow() }
             }
+        }
+        HotKey.register(Inbox.chord, id: 2) { [weak self] in
+            MainActor.assumeIsolated { self?.inbox.toggle() }
         }
     }
 
@@ -427,6 +432,7 @@ final class AppController: ObservableObject {
         // The dot in the menu bar is this number, and a session list that never changes — a
         // dormant machine — would otherwise leave it on whatever it was at launch.
         statusItem?.update(off: popupsOff)
+        inbox.refresh()
 
         if isPanelVisible {
             refreshVisible()
