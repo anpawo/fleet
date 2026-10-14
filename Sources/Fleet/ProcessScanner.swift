@@ -59,6 +59,10 @@ enum ProcessScanner {
         // a script — not a conversation you can pick back up. It usually has no tty, but an
         // app launched from a terminal hands its own down to every child, tty included.
         if verdict, args.contains("-p") || args.contains("--print") { verdict = false }
+        // A test session a harness drives through a pty says so: `FLEET_TEST_TTY=??` is how
+        // the Stop hook knows nobody sits at it. The walk below misses one started by launchd
+        // (14-10: the display-patch check of a new version, a READY tile named after `~`).
+        if verdict, environment(pid).contains("FLEET_TEST_TTY=??") { verdict = false }
         // Nor is a claude started from inside another one — a test session a tool call drives
         // through a pty (02-10: a NEEDS YOU tile for a terminal nobody sits at). The walk ends
         // by itself at `login`, which is root's and unreadable: a session of yours has only
