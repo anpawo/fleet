@@ -35,9 +35,6 @@ final class Inbox: NSObject, ObservableObject {
     /// It fades in while rising these last points into its place.
     static let rise: CGFloat = 14
     static let entrance: TimeInterval = 0.22
-    /// `--render-inbox` only: a plain light fill where the glass goes. Glass is drawn by the window server from
-    /// what is behind a window on screen, and an offscreen picture has neither, so it would show nothing at all.
-    static var flat = false
 
     @Published private(set) var items: [InboxItem] = []
     @Published private(set) var index = 0
@@ -49,7 +46,6 @@ final class Inbox: NSObject, ObservableObject {
     private var seen: Date?
     private var status: NSStatusItem?
     private var panel: InboxPanel?
-    private var warming = false
 
     init(folder: URL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".local/state/checker/inbox")) {
         self.folder = folder
@@ -67,30 +63,6 @@ final class Inbox: NSObject, ObservableObject {
         item.button?.toolTip = "What the watcher of awaited answers found — \(Self.chord.label)"
         status = item
         refresh(force: true)
-        prewarm()
-    }
-
-    /// Glass fades in from black the first time it is drawn, before it has read what is behind it. Drawn once here,
-    /// at 1 % opacity where it will stand and through to clicks, it is ready by the first ⌘⌥K.
-    private func prewarm() {
-        let panel = makePanel()
-        self.panel = panel
-        warming = true
-        panel.alphaValue = 0.01
-        panel.ignoresMouseEvents = true
-        panel.setFrame(place(panel), display: true)
-        panel.orderFrontRegardless()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self, warming else { return }
-            endWarming()
-            panel.orderOut(nil)
-        }
-    }
-
-    private func endWarming() {
-        warming = false
-        panel?.alphaValue = 1
-        panel?.ignoresMouseEvents = false
     }
 
     /// Cheap enough for every tick: the folder is read again only when its date moved, which a file added or
@@ -217,8 +189,7 @@ final class Inbox: NSObject, ObservableObject {
     // MARK: - Panel
 
     @objc func toggle() {
-        if panel?.isVisible == true, !warming { return hide() }
-        if warming { endWarming() }
+        if panel?.isVisible == true { return hide() }
         refresh(force: true)
         let panel = self.panel ?? makePanel()
         self.panel = panel
@@ -269,8 +240,7 @@ final class Inbox: NSObject, ObservableObject {
 
     // MARK: - Render
 
-    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is. The glass
-    /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
+    /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is.
     /// What the render stands on: his wallpaper's kind of light gradient, a dark one, or a white window.
     static let backdrops: [String: [Color]] = [
         "light": [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
@@ -279,7 +249,6 @@ final class Inbox: NSObject, ObservableObject {
     ]
 
     static func render(_ items: [InboxItem], index: Int = 0, asking: Bool? = nil, on backdrop: String = "light", to path: String) {
-        flat = true
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
@@ -352,15 +321,14 @@ struct InboxView: View {
 
     var body: some View {
         // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
-        GlassGroup {
-            VStack(spacing: 10) {
-                subject
-                bar.frame(maxWidth: .infinity)
-                controls.frame(maxWidth: .infinity)
-                    .padding(.top, 2)
-            }
-            .fixedSize()
+        VStack(spacing: 10) {
+            subject
+            bar.frame(maxWidth: .infinity)
+            controls.frame(maxWidth: .infinity)
+                .padding(.top, 2)
         }
+        .fixedSize()
+        .foregroundStyle(Spotlight.ink)
         .padding(.top, Inbox.margin)
         .frame(width: Inbox.window.width, height: Inbox.window.height, alignment: .top)
     }
@@ -377,7 +345,7 @@ struct InboxView: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal, 22)
         .frame(height: 34)
-        .glass(in: Capsule())
+        .block(in: Capsule())
     }
 
     /// Where it stands, whole and centred, the dot that says done or his on its left. Every line of the list is
@@ -390,7 +358,6 @@ struct InboxView: View {
                 Text(Self.question(trash: true)).hidden()
                 if let ask = inbox.asking, ask.id == item.id {
                     Text(Self.question(trash: ask.trash))
-                        .foregroundStyle(ask.trash ? Self.trash : Self.yes)
                 } else {
                     Text(item.line)
                 }
@@ -413,14 +380,14 @@ struct InboxView: View {
                     .padding(.leading, 22)
             }
         }
-        .glass(in: Capsule(), tint: inbox.asking.map { ($0.trash ? Self.trash : Self.done).opacity(0.18) })
+        .block(in: Capsule(), fill: inbox.asking.map { Spotlight.fill.mix(with: $0.trash ? Self.trash : Self.yes, by: 0.4) })
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
 
     private static let trash = Color(red: 0.92, green: 0.20, blue: 0.20)
-    /// The dot's green, darker: as text on light glass the dot's own is too pale to read.
-    private static let yes = Color(red: 0.10, green: 0.56, blue: 0.24)
+    /// The dot's green, deeper: under a white tick the dot's own is too pale to read.
+    private static let yes = Color(red: 0.16, green: 0.62, blue: 0.28)
 
     private static func question(trash: Bool) -> String {
         (trash ? "Remove it for good?" : "Set it aside as done?") + " ↵ to confirm, any other key keeps it."
@@ -437,10 +404,10 @@ struct InboxView: View {
             HStack(alignment: .top, spacing: Inbox.gap) {
                 // While ↑ or ↓ asks, ↵ is the yes: its button says so in the question's colour.
                 let ask = inbox.asking
-                let colour = ask.map { $0.trash ? Self.trash : Self.done }
+                let colour = ask.map { $0.trash ? Self.trash : Self.yes }
                 key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour)
                 key("checkmark", ask?.trash == false ? "sure?" : "done", kVK_UpArrow,
-                    tint: ask?.trash == false ? Self.done : nil)
+                    tint: ask?.trash == false ? Self.yes : nil)
                 key("trash", ask?.trash == true ? "sure?" : "trash", kVK_DownArrow,
                     tint: ask?.trash == true ? Self.trash : nil)
             }
@@ -464,8 +431,9 @@ struct InboxView: View {
     }
 }
 
-/// One of the keys, as a round glass button, as Spotlight puts its own, with its name under it on a glass chip of
-/// its own: on the wallpaper bare, white or black, it was lost on one colour or the other.
+/// One of the keys, as a round button, as Spotlight puts its own, with its name under it on a chip of its own: on
+/// the wallpaper bare, white or black, it was lost on one colour or the other. Filled with its colour when it has
+/// one, the icon white on it.
 private struct KeyBubble: View {
     let symbol: String
     let label: String
@@ -480,17 +448,16 @@ private struct KeyBubble: View {
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(tint ?? .primary.opacity(0.8))
+                    .foregroundStyle(tint == nil ? Spotlight.ink : .white)
             }
             .buttonStyle(Bouncy(tint: tint, pressed: pressed, hovering: hovering && !off))
             .onHover { hovering = $0 }
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.primary.opacity(0.85))
                 .fixedSize()
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .glass(in: Capsule())
+                .block(in: Capsule())
         }
         .frame(width: Inbox.bubble)
         .opacity(off ? 0.45 : 1)
@@ -498,8 +465,8 @@ private struct KeyBubble: View {
     }
 }
 
-/// Round and springy: a light rim on its upper edge and a shadow under it give the glass its curve, it swells a
-/// little under the pointer and gives under a click or its key, overshooting on the way back.
+/// Round and springy: it swells a little under the pointer and gives under a click or its key, overshooting on the
+/// way back.
 private struct Bouncy: ButtonStyle {
     let tint: Color?
     let pressed: Bool
@@ -507,68 +474,35 @@ private struct Bouncy: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let down = configuration.isPressed || pressed
-        // The glass comes from the circle's frame, so the circle itself grows and shrinks, around its centre,
-        // inside a frame that does not move: a scale effect grew the icon and left the glass where it was.
+        // The fill comes from the circle's frame, so the circle itself grows and shrinks, around its centre,
+        // inside a frame that does not move: a scale effect grew the icon and left the fill where it was.
         let scale: CGFloat = down ? 0.84 : hovering ? 1.1 : 1
         configuration.label
             .scaleEffect(scale)
             .frame(width: Inbox.bubble * scale, height: Inbox.bubble * scale)
-            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
-            .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0)],
-                                                          startPoint: .top, endPoint: .center), lineWidth: 1.2))
+            .block(in: Circle(), fill: tint)
             .frame(width: Inbox.bubble, height: Inbox.bubble)
             .contentShape(Circle())
             .animation(.spring(response: 0.3, dampingFraction: down ? 0.42 : 0.55), value: scale)
     }
 }
 
-/// Every glass shape of the panel in one container, as Apple asks: glass cannot sample glass, and two shapes
-/// drawn apart, a few points from each other, read each other's glass and turned dark on a white window. Spacing
-/// 0: no shape melts into its neighbour.
-private struct GlassGroup<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        if #available(macOS 26.0, *), !Inbox.flat {
-            GlassEffectContainer(spacing: 0) { content }
-        } else {
-            content
-        }
-    }
+/// Spotlight's own colours, read off his screen: a flat grey, no blur and no edge, and the text near white.
+private enum Spotlight {
+    static let fill = Color(white: 94 / 255)
+    static let ink = Color(white: 237 / 255)
 }
 
 private extension View {
-    /// A small glass block for the date and the count, as tall as the buttons beside it.
+    /// A small block for the date and the count, as tall as the buttons beside it.
     func chip() -> some View {
         font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .frame(height: Inbox.bubble)
-            .glass(in: Capsule())
+            .block(in: Capsule())
     }
 
-    /// The glass, edged twice: a dark hairline outside that holds it on a white window, a light one inside that
-    /// holds it on a dark wallpaper.
-    func glass<S: InsettableShape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
-        material(in: shape, tint: tint, interactive: interactive)
-            .overlay(shape.strokeBorder(Color.black.opacity(0.18), lineWidth: 1))
-            .overlay(shape.inset(by: 1).strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
+    func block<S: Shape>(in shape: S, fill: Color? = nil) -> some View {
+        background(fill ?? Spotlight.fill, in: shape)
     }
-
-    @ViewBuilder
-    private func material<S: Shape>(in shape: S, tint: Color?, interactive: Bool) -> some View {
-        if Inbox.flat {
-            background((tint ?? .white).opacity(0.55), in: shape)
-        } else if #available(macOS 26.0, *) {
-            glassEffect(liquid(tint, interactive), in: shape)
-        } else {
-            background(.ultraThinMaterial, in: shape)
-        }
-    }
-}
-
-@available(macOS 26.0, *)
-private func liquid(_ tint: Color?, _ interactive: Bool) -> Glass {
-    let glass = tint.map { Glass.regular.tint($0) } ?? .regular
-    return interactive ? glass.interactive() : glass
 }
