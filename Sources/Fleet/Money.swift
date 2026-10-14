@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 /// What left the bank account, month by month, read off `~/.bnp/payments.csv`.
@@ -427,15 +426,17 @@ struct MoneyColumn: View {
 /// One too thin for either has an arrow out to them, and there is no legend beside the pie
 /// (asked 2026-10-11): the name is still read where the slice is.
 ///
-/// A slice's share is not written at rest, its size says it. It comes under the pointer, as
-/// near the middle of the slice as it fits and nearer the centre than the name (asked
-/// 2026-10-12).
+/// A slice's share is written at rest (asked 2026-10-12, after an hour of one that came under
+/// the pointer only), as near the middle of the slice as it fits and nearer the centre than
+/// the name. In the name's own size: all of them show at once, and 11pt filled a thin slice
+/// from side to side.
 ///
 /// The month's name and its total are on the line the pie's top stands in, either side of it
 /// (asked 2026-10-12): a circle leaves the ends of that line alone.
 ///
 /// The slice under the pointer gets a thin bright edge and nothing else (asked 2026-10-12,
-/// after it was raised past the rim).
+/// after it was raised past the rim). The edge is inside the slice — see `Wedge`: drawn on
+/// the slice's outline it lay over the ground either side, unevenly (asked 2026-10-12).
 private struct MoneyMonth: View {
     let month: Money.Month
 
@@ -475,11 +476,11 @@ private struct MoneyMonth: View {
         let percent: String
         let price: String
         let spot: Spot
-        /// How wide it is past the rim, with the share that joins the price under the pointer.
+        /// How wide it is past the rim, with the share beside the price.
         let width: Double
-        /// Where the share is written under the pointer, that far from the centre: on a
-        /// straight line, or `round` an arc where the slice has no room for one. Nil for a
-        /// sliver, whose share goes beside its price.
+        /// Where the share is written, that far from the centre: on a straight line, or
+        /// `round` an arc where the slice has no room for one. Nil for a sliver, whose share
+        /// goes beside its price.
         let share: (out: Double, round: Bool)?
     }
 
@@ -495,7 +496,7 @@ private struct MoneyMonth: View {
             let percent = "\(shares[slice.kind] ?? 0)%", price = Money.euros(month.spent[slice.kind] ?? 0)
             let name = Self.width(slice.kind.title, .systemFont(ofSize: 9))
             let cost = Self.width(price, .monospacedDigitSystemFont(ofSize: 9, weight: .medium))
-            let share = Self.width(percent, .monospacedDigitSystemFont(ofSize: 11, weight: .semibold))
+            let share = Self.width(percent, .monospacedDigitSystemFont(ofSize: 9, weight: .semibold))
             let turn = (slice.from + slice.to) / 2
             let room = { (out: Double) in Money.arc(from: slice.from, to: slice.to, out: out) }
             let seat = { (rows: [Double], line: Double, within: Double?, near: Double?) in
@@ -526,7 +527,7 @@ private struct MoneyMonth: View {
             return Placed(kind: slice.kind, turn: turn, percent: percent, price: price, spot: spot,
                           width: max(name, Self.width("\(percent) \(price)",
                                                       .monospacedDigitSystemFont(ofSize: 9, weight: .semibold))),
-                          share: seat([share], 10, limit, radius / 2).map { ($0, false) }
+                          share: seat([share], line, limit, radius / 2).map { ($0, false) }
                               ?? (round ?? (past ? nil : limit - 6)).map { ($0, true) })
         }
         // Two lines and a little air: packed, six names read as one column of twelve lines.
@@ -542,7 +543,6 @@ private struct MoneyMonth: View {
     }
 
     var body: some View {
-        let kinds = month.ranked
         let radius = Self.radii.first { plan(radius: $0).fits } ?? Self.radii[Self.radii.count - 1]
         let (labels, callouts, _) = plan(radius: radius)
         // The room over and under the pie is what the names past its rim take, and no more.
@@ -566,14 +566,14 @@ private struct MoneyMonth: View {
                         CGPoint(x: centre.x + out * sin(2 * .pi * label.turn),
                                 y: centre.y - out * cos(2 * .pi * label.turn))
                     }
-                    if lit, let share = label.share {
-                        let large = Font.system(size: 11, weight: .semibold).monospacedDigit()
+                    if let share = label.share {
+                        let bold = Font.system(size: 9, weight: .semibold).monospacedDigit()
+                        let ink = Color.black.opacity(lit ? 0.95 : 0.75)
                         if share.round {
-                            Self.write(label.percent, large, .black.opacity(0.85),
+                            Self.write(label.percent, bold, ink,
                                        in: context, round: centre, radius: share.out, turn: label.turn)
                         } else {
-                            context.draw(Text(label.percent).font(large).foregroundStyle(.black.opacity(0.85)),
-                                         at: along(share.out))
+                            context.draw(Text(label.percent).font(bold).foregroundStyle(ink), at: along(share.out))
                         }
                     }
                     switch label.spot {
@@ -590,7 +590,7 @@ private struct MoneyMonth: View {
                                    in: context, round: centre, radius: radius - Self.priceIn, turn: label.turn)
                     case .past:
                         guard let callout = callouts.first(where: { $0.kind == label.kind }) else { continue }
-                        let percent = Text(lit && label.share == nil ? label.percent + " " : "")
+                        let percent = Text(label.share == nil ? label.percent + " " : "")
                             .font(.system(size: 9, weight: .semibold).monospacedDigit())
                         func at(_ past: Double) -> CGPoint {
                             let point = callout.point(radius: radius, past: past)
@@ -624,15 +624,13 @@ private struct MoneyMonth: View {
             .frame(height: over + under)
             .background(alignment: .top) {
                 ZStack {
-                    // The inset is the ground showing between two slices: neighbours change with
-                    // the month, and two close colours side by side still read as two.
-                    Chart(kinds, id: \.self) { kind in
-                        SectorMark(angle: .value("Spent", month.spent[kind] ?? 0), angularInset: 1)
-                            .foregroundStyle(kind.tint)
-                    }
                     ForEach(month.slices, id: \.kind) { slice in
-                        Wedge(from: slice.from, to: slice.to)
-                            .stroke(.white.opacity(0.7), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                        let wedge = Wedge(from: slice.from, to: slice.to)
+                        wedge.fill(slice.kind.tint)
+                        // The edge the pointer lights: the inner half of a 2pt line, so it is
+                        // the slice's own and the ground between two slices stays ground.
+                        wedge.stroke(.white.opacity(0.7), lineWidth: 2)
+                            .clipShape(wedge)
                             .opacity(hovered == slice.kind ? 1 : 0)
                     }
                 }
@@ -690,8 +688,10 @@ private struct MoneyMonth: View {
         }
     }
 
-    /// A slice's outline, the edge the pointer lights. Turns clockwise from twelve o'clock, as
-    /// `Month.slices` gives them.
+    /// A slice as it is drawn: each side moved in by a point, parallel to itself, so the
+    /// ground shows between two slices as a line of one width from the centre to the rim —
+    /// neighbours change with the month, and two close colours side by side still read as
+    /// two. Turns clockwise from twelve o'clock, as `Month.slices` gives them.
     private struct Wedge: Shape {
         let from: Double
         let to: Double
@@ -699,12 +699,19 @@ private struct MoneyMonth: View {
         func path(in rect: CGRect) -> Path {
             // A month of one kind is a disc: a wedge of a whole turn would draw its seam.
             guard to - from < 1 else { return Path(ellipseIn: rect) }
-            let centre = CGPoint(x: rect.midX, y: rect.midY)
+            let centre = CGPoint(x: rect.midX, y: rect.midY), radius = rect.width / 2
+            let half = Double.pi * (to - from), middle = Double.pi * (from + to) - .pi / 2
+            // Where the two moved sides meet, along the slice's middle, and the angle each
+            // loses at the rim.
+            let tip = 1 / sin(half), lean = asin(1 / radius)
+            // Nothing left of a slice thinner than the line, and no line in a slice that is
+            // all but the whole pie.
+            guard tip < radius else { return half > .pi / 2 ? Path(ellipseIn: rect) : Path() }
             var path = Path()
-            path.move(to: centre)
-            path.addArc(center: centre, radius: rect.width / 2,
-                        startAngle: .radians(2 * .pi * from - .pi / 2),
-                        endAngle: .radians(2 * .pi * to - .pi / 2), clockwise: false)
+            path.move(to: CGPoint(x: centre.x + tip * cos(middle), y: centre.y + tip * sin(middle)))
+            path.addArc(center: centre, radius: radius,
+                        startAngle: .radians(2 * .pi * from - .pi / 2 + lean),
+                        endAngle: .radians(2 * .pi * to - .pi / 2 - lean), clockwise: false)
             path.closeSubpath()
             return path
         }
