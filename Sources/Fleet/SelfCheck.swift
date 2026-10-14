@@ -40,7 +40,7 @@ enum SelfCheck {
     // MARK: - Inbox
 
     /// The watcher's lines, from files as the checker writes them: in time order, ←→ wrap and take nothing away,
-    /// ↵ and ↑ set the shown one aside in `done/` (↵ only once its terminal has started), ↓ removes it only when
+    /// ↵ and ↑ set the shown one aside in `done/` (↵ only once its terminal has started), ⌫ removes it only when
     /// pressed twice in a row.
     private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
@@ -66,14 +66,14 @@ enum SelfCheck {
         expect(inbox.items.map(\.id) == ["a", "b", "c"] && kept("d"), true, "inbox: an open that started sets its line aside as done")
         _ = inbox.key(UInt16(kVK_UpArrow))
         expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↑ sets the line shown aside as done, opening nothing")
-        _ = inbox.key(UInt16(kVK_DownArrow))
-        expect(inbox.items.count == 2 && inbox.confirming == "b", true, "inbox: ↓ once only asks")
-        _ = inbox.key(UInt16(kVK_DownArrow))
-        expect(inbox.items.map(\.id) == ["a"] && !kept("b"), true, "inbox: ↓ twice removes it for good")
-        _ = inbox.key(UInt16(kVK_DownArrow))
+        _ = inbox.key(UInt16(kVK_Delete))
+        expect(inbox.items.count == 2 && inbox.confirming == "b", true, "inbox: ⌫ once only asks")
+        _ = inbox.key(UInt16(kVK_Delete))
+        expect(inbox.items.map(\.id) == ["a"] && !kept("b"), true, "inbox: ⌫ twice removes it for good")
+        _ = inbox.key(UInt16(kVK_Delete))
         _ = inbox.key(UInt16(kVK_Escape))
-        _ = inbox.key(UInt16(kVK_DownArrow))
-        expect(inbox.items.map(\.id) == ["a"] && inbox.confirming == "a", true, "inbox: any other key between the two ↓ keeps it, Esc included")
+        _ = inbox.key(UInt16(kVK_Delete))
+        expect(inbox.items.map(\.id) == ["a"] && inbox.confirming == "a", true, "inbox: any other key between the two ⌫ keeps it, Esc included")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
 
         // The entrance, read at every frame on a panel put off every screen, where nothing of it can be seen.

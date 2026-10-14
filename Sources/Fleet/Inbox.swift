@@ -25,13 +25,13 @@ struct InboxItem: Decodable, Equatable {
 final class Inbox: NSObject, ObservableObject {
 
     static let chord = Settings.Chord(keyCode: UInt16(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey))
-    /// The text block, the round buttons beside it with their names under them, and the clear room around
-    /// them all that their shadow is drawn in.
-    static let bar = NSSize(width: 940, height: 56)
-    static let bubble: CGFloat = 56
+    /// The line, as wide as its text and never cut, and under it the date, the count and the round buttons with
+    /// their names. The window is wider than any line and clear around them, for the shadow.
+    static let barHeight: CGFloat = 56
+    static let bubble: CGFloat = 48
     static let gap: CGFloat = 12
-    static let row = NSSize(width: bar.width + 5 * (bubble + gap), height: bubble + 21)
-    static let margin: CGFloat = 40
+    static let window = NSSize(width: 1380, height: 210)
+    static let margin: CGFloat = 30
     /// It fades in while rising these last points into its place.
     static let rise: CGFloat = 14
     static let entrance: TimeInterval = 0.22
@@ -107,11 +107,11 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// The line ↓ was pressed on once: a second ↓ removes it for good, any other key keeps it.
+    /// The line ⌫ was pressed on once: a second ⌫ removes it for good, any other key keeps it.
     @Published private(set) var confirming: String?
 
     /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, ←→ move and keep every
-    /// line, ↑ sets the shown one aside as done for now (`done/`, still on disk), ↓ twice removes it.
+    /// line, ↑ sets the shown one aside as done for now (`done/`, still on disk), ⌫ twice removes it.
     func key(_ code: UInt16) -> Bool {
         let armed = confirming
         confirming = nil
@@ -121,7 +121,7 @@ final class Inbox: NSObject, ObservableObject {
         case kVK_RightArrow: step(1)
         case kVK_Return, kVK_ANSI_KeypadEnter: openCurrent()
         case kVK_UpArrow: if let item = current { take(item, keep: true) }
-        case kVK_DownArrow:
+        case kVK_Delete, kVK_ForwardDelete:
             guard let item = current else { break }
             if armed == item.id { take(item, keep: false) } else { confirming = item.id }
         default: return false
@@ -205,7 +205,7 @@ final class Inbox: NSObject, ObservableObject {
     /// Non-activating, as Spotlight: it takes the keys without taking the app in front away from him. No window
     /// shadow: the bar draws its own, in the clear margin around it.
     private func makePanel() -> InboxPanel {
-        let size = NSSize(width: Self.row.width + 2 * Self.margin, height: Self.row.height + 2 * Self.margin)
+        let size = Self.window
         let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
@@ -224,13 +224,14 @@ final class Inbox: NSObject, ObservableObject {
 
     /// `--render-inbox <png>`: the panel as it would show `items`, drawn offscreen over a light backdrop, as his desktop is. The glass
     /// is not in it: it blurs what is behind a window on screen, and an offscreen view has nothing behind it.
-    static func render(_ items: [InboxItem], index: Int = 0, confirming: Bool = false, to path: String) {
+    static func render(_ items: [InboxItem], index: Int = 0, confirming: Bool = false, dark: Bool = false, to path: String) {
         flat = true
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
         inbox.confirming = confirming ? inbox.current?.id : nil
-        let backdrop = LinearGradient(colors: [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
+        let backdrop = LinearGradient(colors: dark ? [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)]
+                                                   : [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
                                       startPoint: .top, endPoint: .bottom)
         let view = NSHostingView(rootView: InboxView(inbox: inbox).background(backdrop))
         view.appearance = NSAppearance(named: .aqua)
@@ -293,88 +294,120 @@ struct InboxView: View {
         f.dateFormat = "dd/MM HH:mm"
         return f
     }()
+    private static let keys: [(symbol: String, label: String, key: Int)] = [
+        ("chevron.left", "prev", kVK_LeftArrow), ("chevron.right", "next", kVK_RightArrow),
+        ("return", "open", kVK_Return), ("checkmark", "done", kVK_UpArrow), ("trash", "trash", kVK_Delete),
+    ]
 
     var body: some View {
-        GlassGroup {
-            HStack(alignment: .top, spacing: Inbox.gap) {
-                bar
-                let none = inbox.current == nil, alone = inbox.items.count < 2
-                KeyBubble(symbol: "chevron.left", label: "prev", off: alone) { _ = inbox.key(UInt16(kVK_LeftArrow)) }
-                KeyBubble(symbol: "chevron.right", label: "next", off: alone) { _ = inbox.key(UInt16(kVK_RightArrow)) }
-                KeyBubble(symbol: "return", label: "open", off: none) { _ = inbox.key(UInt16(kVK_Return)) }
-                KeyBubble(symbol: "checkmark", label: "done", off: none) { _ = inbox.key(UInt16(kVK_UpArrow)) }
-                KeyBubble(symbol: "trash", label: inbox.confirming == nil ? "trash" : "sure?", off: none,
-                          tint: inbox.confirming == nil ? nil : .red) { _ = inbox.key(UInt16(kVK_DownArrow)) }
-            }
+        // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
+        VStack(spacing: 12) {
+            bar.frame(maxWidth: .infinity)
+            controls.frame(maxWidth: .infinity)
         }
+        .fixedSize()
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
-        .padding(Inbox.margin)
+        .padding(.top, Inbox.margin)
+        .frame(width: Inbox.window.width, height: Inbox.window.height, alignment: .top)
     }
 
-    /// The text block: when it came, what it is about, where it stands, each in its own column of one line.
+    /// The line itself, whole: what it is about, then where it stands. Every line of the list is laid under it,
+    /// unseen, with the question ⌫ asks: the bar keeps the widest, so neither the arrows nor ⌫ move anything.
     private var bar: some View {
-        HStack(spacing: 14) {
+        ZStack(alignment: .leading) {
+            ForEach(inbox.items, id: \.id) { line($0, asking: false).hidden() }
             if let item = inbox.current {
-                Circle()
-                    .fill(item.kind == "done" ? Self.done : Self.needs)
-                    .frame(width: 8, height: 8)
-                Text(Self.day.string(from: Date(timeIntervalSince1970: item.at / 1000)))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                Text(item.subject)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .fixedSize()
-                Divider().frame(height: 22)
-                Text(inbox.confirming == item.id ? "Remove it for good? ↓ again, any other key keeps it." : item.line)
-                    .foregroundStyle(inbox.confirming == item.id ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(item.line)
-                Spacer(minLength: 8)
-                if inbox.items.count > 1 {
-                    Text("\(inbox.index + 1)/\(inbox.items.count)")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
+                line(item, asking: true).hidden()
+                line(item, asking: inbox.confirming == item.id)
             } else {
                 Text("Nothing from the watcher")
                     .foregroundStyle(.secondary)
-                Spacer()
             }
         }
         .font(.system(size: 15))
-        .padding(.horizontal, 22)
-        .frame(width: Inbox.bar.width, height: Inbox.bar.height)
+        .lineLimit(1)
+        .padding(.horizontal, 24)
+        // Never narrower than the row under it needs, the count centred between the date and the keys.
+        .frame(minWidth: 720, minHeight: Inbox.barHeight, alignment: .leading)
         .glass(in: Capsule())
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
+
+    private func line(_ item: InboxItem, asking: Bool) -> some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(item.kind == "done" ? Self.done : Self.needs)
+                .frame(width: 8, height: 8)
+            Text(item.subject)
+                .fontWeight(.semibold)
+            Divider().frame(height: 22)
+            Text(asking ? "Remove it for good? ⌫ again, any other key keeps it." : item.line)
+                .foregroundStyle(asking ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+        }
+    }
+
+    /// Under the line: when it came on the left, which one of how many in the middle, its keys on the right.
+    private var controls: some View {
+        HStack(alignment: .top) {
+            if let item = inbox.current {
+                Text(Self.day.string(from: Date(timeIntervalSince1970: item.at / 1000)))
+                    .chip()
+            }
+            Spacer(minLength: 24)
+            VStack(spacing: 5) {
+                GlassGroup {
+                    HStack(spacing: Inbox.gap) {
+                        ForEach(Self.keys, id: \.label) { key in
+                            KeyBubble(symbol: key.symbol, off: off(key.key),
+                                      tint: key.key == kVK_Delete && inbox.confirming != nil ? .red : nil) {
+                                _ = inbox.key(UInt16(key.key))
+                            }
+                        }
+                    }
+                }
+                // Outside the glass and in the desktop's own label style: they stand on the wallpaper.
+                HStack(spacing: Inbox.gap) {
+                    ForEach(Self.keys, id: \.label) { key in
+                        Text(key.key == kVK_Delete && inbox.confirming != nil ? "sure?" : key.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
+                            .frame(width: Inbox.bubble)
+                            .opacity(off(key.key) ? 0.5 : 1)
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .top) {
+            Text("\(inbox.items.isEmpty ? 0 : inbox.index + 1) / \(inbox.items.count)")
+                .monospacedDigit()
+                .chip()
+        }
+    }
+
+    private func off(_ key: Int) -> Bool {
+        inbox.current == nil || ((key == kVK_LeftArrow || key == kVK_RightArrow) && inbox.items.count < 2)
+    }
 }
 
-/// One of the keys, as a round glass button beside the bar, as Spotlight puts its own, with its name under it.
+/// One of the keys, as a round glass button, as Spotlight puts its own.
 private struct KeyBubble: View {
     let symbol: String
-    let label: String
     var off = false
     var tint: Color?
     let action: () -> Void
 
     var body: some View {
-        VStack(spacing: 5) {
-            Button(action: action) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(tint ?? .primary.opacity(0.75))
-                    .frame(width: Inbox.bubble, height: Inbox.bubble)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.7))
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(tint ?? .primary.opacity(0.75))
+                .frame(width: Inbox.bubble, height: Inbox.bubble)
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .glass(in: Circle(), tint: tint?.opacity(0.25), interactive: true)
         .opacity(off ? 0.45 : 1)
         .disabled(off)
     }
@@ -395,6 +428,15 @@ private struct GlassGroup<Content: View>: View {
 }
 
 private extension View {
+    /// A small glass block for the date and the count, as tall as the buttons beside it.
+    func chip() -> some View {
+        font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .frame(height: Inbox.bubble)
+            .glass(in: Capsule())
+    }
+
     @ViewBuilder
     func glass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
         if Inbox.flat {

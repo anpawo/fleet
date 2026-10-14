@@ -566,6 +566,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         Inbox.render([items[0]], to: path.replacingOccurrences(of: ".png", with: "-one.png"))
         Inbox.render(items, confirming: true, to: path.replacingOccurrences(of: ".png", with: "-confirm.png"))
         Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
+        Inbox.render(items, dark: true, to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
         Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
         exit(0)
     }
