@@ -834,15 +834,18 @@ struct FleetLayout: Layout {
             let taken = taken(size.width)
             let across = max(0, columns - taken)
             let down = max(1, Int((size.height + spacing) / step.height))
-            var bottom = size.height
-            for slot in 0 ..< across * down {
-                guard let t = queue.popFirst() else { break }
+            var beside: [Int] = []
+            while beside.count < across * down, let t = queue.popFirst() { beside.append(t) }
+            let tall = CGFloat((beside.count + across - 1) / max(1, across)) * step.height - spacing
+            // Level with the directory's foot, not its top (asked 2026-10-15): the gap under
+            // them is the gap under it.
+            let drop = max(0, size.height - tall)
+            for (slot, t) in beside.enumerated() {
                 frames[t] = CGRect(x: CGFloat(taken + slot % across) * step.width,
-                                   y: y + CGFloat(slot / across) * step.height,
+                                   y: y + drop + CGFloat(slot / across) * step.height,
                                    width: tile.width, height: tile.height)
-                bottom = max(bottom, frames[t].maxY - y)
             }
-            y += bottom + spacing
+            y += max(size.height, tall) + spacing
         }
         for (n, i) in queue.enumerated() {
             frames[i] = CGRect(x: CGFloat(n % columns) * step.width,
@@ -1438,8 +1441,9 @@ struct SessionTile: View {
         // A topic is a sentence where a directory is a word, so it is set smaller and given a
         // second line rather than shrunk to a third of the size to fit on one.
         Text(heading ?? session.displayName)
-            // A tenth smaller than it was (asked 2026-10-15).
-            .font(.system(size: (grouped && !large ? 15 : heading == nil ? 31 : 22) * 0.9, weight: .semibold))
+            // Smaller on 2026-10-15: 0.9 of what it was, then on the grid 0.75 of that.
+            .font(.system(size: grouped ? (large ? 22 : 15) * 0.9 : (heading == nil ? 31 : 22) * 0.9 * 0.75,
+                          weight: .semibold))
             .foregroundStyle(.white)
             .modifier(HeadGlow(on: main))
             .lineLimit(heading == nil ? 1 : 2)
