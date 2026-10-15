@@ -1069,7 +1069,7 @@ struct GroupTile: View {
     private static let flushName: CGFloat = 14 * 1.25
     private static let flushNameLine = flushName * 1.2
     private static let flushNameAir: CGFloat = 4
-    private static let flushNameSide: CGFloat = 13
+    private static let flushNameSide: CGFloat = 20
     private static let flushNameFoot: CGFloat = 11
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
