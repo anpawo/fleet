@@ -43,7 +43,7 @@ struct MailColumn: View {
                   collapsed: hub.mailEmpty) {
             // As tall as its mails (asked 2026-09-28: one mail sat on three rows of empty
             // block), up to `limit`; past it the list scrolls rather than running down over
-            // the school underneath, which takes whatever the mail leaves.
+            // the school underneath.
             if scrolling {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) { rows }
@@ -1387,6 +1387,9 @@ struct EpitechColumn: View {
     /// the card, for the same reason the todo column keeps it here: a card is rebuilt every tick.
     /// Seeded from `FLEET_HOVER`, like CRONS', so a render can show one card's details.
     @State private var hovered: String? = ProcessInfo.processInfo.environment["FLEET_HOVER"]
+    /// Folded to its heading — the name and the credits — until the pointer is on it (asked
+    /// 2026-10-15). On the panel rather than here: the room it opens into is the mail's.
+    @Binding var open: Bool
 
     var body: some View {
         HubColumn(title: "EPITECH",
@@ -1398,7 +1401,7 @@ struct EpitechColumn: View {
                   badgeText: ledger,
                   minRows: 3,
                   fills: true,
-                  collapsed: hub.schoolEmpty) {
+                  collapsed: hub.schoolEmpty || !open) {
             // The todo column's block, down to the scroll: a term of modules and a fortnight
             // of mail is longer than any screen, and the block is as tall as what is left of
             // the left column either way.
@@ -1418,6 +1421,8 @@ struct EpitechColumn: View {
             }
         }
         .animation(TodoColumn.unroll, value: commandHeld)
+        // In a transaction, so the mail over it gives way in the same movement.
+        .onHover { inside in withAnimation(OverlayView.fold) { open = inside } }
     }
 
     /// Two to a row. The card is three facts wide — a name, what it pays, when it closes —
@@ -1829,6 +1834,9 @@ struct ReelBlock: View {
     let commandHeld: Bool
     /// The tallest the whole block may be, pane included.
     let limit: CGFloat
+    /// Open at rest, as tall as the column lets it be past `limit`: the inbox is empty and the
+    /// school folded, so the column's room is this block's (asked 2026-10-15).
+    var expanded = false
 
     /// Seeded from `--reels-open` so a render can show the list, which nothing else opens
     /// without a pointer.
@@ -1842,7 +1850,7 @@ struct ReelBlock: View {
     private static let chrome: CGFloat = 14 + 9 + 26
 
     var body: some View {
-        let listing = (open || hub.contextReelID != nil) && !hub.readReels.isEmpty
+        let listing = (open || expanded || hub.contextReelID != nil) && !hub.readReels.isEmpty
         Block(title: "REELS", tint: Self.tint, fill: Self.tint.darkened(0.58)) {
             if hub.checkingReel != nil || hub.reinterpreting {
                 ProgressView()
@@ -1858,6 +1866,8 @@ struct ReelBlock: View {
                 .titleGround()
         } content: {
             if listing {
+                let height = min(natural > 0 ? natural : 60,
+                                 expanded ? .infinity : max(40, limit - Self.chrome))
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
                         ForEach(hub.readReels) { reel in
@@ -1882,7 +1892,8 @@ struct ReelBlock: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(natural > 0 ? natural : 60, max(40, limit - Self.chrome)))
+                // Expanded, it gives way to whatever the column has left rather than hold it.
+                .frame(minHeight: expanded ? 0 : height, maxHeight: height)
                 .transition(.opacity)
             }
         }

@@ -883,7 +883,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--strain") {
             controller.reaper.simulateStrain()
         }
-        // `--no-mail` draws the left column the day the inbox is empty: MAIL folded, EPITECH
+        // `--no-mail` draws the left column the day the inbox is empty: MAIL folded, REELS
         // grown into its room.
         if CommandLine.arguments.contains("--no-mail") {
             controller.hub.mail = []
@@ -1062,7 +1062,7 @@ let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
     "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
-    "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--screen",
+    "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--school-open", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]
