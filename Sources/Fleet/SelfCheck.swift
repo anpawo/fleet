@@ -230,9 +230,13 @@ enum SelfCheck {
                                  columns: 3, openSize: .zero, openHeight: 0, progress: 0)
         beside.wide = [size(2), nil, nil]
         let besideRest = beside.rest(3)
-        expect(besideRest.frames[1].minX == 476 && besideRest.frames[1].maxY == size(2).height
-               && besideRest.frames[2].origin == CGPoint(x: 0, y: size(2).height + 26), true,
-               "grid: a session stands beside a directory two columns wide, level with its foot, the next under them")
+        beside.wide = [size(3), nil, nil, nil]
+        let tallRest = beside.rest(4)
+        expect(besideRest.frames[1].minX == 476 && besideRest.frames[1].minY == 0
+               && besideRest.frames[2].origin == CGPoint(x: 476, y: size(2).height + 26)
+               && tallRest.frames[1].origin == CGPoint(x: 476, y: 0)
+               && tallRest.frames[3].origin == CGPoint(x: 476, y: size(3).height + 26), true,
+               "grid: sessions beside a directory two columns wide stack from the top right corner, a lone one under them on the right")
         let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1) }
         expect(roomy.large.isEmpty && roomy.wide[0] == size(2), true,
                "grid: a directory two wide keeps its smaller cards while a session can stand beside it")

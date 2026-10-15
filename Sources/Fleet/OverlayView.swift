@@ -837,19 +837,21 @@ struct FleetLayout: Layout {
             var beside: [Int] = []
             while beside.count < across * down, let t = queue.popFirst() { beside.append(t) }
             let tall = CGFloat((beside.count + across - 1) / max(1, across)) * step.height - spacing
-            // Level with the directory's foot, not its top (asked 2026-10-15): the gap under
-            // them is the gap under it.
-            let drop = max(0, size.height - tall)
+            // From the top right corner down (asked 2026-10-15), not dropped to its foot.
             for (slot, t) in beside.enumerated() {
                 frames[t] = CGRect(x: CGFloat(taken + slot % across) * step.width,
-                                   y: y + drop + CGFloat(slot / across) * step.height,
+                                   y: y + CGFloat(slot / across) * step.height,
                                    width: tile.width, height: tile.height)
             }
             y += max(size.height, tall) + spacing
         }
+        // A last row short of the grid's width stands at its right, under the column the
+        // sessions beside a directory stack in (asked 2026-10-15).
+        let short = (columns - queue.count % columns) % columns
         for (n, i) in queue.enumerated() {
-            frames[i] = CGRect(x: CGFloat(n % columns) * step.width,
-                               y: y + CGFloat(n / columns) * step.height,
+            let row = n / columns, last = row == (queue.count - 1) / columns
+            frames[i] = CGRect(x: CGFloat(n % columns + (last ? short : 0)) * step.width,
+                               y: y + CGFloat(row) * step.height,
                                width: tile.width, height: tile.height)
         }
         return (frames, queue.isEmpty ? max(0, y - spacing) : y + rows(queue.count))
