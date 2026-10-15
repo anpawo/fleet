@@ -173,7 +173,10 @@ enum Claude {
         Session title: \(title)
         Last thing asked: \(latest.prefix(300))
         """
-        let raw = try await run(prompt: prompt, model: classifierModel)
+        // Sealed: a name needs no tool, no hook and no MCP server. With his setup each call ran
+        // the SessionStart hooks (a walk of ~ to depth 7) and started his MCP servers, 6.3 s
+        // against 2.1, and a restart asks for ten names at once (2026-10-15).
+        let raw = try await run(prompt: prompt, model: classifierModel, sealed: true)
         // Whatever came back, made to fit: the tile has one line and it is not negotiable.
         let word = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? raw
         let clean = word.lowercased()
