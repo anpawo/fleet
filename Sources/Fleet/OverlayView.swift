@@ -1057,10 +1057,15 @@ struct GroupTile: View {
         let across = CGFloat(most(large: large))
         return (width - (across - 1) * gap(spacing) - 2 * margin(spacing)) / across
     }
-    /// Standing in the grid on the smaller cards: no card of its own, only its sessions in the
-    /// grid's own cells and its name over the line where they meet (asked 2026-10-15). Two of
-    /// them take two cells' room, and a session stands in the third.
+    /// Standing in the grid on the smaller cards: its sessions in the grid's own cells, its
+    /// border round them out in the gaps, and its name on that border over the corners where
+    /// they meet (asked 2026-10-15). Two of them take two cells' room, and a session stands
+    /// in the third.
     private var flush: Bool { open && !toggles && !large }
+    /// How far out into the grid's gaps the border of a flush group stands from its cells
+    /// (asked 2026-10-15: a border round them still), well short of the gap's middle so that
+    /// it reads as theirs.
+    private static let rim: CGFloat = 8
     /// What the open cards are called as a whole, to scroll back to their top.
     private static let cards = "cards"
 
@@ -1130,8 +1135,9 @@ struct GroupTile: View {
                         .fixedSize()
                         .titleGround(1)
                         .frame(maxWidth: .infinity)
-                        // Centred on the cells' top edge.
-                        .offset(y: -9)
+                        // Centred on the cells' top edge, over their corners and the border's
+                        // line: on the line itself, the grid's top row cut it.
+                        .offset(y: -9.5)
                 }
             }
             // A group that is folded up and opened again starts at the top, and a name still
@@ -1144,17 +1150,20 @@ struct GroupTile: View {
             .onTapGesture(perform: tapped)
         }
         // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
-        // With no border, the name over the top edge and the cells' glow do.
+        // Standing in the grid the border is out in the gaps, and the name and the cells'
+        // glow reach it.
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous).inset(by: flush ? -30 : 0))
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(flush ? 0 : 1))
-                .shadow(color: Self.tint.opacity(flush ? 0 : hovering ? 0.45 : 0.18),
+            RoundedRectangle(cornerRadius: flush ? 10 + Self.rim : 10, style: .continuous)
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
+                .padding(flush ? -Self.rim : 0)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Self.tint.opacity(flush ? 0 : 1), lineWidth: 2.5)
+            RoundedRectangle(cornerRadius: flush ? 10 + Self.rim : 10, style: .continuous)
+                .strokeBorder(Self.tint, lineWidth: 2.5)
+                .padding(flush ? -Self.rim : 0)
         )
         // Only the folded card lifts to the pointer: the open one is the size of the block,
         // and a block that grows under the pointer pushes its own contents around.
