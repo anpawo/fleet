@@ -905,9 +905,10 @@ struct FleetLayout: Layout {
     /// if the grid still ends inside `room` with it so: one that does not fit leaves the next
     /// its chance, and a grid already past `room` unfolds none. The larger cards come after,
     /// in the same order and on the same condition (asked 2026-10-12): none is folded for
-    /// another to stand larger. One that does not fit two to a row on its smaller cards is
-    /// tried in one column, then with more to a row, up to the grid's columns, before it is
-    /// left folded (asked 2026-10-15); `size` takes that number, nil for two.
+    /// another to stand larger. On its smaller cards one of five or fewer is tried in one
+    /// column, then two to a row, one of more the other way round, then with more to a row,
+    /// up to the grid's columns, before it is left folded (asked 2026-10-15); `size` takes
+    /// that number, nil for two.
     func unfolding(_ sizes: [Int], room: CGFloat, size: (Int, Bool, Int?) -> CGSize) -> FleetLayout {
         var layout = self
         layout.wide = Array(repeating: nil, count: sizes.count)
@@ -920,7 +921,10 @@ struct FleetLayout: Layout {
                 // to stand in it (asked 2026-10-15): the larger ones take the whole width.
                 if large, let small = layout.wide[i], layout.taken(small.width) < columns,
                    layout.wide.contains(where: { $0 == nil }) { continue }
-                let tries: [Int?] = [nil] + (large ? [] : [1] + stride(from: 3, through: columns, by: 1).map { $0 })
+                // One column first for five or fewer, two to a row first for more (asked
+                // 2026-10-15): an odd count two to a row leaves a cell empty.
+                let first: [Int?] = sizes[i] <= 5 ? [1, nil] : [nil, 1]
+                let tries: [Int?] = large ? [nil] : first + stride(from: 3, through: columns, by: 1).map { $0 }
                 // Still folded, one already unfolded two to a row is stood across the grid, one at
                 // a time, for the room that leaves under it (asked 2026-10-15).
                 let widen: [Int?] = [nil] + (large ? [] : order.filter {

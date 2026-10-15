@@ -240,10 +240,11 @@ enum SelfCheck {
                && tallRest.frames[3].origin == CGPoint(x: 476, y: size(3).height + 26), true,
                "grid: sessions beside a directory two columns wide stack from the top right corner, a lone one under them on the right")
         let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1, most: $2) }
-        expect(roomy.large.isEmpty && roomy.wide[0] == size(2), true,
-               "grid: a directory two wide keeps its smaller cards while a session can stand beside it")
+        expect(roomy.large.isEmpty && roomy.wide[0] == size(2, most: 1), true,
+               "grid: a directory of two stands in one column, on its smaller cards while a session can stand beside it")
         // Five two to a row, then three: two rows of them two to a row end at 700, one column
-        // of three beside the five at 555 with the session under it.
+        // of three beside the five at 555 with the session under it. With 750, both stand in
+        // one column first, five or fewer (asked 2026-10-15), and end at 700.
         func three(room: CGFloat) -> FleetLayout {
             beside.unfolding([5, 3, 1], room: room) { size($0, large: $1, most: $2) }
         }
@@ -251,9 +252,9 @@ enum SelfCheck {
         expect(three(room: 600).most == [1: 1] && three(room: 600).wide[1] == size(3, most: 1)
                && column.frames[1].origin == CGPoint(x: 476, y: 0)
                && column.frames[2].origin == CGPoint(x: 476, y: size(5).height + 26) && column.height == 555
-               && three(room: 750).most.isEmpty && three(room: 750).wide[1] == size(3)
+               && three(room: 750).most == [0: 1, 1: 1] && three(room: 750).rest(3).height == size(5, most: 1).height
                && three(room: 500).wide[1] == nil && three(room: 500).most.isEmpty, true,
-               "grid: a directory that does not fit two to a row stands in one column beside another where that fits, and only then")
+               "grid: five or fewer stand in one column first, then two to a row, and in one column beside another where that is what fits")
         // Four in one column are a row taller than the five: the session takes the cell under
         // the five (asked 2026-10-15).
         func four(room: CGFloat) -> FleetLayout {
