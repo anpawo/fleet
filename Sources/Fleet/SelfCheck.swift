@@ -243,14 +243,23 @@ enum SelfCheck {
         expect(roomy.large.isEmpty && roomy.wide[0] == size(2), true,
                "grid: a directory two wide keeps its smaller cards while a session can stand beside it")
         // Five two to a row with a session beside them, then three: two rows of them two to a
-        // row end at 700, one row of three at 555.
+        // row end at 700, one row of three at 555, and so do both three to a row.
         func three(room: CGFloat) -> FleetLayout {
             beside.unfolding([5, 3, 1], room: room) { size($0, large: $1, most: $2) }
         }
         expect(three(room: 600).most == [1: 3] && three(room: 600).wide[1]?.width == 688
                && three(room: 750).most.isEmpty && three(room: 750).wide[1] == size(3)
-               && three(room: 500).wide[1] == nil, true,
+               && three(room: 500).wide[1] == nil && three(room: 500).most.isEmpty, true,
                "grid: a directory that does not fit two to a row stands three to a row where that fits, and only then")
+        // Four stand two rows whatever the row: they fit under the five once those are two rows
+        // of three, at 555 (asked 2026-10-15).
+        func four(room: CGFloat) -> FleetLayout {
+            beside.unfolding([5, 4, 1], room: room) { size($0, large: $1, most: $2) }
+        }
+        expect(four(room: 600).most == [0: 3] && four(room: 600).wide[1] == size(4)
+               && four(room: 600).rest(3).height == 555
+               && four(room: 500).most.isEmpty && four(room: 500).wide[1] == nil, true,
+               "grid: a directory that fits no way of its own unfolds under another stood three to a row")
         let two = GroupTile.alone(holding: 2, room: 700, in: 646, spacing: 26)
         let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
         expect(two.large && two.size == CGSize(width: 646, height: 700)

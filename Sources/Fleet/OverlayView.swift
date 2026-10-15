@@ -905,16 +905,27 @@ struct FleetLayout: Layout {
                 // to stand in it (asked 2026-10-15): the larger ones take the whole width.
                 if large, let small = layout.wide[i], layout.taken(small.width) < columns,
                    layout.wide.contains(where: { $0 == nil }) { continue }
-                let before = layout.wide[i]
                 let tries: [Int?] = [nil] + (large ? [] : stride(from: 3, through: columns, by: 1).map { $0 })
-                for most in tries {
-                    layout.wide[i] = size(sizes[i], large, most)
-                    if layout.rest(sizes.count).height <= room {
-                        if large { layout.large.insert(i) }
-                        layout.most[i] = most
-                        break
+                // Still folded, one already unfolded two to a row is stood across the grid, one at
+                // a time, for the room that leaves under it (asked 2026-10-15).
+                let widen: [Int?] = [nil] + (large ? [] : order.filter {
+                    $0 != i && layout.wide[$0] != nil && layout.most[$0] == nil
+                }.map { $0 })
+                widening: for other in widen {
+                    let kept = layout
+                    if let other {
+                        layout.wide[other] = size(sizes[other], false, columns)
+                        layout.most[other] = columns
                     }
-                    layout.wide[i] = before
+                    for most in tries {
+                        layout.wide[i] = size(sizes[i], large, most)
+                        if layout.rest(sizes.count).height <= room {
+                            if large { layout.large.insert(i) }
+                            layout.most[i] = most
+                            break widening
+                        }
+                    }
+                    layout = kept
                 }
             }
         }
