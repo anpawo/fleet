@@ -129,6 +129,11 @@ final class AppController: ObservableObject {
     }
 
     private func nameOutsiders() {
+        // An offscreen render or bench draws the names the app last stored. Asking here started
+        // one `claude -p` per session on every run, left running when the render exited: two
+        // sessions rendering again and again started some 85 in six minutes, load 66
+        // (2026-10-15).
+        guard Firestore.reads else { return }
         // A project with one session in it needs no name for it: the tile says the project,
         // and the project is what that session is doing.
         let shared = Set(Dictionary(grouping: sessions.filter(\.isSelf), by: \.dirName)
