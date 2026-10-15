@@ -1136,9 +1136,10 @@ struct GroupTile: View {
     private static let flushNameAir: CGFloat = 4
     private static let flushNameSide: CGFloat = 20
     private static let flushNameFoot: CGFloat = 11
-    /// One column wide, the bite is out of its first card's top left corner, and the name has
-    /// the border on that side too.
+    /// One column wide, the name stands over the cards rather than in a bite (asked
+    /// 2026-10-15), this far in from them, in a band as tall as the bite.
     private static let flushNameLead: CGFloat = 8
+    static let flushNameBand = flushNameAir + flushNameLine + flushNameFoot
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
     static func flushCards(_ name: String, count: Int, most: Int? = nil, in width: CGFloat,
@@ -1146,12 +1147,11 @@ struct GroupTile: View {
         let outer = size(holding: count, large: false, most: most, in: width, spacing: spacing)
         let perRow = perRow(count, large: false, most: most)
         let across = CGFloat(perRow), rows = CGFloat((count + perRow - 1) / perRow)
-        let bite = perRow == 1 ? flushNameLead + flushNameWidth(name) + flushNameSide
-                               : (flushNameWidth(name) + 2 * flushNameSide - inset) / 2
-        let notch = CGSize(width: max(2 * NotchedCard.bend, bite),
-                           height: flushNameAir + flushNameLine + flushNameFoot)
+        let notch = CGSize(width: max(2 * NotchedCard.bend, (flushNameWidth(name) + 2 * flushNameSide - inset) / 2),
+                           height: flushNameBand)
+        let over = perRow == 1 ? flushNameBand : 0
         return (CGSize(width: (outer.width - (across + 1) * inset) / across,
-                       height: (outer.height - (rows + 1) * inset) / rows), notch)
+                       height: (outer.height - (rows + 1) * inset - over) / rows), notch)
     }
     private static func flushNameWidth(_ name: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: flushName, weight: .semibold)
@@ -1226,7 +1226,7 @@ struct GroupTile: View {
                         .foregroundStyle(Self.tint)
                         .lineLimit(1)
                         .fixedSize()
-                        // In the middle of the bite.
+                        // In the middle of the bite, or over a column's cards.
                         .offset(x: most == 1 ? Self.inset + Self.flushNameLead
                                     : Self.inset + cards.card.width + (Self.inset - Self.flushNameWidth(name)) / 2,
                                 y: Self.inset + Self.flushNameAir)
@@ -1314,8 +1314,8 @@ struct GroupTile: View {
                             // saying "portfolio" is a row you cannot choose from.
                             SessionTile(session: session, heading: session.label ?? session.topic,
                                         main: session.id == head, grouped: true, large: large,
-                                        notch: !flush || line > 0 || place > 1 ? nil
-                                            : .init(edge: place == 0 && perRow > 1 ? .trailing : .leading, size: flushed.notch)) {
+                                        notch: !flush || perRow == 1 || line > 0 || place > 1 ? nil
+                                            : .init(edge: place == 0 ? .trailing : .leading, size: flushed.notch)) {
                                 onActivate(session)
                             }
                             .frame(width: card.width, height: card.height)
@@ -1333,7 +1333,7 @@ struct GroupTile: View {
             // Clear of the name, which is drawn over this rather than above it — and clear by
             // a margin: a row of cards starting five points under the title read as its
             // underline.
-            .padding(.top, flush ? GroupTile.inset : GroupTile.top(spacing))
+            .padding(.top, flush ? GroupTile.inset + (perRow == 1 ? GroupTile.flushNameBand : 0) : GroupTile.top(spacing))
             .padding([.horizontal, .bottom], flush ? GroupTile.inset : GroupTile.margin(spacing))
 
             Group {

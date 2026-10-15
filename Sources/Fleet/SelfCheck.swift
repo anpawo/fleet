@@ -223,6 +223,10 @@ enum SelfCheck {
                && inside.card.height == SessionTile.height - 2 * GroupTile.inset
                && 2 * inside.notch.width + GroupTile.inset > 19, true,
                "grid: its cards inside its border, the one gap all round, a bite for its name")
+        let stacked = GroupTile.flushCards("fleet", count: 3, most: 1, in: 688, spacing: 26)
+        expect(abs(3 * stacked.card.height + 4 * GroupTile.inset + GroupTile.flushNameBand
+                   - size(3, most: 1).height) < 0.001, true,
+               "grid: one column wide, its name in a band over the cards, not in a bite")
         expect(size(3).height - size(2).height == cell.height + 26
                && size(4).height == size(3).height && size(5).width == 450, true,
                "grid: three stand two and one, four two and two")
