@@ -50,6 +50,8 @@ struct OverlayView: View {
     /// EPITECH open under the pointer — see `EpitechColumn.open`. Seeded from `--school-open`
     /// so a render can show it.
     @State private var schoolOpen = CommandLine.arguments.contains("--school-open")
+    /// MAIL's list, measured — see `reelsRoom`.
+    @State private var mailNeed: CGFloat = 0
 
     /// Which directory is unfolded. On the controller, not here: Esc and the panel chord fold
     /// it as they dismiss, and a piece of `@State` is not something they can reach. It is
@@ -211,6 +213,17 @@ struct OverlayView: View {
         }
     }
 
+    /// What REELS may be at rest, pane included, out of `below` — the left column under the
+    /// memory: what is left once MAIL has its list and EPITECH its heading line. A heading line
+    /// is 14, as `overLine` counts it; MAIL's list sits 17 under its own. Nothing until the
+    /// list has been measured, or REELS would open for a frame before the mails shut it.
+    private func reelsRoom(_ below: CGFloat) -> CGFloat {
+        let hub = controller.hub
+        guard hub.mailEmpty || mailNeed > 0 else { return 0 }
+        let mail = hub.mailEmpty ? 14 : 14 + 17 + mailNeed
+        return below - Self.blockGap - mail - Self.overLine + 2 * Self.blockSpread
+    }
+
     /// The whole panel below the header, across: the mail worth reading, the fleet, the list of
     /// things to do.
     ///
@@ -237,42 +250,47 @@ struct OverlayView: View {
                 // school. Every space between them is the same space — a column whose gaps
                 // vary reads as groups nobody meant to make.
                 // One block takes what is left of the column once the memory has had its
-                // line: EPITECH under the pointer, MAIL the rest of the time, REELS the day the
-                // inbox is empty (asked 2026-10-15). The others are their heading, or as tall
+                // line: EPITECH under the pointer, MAIL the rest of the time, REELS whatever
+                // the mails leave (asked 2026-10-15). The others are their heading, or as tall
                 // as what they hold. Each scrolls inside its share, so none can push another
                 // off the bottom.
                 let hub = controller.hub
                 let school = schoolOpen && !hub.schoolEmpty
-                let reelsRoom = hub.mailEmpty && !school
                 VStack(alignment: .leading, spacing: Self.blockGap) {
                     MemoryStrip(reaper: controller.reaper,
                                 commandHeld: controller.commandHeld)
-                    ReelBlock(hub: hub, commandHeld: controller.commandHeld,
-                              limit: Self.columnHeight / 3, expanded: reelsRoom)
-                    GeometryReader { space in
-                        let free = space.size.height - Self.blockGap
+                    // Read under the memory, which grows under pressure: what is left there
+                    // does not move when REELS opens into it.
+                    GeometryReader { below in
                         VStack(alignment: .leading, spacing: Self.blockGap) {
-                            // Under an open school, three sevenths at most. Otherwise all of it
-                            // but EPITECH's heading line and the gap over it — a limit counts
-                            // the frame, which reaches `blockSpread` past the block top and
-                            // bottom.
-                            MailColumn(hub: hub,
-                                       commandHeld: controller.commandHeld,
-                                       scrolling: !eagerLayout,
-                                       limit: school ? max(0, free * 3 / 7)
-                                           : space.size.height - Self.overLine + 2 * Self.blockSpread)
-                            EpitechColumn(hub: hub,
-                                          commandHeld: controller.commandHeld,
-                                          onDismiss: controller.dismiss,
-                                          scrolling: !eagerLayout,
-                                          open: $schoolOpen)
-                                .frame(maxHeight: school ? .infinity : nil, alignment: .top)
+                            ReelBlock(hub: hub, commandHeld: controller.commandHeld,
+                                      limit: Self.columnHeight / 3,
+                                      room: school ? 0 : reelsRoom(below.size.height))
+                            GeometryReader { space in
+                                let free = space.size.height - Self.blockGap
+                                VStack(alignment: .leading, spacing: Self.blockGap) {
+                                    // Under an open school, three sevenths at most. Otherwise
+                                    // all of it but EPITECH's heading line and the gap over
+                                    // it — a limit counts the frame, which reaches
+                                    // `blockSpread` past the block top and bottom.
+                                    MailColumn(hub: hub,
+                                               commandHeld: controller.commandHeld,
+                                               scrolling: !eagerLayout,
+                                               limit: school ? max(0, free * 3 / 7)
+                                                   : space.size.height - Self.overLine + 2 * Self.blockSpread,
+                                               natural: $mailNeed)
+                                    EpitechColumn(hub: hub,
+                                                  commandHeld: controller.commandHeld,
+                                                  onDismiss: controller.dismiss,
+                                                  scrolling: !eagerLayout,
+                                                  open: $schoolOpen)
+                                        .frame(maxHeight: school ? .infinity : nil, alignment: .top)
+                                }
+                                .frame(height: space.size.height, alignment: .top)
+                            }
                         }
-                        .frame(height: space.size.height, alignment: .top)
+                        .frame(height: below.size.height, alignment: .top)
                     }
-                    // Two heading lines and the gap between them while REELS has the room:
-                    // held, so that the list over them is the one block left to grow.
-                    .frame(height: reelsRoom ? Self.overLine + 14 : nil)
                 }
                 .animation(Self.fold, value: hub.mailEmpty)
                 .animation(Self.fold, value: hub.schoolEmpty)

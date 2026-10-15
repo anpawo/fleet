@@ -888,6 +888,17 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         if CommandLine.arguments.contains("--no-mail") {
             controller.hub.mail = []
         }
+        // `--mail <n>` draws n mails, the real ones over again past their count: REELS opens
+        // into what a short inbox leaves, and stays shut under a full one.
+        if let m = CommandLine.arguments.firstIndex(of: "--mail"),
+           m + 1 < CommandLine.arguments.count, let n = Int(CommandLine.arguments[m + 1]) {
+            let real = controller.hub.mail
+            controller.hub.mail = real.isEmpty ? [] : (0 ..< n).map { i in
+                var mail = real[i % real.count]
+                mail.id += "#\(i)"
+                return mail
+            }
+        }
         // `--reel` draws the pink block a Reel being analyzed hangs over the memory.
         if CommandLine.arguments.contains("--reel") {
             controller.hub.checkingReel = "demo"
@@ -1061,7 +1072,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
-    "--launch", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
+    "--launch", "--mail", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--school-open", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",

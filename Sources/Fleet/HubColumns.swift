@@ -23,8 +23,9 @@ struct MailColumn: View {
 
     /// The tallest the block may be: it is as tall as its mails, up to this, and scrolls past it.
     var limit: CGFloat = .infinity
-    /// What the mails actually need, measured — see `CronColumn.natural`.
-    @State private var natural: CGFloat = 0
+    /// What the mails actually need, measured — see `CronColumn.natural`. Held by the panel,
+    /// which gives REELS what they leave of the column.
+    @Binding var natural: CGFloat
     /// The heading line, the gap under it and the frame's padding — see `CronColumn.chrome`.
     private static let chrome: CGFloat = 56
 
@@ -1830,11 +1831,11 @@ struct AlertsBlock: View {
 struct ReelBlock: View {
     @ObservedObject var hub: HubStore
     let commandHeld: Bool
-    /// The tallest the whole block may be, pane included.
+    /// The tallest the whole block may be under the pointer, pane included.
     let limit: CGFloat
-    /// Open at rest, as tall as the column lets it be past `limit`: the inbox is empty and the
-    /// school folded, so the column's room is this block's (asked 2026-10-15).
-    var expanded = false
+    /// The same at rest: what MAIL leaves of the column, the school folded. Open on it whenever
+    /// a card fits (asked 2026-10-15), the heading alone when not.
+    var room: CGFloat = 0
 
     /// Seeded from `--reels-open` so a render can show the list, which nothing else opens
     /// without a pointer.
@@ -1848,7 +1849,9 @@ struct ReelBlock: View {
     private static let chrome: CGFloat = 14 + 9 + 26
 
     var body: some View {
-        let listing = (open || expanded || hub.contextReelID != nil) && !hub.readReels.isEmpty
+        let pointed = open || hub.contextReelID != nil
+        let roomy = room - Self.chrome >= MailCard.room(forRows: 1)
+        let listing = (pointed || roomy) && !hub.readReels.isEmpty
         Block(title: "REELS", tint: Self.tint, fill: Self.tint.darkened(0.58)) {
             if hub.checkingReel != nil || hub.reinterpreting {
                 ProgressView()
@@ -1865,7 +1868,7 @@ struct ReelBlock: View {
         } content: {
             if listing {
                 let height = min(natural > 0 ? natural : 60,
-                                 expanded ? .infinity : max(40, limit - Self.chrome))
+                                 max(40, (pointed ? max(limit, room) : room) - Self.chrome))
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
                         ForEach(hub.readReels) { reel in
@@ -1890,8 +1893,9 @@ struct ReelBlock: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
-                // Expanded, it gives way to whatever the column has left rather than hold it.
-                .frame(minHeight: expanded ? 0 : height, maxHeight: height)
+                // Held, not flexible: beside MAIL's greedy reader a flexible list is offered half
+                // of what is left, not what is left.
+                .frame(height: height)
                 .transition(.opacity)
             }
         }
