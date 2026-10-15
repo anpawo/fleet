@@ -78,14 +78,14 @@ struct OverlayView: View {
     /// to the middle. A lone tile that centres itself reads as a different column each time
     /// the fleet is odd-numbered.
     ///
-    /// Two, and never three. A third column used to appear once a fleet outgrew six, and the
-    /// width it took is now the mail and todo columns either side of it — the middle of the
-    /// panel is no longer the whole panel.
-    private static let tilesPerRow = 2
+    /// Three (asked 2026-10-15), on tiles narrow enough that the side columns keep their width.
+    private static let tilesPerRow = 3
     /// How dark the panel sits over your desktop. Lower shows more of what's behind it.
     private static let tintOpacity: Double = 0.80
 
-    private let tileWidth: CGFloat = 310
+    /// What three take beside the side columns on a 1470 pt laptop screen, with some edge left
+    /// — and a third of the block, the width a group's cards have when three stand on a line.
+    private let tileWidth: CGFloat = 212
     /// Wider than it looks like it needs to be: the hover glow is a 16pt shadow, and the
     /// neighbouring tile is opaque and drawn after, so a tighter gap eats the glow.
     private let tileSpacing: CGFloat = 26
@@ -1458,8 +1458,7 @@ struct SessionTile: View {
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    /// The session's recent history, oldest at the top: what you asked, what it ran, what it
-    /// said back. One line each — the sequence is the point, not any single line's detail.
+    /// The session's recent history, oldest at the top: what it said back to your last message. One line each — the sequence is the point, not any single line's detail.
     private var rail: some View {
         VStack(alignment: .leading, spacing: 3) {
             // The tile is a fixed height, so the sub-agent line has to come out of somewhere:
@@ -1473,13 +1472,13 @@ struct SessionTile: View {
             let said = steps.enumerated().filter { index, line in
                 line.kind != .tool || (session.state == .awaitingAnswer && index == steps.count - 1)
             }.map(\.element)
-            // From your last message on, not the tail of the whole conversation: the line above
-            // the question was the answer to the one before it. The question stays put when the
-            // replies to it run past the room; they give up their oldest line instead.
+            // What came back since your last message, not the tail of the whole conversation:
+            // the line above it was the answer to the one before. The message itself is left
+            // out (asked 2026-10-15) — you typed it.
             let lines: [PreviewLine] = said.lastIndex(where: { $0.kind == .user }).map { ask in
-                [said[ask]] + said[(ask + 1)...].suffix(room - 1)
+                Array(said[(ask + 1)...].suffix(room - 1))
             } ?? Array(said.suffix(room))
-            if lines.isEmpty {
+            if said.isEmpty {
                 Text("No conversation yet")
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.25))
