@@ -207,22 +207,23 @@ enum SelfCheck {
         }
         let cell = GroupTile.cell(688, spacing: 26)
         expect(cell == CGSize(width: 212, height: SessionTile.height)
-               && size(6).height - size(3).height == cell.height + 26, true,
-               "grid: an unfolded directory stands its sessions in the grid's own cells, three to a row")
+               && size(6).height - size(4).height == cell.height + 26, true,
+               "grid: an unfolded directory stands its sessions in the grid's own cells, two to a row")
         expect(size(1, large: true).height == size(2, large: true).height
                && size(3, large: true).height - size(2, large: true).height
                    == SessionTile.height(width: GroupTile.inner(688, large: true, spacing: 26)) + GroupTile.gap(26), true,
                "grid: and two to a row on the larger cards")
-        expect(size(2) == CGSize(width: 450, height: SessionTile.height) && size(3).width == 688
+        expect(size(2) == CGSize(width: 450, height: SessionTile.height) && size(3).width == 450
                && size(2, large: true).width == 688, true,
-               "grid: a directory of two takes two cells' room, in width and height")
-        let inside = GroupTile.flushCard(count: 2, in: 688, spacing: 26)
-        expect(abs(2 * inside.width + 3 * GroupTile.inset - 450) < 0.001
-               && abs(inside.height + GroupTile.flushBand + GroupTile.inset - SessionTile.height) < 0.001, true,
-               "grid: its cards inside its border, under a line for its name")
-        expect(size(4).width == 450 && size(4).height - size(2).height == cell.height + 26
-               && size(5).width == 688, true,
-               "grid: four stand two and two, five three and two")
+               "grid: a directory of two takes two cells' room, in width and height, and so does every row of more")
+        let inside = GroupTile.flushCards("s14", count: 2, in: 688, spacing: 26)
+        expect(abs(2 * inside.card.width + inside.middle + 2 * GroupTile.inset - 450) < 0.001
+               && inside.card.height == SessionTile.height - 2 * GroupTile.inset
+               && inside.middle > GroupTile.inset, true,
+               "grid: its cards inside its border, further apart where its name stands between them")
+        expect(size(3).height - size(2).height == cell.height + 26
+               && size(4).height == size(3).height && size(5).width == 450, true,
+               "grid: three stand two and one, four two and two")
         expect(size(4, large: true).height + 26 + SessionTile.height <= 658, true,
                "grid: four on the larger cards stand over one row of the grid on a laptop screen")
         var beside = FleetLayout(tile: CGSize(width: 212, height: SessionTile.height), spacing: 26,
