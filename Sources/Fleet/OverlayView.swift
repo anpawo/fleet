@@ -1066,7 +1066,7 @@ struct GroupTile: View {
     /// its cards: the one gap (asked 2026-10-15).
     static let inset: CGFloat = 7
     /// A flush group's name, and the room it keeps round it inside the bite.
-    private static let flushName: CGFloat = 11
+    private static let flushName: CGFloat = 14
     private static let flushNameLine = flushName * 1.2
     private static let flushNameAir: CGFloat = 4
     /// A flush group's cards, and the bite each of the first two gives the name: together,
@@ -1414,9 +1414,11 @@ struct HeadGlow: ViewModifier {
 struct NotchedCard: InsettableShape {
     let notch: SessionTile.Notch
     var inset: CGFloat = 0
-    /// The card's own corners, and the bite's.
+    /// The card's own corners, the bite's, and the tighter one where it turns back into the
+    /// card (asked 2026-10-15: rounded less).
     static let radius: CGFloat = 10
     static let bend: CGFloat = 5
+    static let turn: CGFloat = 2
 
     func inset(by amount: CGFloat) -> NotchedCard {
         var shape = self
@@ -1427,7 +1429,7 @@ struct NotchedCard: InsettableShape {
     func path(in rect: CGRect) -> Path {
         let r = rect.insetBy(dx: inset, dy: inset)
         let w = notch.size.width, h = notch.size.height
-        let corner = max(0, Self.radius - inset), out = max(0, Self.bend - inset), back = Self.bend + inset
+        let corner = max(0, Self.radius - inset), out = max(0, Self.bend - inset), back = Self.turn + inset
         // Drawn with the bite top right, and mirrored for one top left.
         let points: [(CGPoint, CGFloat)] = [
             (CGPoint(x: r.minX, y: r.minY), corner),
@@ -1539,11 +1541,13 @@ struct SessionTile: View {
                 }
             }
             .overlay {
+                // Thinner inside a group (asked 2026-10-15), whose own border is round them.
+                let line = grouped ? 2.5 * 0.75 : 2.5
                 if let notch {
-                    NotchedCard(notch: notch).strokeBorder(session.state.tint, lineWidth: 2.5)
+                    NotchedCard(notch: notch).strokeBorder(session.state.tint, lineWidth: line)
                 } else {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(session.state.tint, lineWidth: 2.5)
+                        .strokeBorder(session.state.tint, lineWidth: line)
                 }
             }
             .scaleEffect(hovering ? 1.015 : 1.0)
@@ -1564,8 +1568,9 @@ struct SessionTile: View {
         // A topic is a sentence where a directory is a word, so it is set smaller and given a
         // second line rather than shrunk to a third of the size to fit on one.
         Text(heading ?? session.displayName)
-            // Smaller on 2026-10-15: 0.9 of what it was, then on the grid 0.75 of that.
-            .font(.system(size: grouped ? (large ? 22 : 15) * 0.9 : (heading == nil ? 31 : 22) * 0.9 * 0.75,
+            // Smaller on 2026-10-15: 0.9 of what it was, then on the grid 0.75 of that; on a
+            // group's smaller cards bigger again the same day.
+            .font(.system(size: grouped ? (large ? 22 * 0.9 : 16) : (heading == nil ? 31 : 22) * 0.9 * 0.75,
                           weight: .semibold))
             .foregroundStyle(.white)
             .modifier(HeadGlow(on: main))
