@@ -1069,8 +1069,8 @@ struct GroupTile: View {
     private static let flushName: CGFloat = 14 * 1.25
     private static let flushNameLine = flushName * 1.2
     private static let flushNameAir: CGFloat = 4
-    private static let flushNameSide: CGFloat = 9
-    private static let flushNameFoot: CGFloat = 8
+    private static let flushNameSide: CGFloat = 13
+    private static let flushNameFoot: CGFloat = 11
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
     static func flushCards(_ name: String, count: Int, in width: CGFloat,
@@ -1417,10 +1417,10 @@ struct NotchedCard: InsettableShape {
     let notch: SessionTile.Notch
     var inset: CGFloat = 0
     /// The card's own corners, the bite's, and the tighter one where it turns back into the
-    /// card (asked 2026-10-15: rounded less).
+    /// card (asked 2026-10-15: rounded less, then a little more).
     static let radius: CGFloat = 10
-    static let bend: CGFloat = 5
-    static let turn: CGFloat = 2
+    static let bend: CGFloat = 7
+    static let turn: CGFloat = 4
 
     func inset(by amount: CGFloat) -> NotchedCard {
         var shape = self
