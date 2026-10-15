@@ -1064,11 +1064,14 @@ struct GroupTile: View {
     private var flush: Bool { open && !toggles && !large }
     /// Between a flush group's border and its cards, across and down, and between two of
     /// its cards: the one gap (asked 2026-10-15).
-    static let inset: CGFloat = 7
-    /// A flush group's name, and the room it keeps round it inside the bite.
-    private static let flushName: CGFloat = 14
+    static let inset: CGFloat = 10
+    /// A flush group's name, and the room it keeps round it inside the bite: more either
+    /// side and under it than over it, where the border already is (asked 2026-10-15).
+    private static let flushName: CGFloat = 14 * 1.25
     private static let flushNameLine = flushName * 1.2
     private static let flushNameAir: CGFloat = 4
+    private static let flushNameSide: CGFloat = 9
+    private static let flushNameFoot: CGFloat = 8
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
     static func flushCards(_ name: String, count: Int, in width: CGFloat,
@@ -1076,8 +1079,8 @@ struct GroupTile: View {
         let outer = size(holding: count, large: false, in: width, spacing: spacing)
         let perRow = perRow(count, large: false)
         let across = CGFloat(perRow), rows = CGFloat((count + perRow - 1) / perRow)
-        let notch = CGSize(width: max(2 * NotchedCard.bend, (flushNameWidth(name) + 2 * flushNameAir - inset) / 2),
-                           height: flushNameLine + 2 * flushNameAir)
+        let notch = CGSize(width: max(2 * NotchedCard.bend, (flushNameWidth(name) + 2 * flushNameSide - inset) / 2),
+                           height: flushNameAir + flushNameLine + flushNameFoot)
         return (CGSize(width: (outer.width - (across + 1) * inset) / across,
                        height: (outer.height - (rows + 1) * inset) / rows), notch)
     }
