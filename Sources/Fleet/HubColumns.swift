@@ -21,8 +21,6 @@ struct MailColumn: View {
     /// à chaque tick.
     @State private var hovered: String?
 
-    /// What fits beside three rows of tiles now that a card is two lines rather than four.
-    private static let maxItems = 10
     /// The tallest the block may be: it is as tall as its mails, up to this, and scrolls past it.
     var limit: CGFloat = .infinity
     /// What the mails actually need, measured — see `CronColumn.natural`.
@@ -79,7 +77,7 @@ struct MailColumn: View {
         if !hub.loaded {
             HubEmptyLine(text: hub.pending)
         }
-        ForEach(hub.mail.prefix(Self.maxItems)) { mail in
+        ForEach(hub.mail) { mail in
             MailCard(hub: hub, mail: mail,
                      expanded: commandHeld && hovered == mail.id,
                      // Une transaction, comme dans CronColumn : sans elle la carte se déplie
