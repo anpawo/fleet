@@ -1064,11 +1064,11 @@ struct GroupTile: View {
     /// Between a flush group's border and its cards, across and down, and between two of
     /// its cards: the one gap (asked 2026-10-15).
     static let inset: CGFloat = 10
-    /// A flush group's name, and the line it takes above the cards: the border's own gap
-    /// over it, a little under.
-    private static let flushName: CGFloat = 14 * 1.25
-    private static let flushNameTop: CGFloat = 4
-    static let flushBand = flushNameTop + flushName * 1.2 + 4
+    /// A flush group's name, and the line it takes above the cards, with more room under it
+    /// than over it (asked 2026-10-15: bigger, and further from the cards).
+    private static let flushName: CGFloat = 20
+    private static let flushNameTop: CGFloat = 5
+    static let flushBand = flushNameTop + flushName * 1.2 + 10
     /// A flush group's cards: what is left of its two cells' room under the name's line.
     static func flushCard(count: Int, in width: CGFloat, spacing: CGFloat) -> CGSize {
         let outer = size(holding: count, large: false, in: width, spacing: spacing)
@@ -1434,6 +1434,9 @@ struct SessionTile: View {
                 // the border and the pill say its state.
                 name
                     .padding(.horizontal, 12)
+                    // Under the pills on a group's shorter cards, where the middle of the card
+                    // put the name against them.
+                    .padding(.top, grouped ? 26 : 0)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Pills side by side while the two of them fit the tile, stacked in the corner
