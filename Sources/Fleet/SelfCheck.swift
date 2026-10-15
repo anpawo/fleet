@@ -216,6 +216,11 @@ enum SelfCheck {
         expect(size(2) == CGSize(width: 450, height: SessionTile.height) && size(3).width == 688
                && size(2, large: true).width == 688, true,
                "grid: a directory of two takes two cells' room, in width and height")
+        let inside = GroupTile.flushCards("s14", count: 2, in: 688, spacing: 26)
+        expect(abs(2 * inside.card.width + inside.first + 2 * GroupTile.inset - 450) < 0.001
+               && inside.card.height == SessionTile.height - 2 * GroupTile.inset
+               && inside.first > GroupTile.inset, true,
+               "grid: its cards inside its border, further apart where its name stands between them")
         expect(size(4).width == 450 && size(4).height - size(2).height == cell.height + 26
                && size(5).width == 688, true,
                "grid: four stand two and two, five three and two")
