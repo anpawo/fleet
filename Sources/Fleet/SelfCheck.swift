@@ -201,22 +201,36 @@ enum SelfCheck {
                "grid: unfolded directories lead, the other sessions under them")
         expect(laid(room: 838).large == [] && laid(room: 938).large == [2] && laid(room: 1138).large == [0, 2], true,
                "grid: the larger cards where room is left once every directory that fits is unfolded")
+        // The panel's own grid: three columns of 212 and two gaps of 26.
         func size(_ count: Int, large: Bool = false) -> CGSize {
-            GroupTile.size(holding: count, large: large, in: 646, spacing: 26)
+            GroupTile.size(holding: count, large: large, in: 688, spacing: 26)
         }
-        expect(size(1).height == size(3).height
-               && size(4).height - size(3).height == SessionTile.groupedHeight(large: false) + GroupTile.gap(26), true,
+        func card(_ across: Int, large: Bool = false) -> CGFloat {
+            SessionTile.height(width: GroupTile.inner(688, across: across, large: large, spacing: 26))
+        }
+        expect(size(6).height - size(3).height == card(3) + GroupTile.gap(26), true,
                "grid: an unfolded directory stands its sessions three to a row")
         expect(size(1, large: true).height == size(2, large: true).height
                && size(3, large: true).height - size(2, large: true).height
-                   == SessionTile.groupedHeight(large: true) + GroupTile.gap(26), true,
+                   == card(2, large: true) + GroupTile.gap(26), true,
                "grid: and two to a row on the larger cards")
-        expect(size(2).width == 439 && size(3).width == 646 && size(2, large: true).width == 646, true,
-               "grid: an unfolded directory is no wider than its fullest row")
-        expect(size(4).width == 439 && size(4).height == size(5).height && size(5).width == 646, true,
-               "grid: four stand two and two, in the rows three and one would take")
-        expect(size(4, large: true).height + 26 + 186 <= 658, true,
+        expect(size(2).width == 450 && size(3).width == 688 && size(2, large: true).width == 688, true,
+               "grid: an unfolded directory is as wide as the grid columns its fullest row covers")
+        expect(size(4).width == 450 && size(4).height - size(2).height == card(2) + GroupTile.gap(26)
+               && size(5).width == 688, true,
+               "grid: four stand two and two, five three and two")
+        expect(size(4, large: true).height + 26 + SessionTile.height <= 658, true,
                "grid: four on the larger cards stand over one row of the grid on a laptop screen")
+        var beside = FleetLayout(tile: CGSize(width: 212, height: SessionTile.height), spacing: 26,
+                                 columns: 3, openSize: .zero, openHeight: 0, progress: 0)
+        beside.wide = [size(2), nil, nil]
+        let besideRest = beside.rest(3)
+        expect(besideRest.frames[1].origin == CGPoint(x: 476, y: 0)
+               && besideRest.frames[2].origin == CGPoint(x: 0, y: size(2).height + 26), true,
+               "grid: a session stands beside a directory two columns wide, the next under them")
+        let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1) }
+        expect(roomy.large.isEmpty && roomy.wide[0] == size(2), true,
+               "grid: a directory two wide keeps its smaller cards while a session can stand beside it")
         let two = GroupTile.alone(holding: 2, room: 700, in: 646, spacing: 26)
         let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
         expect(two.large && two.size == CGSize(width: 646, height: 700)
