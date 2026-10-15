@@ -993,9 +993,10 @@ struct GroupTile: View {
 
     /// One size, open or folded. The name only moves: a title that also shrank was a second
     /// thing happening in an animation that is already a card growing.
-    private static let nameSize: CGFloat = 31
+    /// The size a session's name has on the grid (asked 2026-10-15: smaller).
+    private static let nameSize: CGFloat = 31 * 0.9 * 0.75
     /// Roughly the name's line height, to centre it on the folded card's 33% mark.
-    private static let nameLine: CGFloat = 37
+    private static let nameLine: CGFloat = 25
 
     /// What the open card keeps clear between its border and its cards, at the sides and
     /// under them. Half of what it was (asked 2026-10-12), which was the gap between two cards
@@ -1011,13 +1012,25 @@ struct GroupTile: View {
     /// What the card takes with every one of its sessions in view and nothing to scroll: the
     /// rows, and what `Cards` pads them with. No wider than its fullest row (asked
     /// 2026-10-12): a directory of two on a row of three ended on an empty place.
+    /// On the smaller cards it is the grid's own cells, as many as it holds — see `flush`.
     static func size(holding count: Int, large: Bool, in width: CGFloat, spacing: CGFloat) -> CGSize {
         let perRow = perRow(count, large: large)
         let across = CGFloat(perRow), rows = CGFloat((count + perRow - 1) / perRow)
-        let inner = inner(width, across: perRow, large: large, spacing: spacing)
+        if !large {
+            let cell = cell(width, spacing: spacing)
+            return CGSize(width: across * (cell.width + spacing) - spacing,
+                          height: rows * (cell.height + spacing) - spacing)
+        }
+        let inner = inner(width, large: large, spacing: spacing)
         return CGSize(
             width: 2 * margin(spacing) + across * (inner + gap(spacing)) - gap(spacing),
             height: top(spacing) + rows * (SessionTile.height(width: inner) + gap(spacing)) - gap(spacing) + margin(spacing))
+    }
+    /// One cell of the grid a block this wide holds, three to a row.
+    static func cell(_ width: CGFloat, spacing: CGFloat) -> CGSize {
+        let across = CGFloat(most(large: false))
+        let cell = (width + spacing) / across - spacing
+        return CGSize(width: cell, height: SessionTile.height(width: cell))
     }
     /// What it takes of a block `room` tall that it has to itself: the whole of it (asked
     /// 2026-10-13), not what its cards need, which left the block half empty under a short
@@ -1039,16 +1052,15 @@ struct GroupTile: View {
         return max(1, (count + rows - 1) / rows)
     }
     /// The width a session card gets inside the open card: the block, less the card's own
-    /// padding, split between as many as can stand on a row. On the smaller cards the block
-    /// is the grid's columns that `across` of them cover — the grid has as many columns as
-    /// three of them — so a directory two wide leaves a column free beside it, which a
-    /// session takes (asked 2026-10-15).
-    static func inner(_ width: CGFloat, across: Int, large: Bool, spacing: CGFloat) -> CGFloat {
-        let most = most(large: large)
-        let across = large ? most : across
-        let span = large ? width : (width + spacing) * CGFloat(across) / CGFloat(most) - spacing
-        return (span - CGFloat(across - 1) * gap(spacing) - 2 * margin(spacing)) / CGFloat(across)
+    /// padding, split between as many as can stand on a row.
+    static func inner(_ width: CGFloat, large: Bool, spacing: CGFloat) -> CGFloat {
+        let across = CGFloat(most(large: large))
+        return (width - (across - 1) * gap(spacing) - 2 * margin(spacing)) / across
     }
+    /// Standing in the grid on the smaller cards: no card of its own, only its sessions in the
+    /// grid's own cells and its name over the line where they meet (asked 2026-10-15). Two of
+    /// them take two cells' room, and a session stands in the third.
+    private var flush: Bool { open && !toggles && !large }
     /// What the open cards are called as a whole, to scroll back to their top.
     private static let cards = "cards"
 
@@ -1064,8 +1076,8 @@ struct GroupTile: View {
                 // Built at the click, the cards were most of what that click's frame cost —
                 // 17 to 29 ms for three sessions, against 6 with them already there
                 // (`--bench-panel`, 12-10) — and the move starts once that frame is out.
-                Cards(name: name, sessions: sessions, open: open, large: large, spacing: spacing,
-                      size: full, scrolling: scrolling, scrolled: $scrolled,
+                Cards(name: name, sessions: sessions, open: open, large: large, flush: flush,
+                      spacing: spacing, size: full, scrolling: scrolling, scrolled: $scrolled,
                       onActivate: onActivate)
                     // Held to the card's own size as far as the stack goes: left to their
                     // full one, they pushed the count and the arrow out past the border.
@@ -1078,8 +1090,10 @@ struct GroupTile: View {
                 // A line each says it, and the ones past the third row are scrolled to.
                 folded
                     .padding(.horizontal, 12)
-                    .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 16)
-                    .padding(.bottom, 12)
+                    // Two whole rows between the name and the border of a 16:9 card, not one
+                    // and the top of the next.
+                    .padding(.top, 12 + SessionTile.height * 0.33 + Self.nameLine / 2 + 6)
+                    .padding(.bottom, 8)
                     .opacity(open ? 0 : 1)
                     .allowsHitTesting(!open)
                     .accessibilityHidden(open)
@@ -1097,6 +1111,7 @@ struct GroupTile: View {
                     // size, it only travels.
                     .offset(x: max(12, (box.size.width - nameWidth) / 2),
                             y: open ? spacing / 2 - scrolled : Self.titleTop)
+                    .opacity(flush ? 0 : 1)
 
                 HStack(spacing: 7) {
                     count
@@ -1104,6 +1119,20 @@ struct GroupTile: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
+                .opacity(flush ? 0 : 1)
+
+                if flush {
+                    Text(name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(Self.tint)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .titleGround(1)
+                        .frame(maxWidth: .infinity)
+                        // Centred on the cells' top edge.
+                        .offset(y: -9)
+                }
             }
             // A group that is folded up and opened again starts at the top, and a name still
             // carrying the last scroll would be drawn off the card.
@@ -1115,16 +1144,17 @@ struct GroupTile: View {
             .onTapGesture(perform: tapped)
         }
         // Nothing leaves the border, neither a row past the bottom nor a card's hover glow.
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // With no border, the name over the top edge and the cells' glow do.
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous).inset(by: flush ? -30 : 0))
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
+                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(flush ? 0 : 1))
+                .shadow(color: Self.tint.opacity(flush ? 0 : hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Self.tint, lineWidth: 2.5)
+                .strokeBorder(Self.tint.opacity(flush ? 0 : 1), lineWidth: 2.5)
         )
         // Only the folded card lifts to the pointer: the open one is the size of the block,
         // and a block that grows under the pointer pushes its own contents around.
@@ -1155,6 +1185,9 @@ struct GroupTile: View {
         let sessions: [Session]
         let open: Bool
         let large: Bool
+        /// The grid's own cells, at the grid's own gaps, with nothing round them — see
+        /// `GroupTile.flush`.
+        let flush: Bool
         let spacing: CGFloat
         let size: CGSize
         let scrolling: Bool
@@ -1165,13 +1198,16 @@ struct GroupTile: View {
             let head = Session.heads[name]
             let ordered = GroupTile.ordered(sessions, head: head)
             let perRow = GroupTile.perRow(ordered.count, large: large)
-            let inner = GroupTile.inner(size.width, across: perRow, large: large, spacing: spacing)
+            let inner = GroupTile.inner(size.width, large: large, spacing: spacing)
+            let card = flush ? GroupTile.cell(size.width, spacing: spacing)
+                             : CGSize(width: inner, height: SessionTile.height(width: inner))
+            let between = flush ? spacing : GroupTile.gap(spacing)
             let lines = stride(from: 0, to: ordered.count, by: perRow).map {
                 Array(ordered[$0 ..< min($0 + perRow, ordered.count)])
             }
-            let rows = VStack(alignment: .leading, spacing: GroupTile.gap(spacing)) {
+            let rows = VStack(alignment: .leading, spacing: between) {
                 ForEach(lines, id: \.first?.id) { row in
-                    HStack(alignment: .top, spacing: GroupTile.gap(spacing)) {
+                    HStack(alignment: .top, spacing: between) {
                         ForEach(row) { session in
                             // Inside a directory the card wears its topic: the directory is
                             // what these sessions have in common, and a row of cards all
@@ -1180,7 +1216,7 @@ struct GroupTile: View {
                                         main: session.id == head, grouped: true, large: large) {
                                 onActivate(session)
                             }
-                            .frame(width: inner, height: SessionTile.height(width: inner))
+                            .frame(width: card.width, height: card.height)
                         }
                     }
                 }
@@ -1195,11 +1231,13 @@ struct GroupTile: View {
             // Clear of the name, which is drawn over this rather than above it — and clear by
             // a margin: a row of cards starting five points under the title read as its
             // underline.
-            .padding(.top, GroupTile.top(spacing))
-            .padding([.horizontal, .bottom], GroupTile.margin(spacing))
+            .padding(.top, flush ? 0 : GroupTile.top(spacing))
+            .padding([.horizontal, .bottom], flush ? 0 : GroupTile.margin(spacing))
 
             Group {
-                if scrolling {
+                // Standing in the grid it fits by construction, and a scroll view the size of
+                // the block would take the pointer off the cards around it.
+                if scrolling && !flush {
                     ScrollViewReader { reader in
                         ScrollView(.vertical) { rows.id(GroupTile.cards) }
                             .scrollIndicators(.hidden)

@@ -205,18 +205,18 @@ enum SelfCheck {
         func size(_ count: Int, large: Bool = false) -> CGSize {
             GroupTile.size(holding: count, large: large, in: 688, spacing: 26)
         }
-        func card(_ across: Int, large: Bool = false) -> CGFloat {
-            SessionTile.height(width: GroupTile.inner(688, across: across, large: large, spacing: 26))
-        }
-        expect(size(6).height - size(3).height == card(3) + GroupTile.gap(26), true,
-               "grid: an unfolded directory stands its sessions three to a row")
+        let cell = GroupTile.cell(688, spacing: 26)
+        expect(cell == CGSize(width: 212, height: SessionTile.height)
+               && size(6).height - size(3).height == cell.height + 26, true,
+               "grid: an unfolded directory stands its sessions in the grid's own cells, three to a row")
         expect(size(1, large: true).height == size(2, large: true).height
                && size(3, large: true).height - size(2, large: true).height
-                   == card(2, large: true) + GroupTile.gap(26), true,
+                   == SessionTile.height(width: GroupTile.inner(688, large: true, spacing: 26)) + GroupTile.gap(26), true,
                "grid: and two to a row on the larger cards")
-        expect(size(2).width == 450 && size(3).width == 688 && size(2, large: true).width == 688, true,
-               "grid: an unfolded directory is as wide as the grid columns its fullest row covers")
-        expect(size(4).width == 450 && size(4).height - size(2).height == card(2) + GroupTile.gap(26)
+        expect(size(2) == CGSize(width: 450, height: SessionTile.height) && size(3).width == 688
+               && size(2, large: true).width == 688, true,
+               "grid: a directory of two takes two cells' room, in width and height")
+        expect(size(4).width == 450 && size(4).height - size(2).height == cell.height + 26
                && size(5).width == 688, true,
                "grid: four stand two and two, five three and two")
         expect(size(4, large: true).height + 26 + SessionTile.height <= 658, true,
