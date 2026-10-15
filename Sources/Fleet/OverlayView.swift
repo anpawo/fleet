@@ -844,28 +844,43 @@ struct FleetLayout: Layout {
     /// Where every card sits while none has the block, from the grid's own corner, and how
     /// tall that is. Unfolded directories lead, one to a row: one met halfway down would leave
     /// the card before it alone on its row. The grid's columns one leaves free beside it take
-    /// the next sessions (asked 2026-10-15), as many rows of them as its height holds.
+    /// the next sessions (asked 2026-10-15), as many rows of them as its height holds. A
+    /// directory one column wide stands in such a column first, and the sessions take the
+    /// cells left round it, under the shorter one included (asked 2026-10-15).
     func rest(_ count: Int) -> (frames: [CGRect], height: CGFloat) {
         var frames = Array(repeating: CGRect.zero, count: count)
         var queue = (0 ..< count).filter { $0 >= wide.count || wide[$0] == nil }[...]
         let step = CGSize(width: tile.width + spacing, height: tile.height + spacing)
+        let cells = { (height: CGFloat) in max(1, Int((height + spacing) / step.height)) }
+        let unfolded = (0 ..< min(count, wide.count)).filter { wide[$0] != nil }
+        let narrow = unfolded.filter { taken(wide[$0]!.width) == 1 }
+        var placed = Set<Int>()
         var y: CGFloat = 0
-        for i in 0 ..< count where i < wide.count {
-            guard let size = wide[i] else { continue }
+        for i in unfolded.filter({ !narrow.contains($0) }) + narrow where !placed.contains(i) {
+            placed.insert(i)
+            let size = wide[i]!
             frames[i] = CGRect(origin: CGPoint(x: 0, y: y), size: size)
-            let taken = taken(size.width)
-            let across = max(0, columns - taken)
-            let down = max(1, Int((size.height + spacing) / step.height))
-            var beside: [Int] = []
-            while beside.count < across * down, let t = queue.popFirst() { beside.append(t) }
-            let tall = CGFloat((beside.count + across - 1) / max(1, across)) * step.height - spacing
-            // From the top right corner down (asked 2026-10-15), not dropped to its foot.
-            for (slot, t) in beside.enumerated() {
-                frames[t] = CGRect(x: CGFloat(taken + slot % across) * step.width,
-                                   y: y + CGFloat(slot / across) * step.height,
-                                   width: tile.width, height: tile.height)
+            let taken = min(columns, taken(size.width))
+            var depth = (0 ..< columns).map { $0 < taken ? cells(size.height) : 0 }
+            var bottom = size.height
+            for (column, j) in zip(taken ..< columns, narrow.filter { !placed.contains($0) }) {
+                placed.insert(j)
+                frames[j] = CGRect(origin: CGPoint(x: CGFloat(column) * step.width, y: y), size: wide[j]!)
+                depth[column] = cells(wide[j]!.height)
+                bottom = max(bottom, wide[j]!.height)
             }
-            y += max(size.height, tall) + spacing
+            // From the top right corner down (asked 2026-10-15), not dropped to its foot.
+            let free = (0 ..< depth.max()!).flatMap { row in
+                (0 ..< columns).filter { row >= depth[$0] }.map { (row: row, column: $0) }
+            }
+            var tall: CGFloat = 0
+            for slot in free {
+                guard let t = queue.popFirst() else { break }
+                frames[t] = CGRect(x: CGFloat(slot.column) * step.width, y: y + CGFloat(slot.row) * step.height,
+                                   width: tile.width, height: tile.height)
+                tall = CGFloat(slot.row + 1) * step.height - spacing
+            }
+            y += max(bottom, tall) + spacing
         }
         // A last row short of the grid's width stands at its right, under the column the
         // sessions beside a directory stack in (asked 2026-10-15).
@@ -891,8 +906,8 @@ struct FleetLayout: Layout {
     /// its chance, and a grid already past `room` unfolds none. The larger cards come after,
     /// in the same order and on the same condition (asked 2026-10-12): none is folded for
     /// another to stand larger. One that does not fit two to a row on its smaller cards is
-    /// tried with more to a row, up to the grid's columns, before it is left folded (asked
-    /// 2026-10-15); `size` takes that number, nil for two.
+    /// tried in one column, then with more to a row, up to the grid's columns, before it is
+    /// left folded (asked 2026-10-15); `size` takes that number, nil for two.
     func unfolding(_ sizes: [Int], room: CGFloat, size: (Int, Bool, Int?) -> CGSize) -> FleetLayout {
         var layout = self
         layout.wide = Array(repeating: nil, count: sizes.count)
@@ -905,7 +920,7 @@ struct FleetLayout: Layout {
                 // to stand in it (asked 2026-10-15): the larger ones take the whole width.
                 if large, let small = layout.wide[i], layout.taken(small.width) < columns,
                    layout.wide.contains(where: { $0 == nil }) { continue }
-                let tries: [Int?] = [nil] + (large ? [] : stride(from: 3, through: columns, by: 1).map { $0 })
+                let tries: [Int?] = [nil] + (large ? [] : [1] + stride(from: 3, through: columns, by: 1).map { $0 })
                 // Still folded, one already unfolded two to a row is stood across the grid, one at
                 // a time, for the room that leaves under it (asked 2026-10-15).
                 let widen: [Int?] = [nil] + (large ? [] : order.filter {
@@ -1117,6 +1132,9 @@ struct GroupTile: View {
     private static let flushNameAir: CGFloat = 4
     private static let flushNameSide: CGFloat = 20
     private static let flushNameFoot: CGFloat = 11
+    /// One column wide, the bite is out of its first card's top left corner, and the name has
+    /// the border on that side too.
+    private static let flushNameLead: CGFloat = 8
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
     static func flushCards(_ name: String, count: Int, most: Int? = nil, in width: CGFloat,
@@ -1124,7 +1142,9 @@ struct GroupTile: View {
         let outer = size(holding: count, large: false, most: most, in: width, spacing: spacing)
         let perRow = perRow(count, large: false, most: most)
         let across = CGFloat(perRow), rows = CGFloat((count + perRow - 1) / perRow)
-        let notch = CGSize(width: max(2 * NotchedCard.bend, (flushNameWidth(name) + 2 * flushNameSide - inset) / 2),
+        let bite = perRow == 1 ? flushNameLead + flushNameWidth(name) + flushNameSide
+                               : (flushNameWidth(name) + 2 * flushNameSide - inset) / 2
+        let notch = CGSize(width: max(2 * NotchedCard.bend, bite),
                            height: flushNameAir + flushNameLine + flushNameFoot)
         return (CGSize(width: (outer.width - (across + 1) * inset) / across,
                        height: (outer.height - (rows + 1) * inset) / rows), notch)
@@ -1203,7 +1223,8 @@ struct GroupTile: View {
                         .lineLimit(1)
                         .fixedSize()
                         // In the middle of the bite.
-                        .offset(x: Self.inset + cards.card.width + (Self.inset - Self.flushNameWidth(name)) / 2,
+                        .offset(x: most == 1 ? Self.inset + Self.flushNameLead
+                                    : Self.inset + cards.card.width + (Self.inset - Self.flushNameWidth(name)) / 2,
                                 y: Self.inset + Self.flushNameAir)
                 }
             }
@@ -1290,7 +1311,7 @@ struct GroupTile: View {
                             SessionTile(session: session, heading: session.label ?? session.topic,
                                         main: session.id == head, grouped: true, large: large,
                                         notch: !flush || line > 0 || place > 1 ? nil
-                                            : .init(edge: place == 0 ? .trailing : .leading, size: flushed.notch)) {
+                                            : .init(edge: place == 0 && perRow > 1 ? .trailing : .leading, size: flushed.notch)) {
                                 onActivate(session)
                             }
                             .frame(width: card.width, height: card.height)

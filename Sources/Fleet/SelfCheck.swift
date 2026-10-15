@@ -242,23 +242,36 @@ enum SelfCheck {
         let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1, most: $2) }
         expect(roomy.large.isEmpty && roomy.wide[0] == size(2), true,
                "grid: a directory two wide keeps its smaller cards while a session can stand beside it")
-        // Five two to a row with a session beside them, then three: two rows of them two to a
-        // row end at 700, one row of three at 555, and so do both three to a row.
+        // Five two to a row, then three: two rows of them two to a row end at 700, one column
+        // of three beside the five at 555 with the session under it.
         func three(room: CGFloat) -> FleetLayout {
             beside.unfolding([5, 3, 1], room: room) { size($0, large: $1, most: $2) }
         }
-        expect(three(room: 600).most == [1: 3] && three(room: 600).wide[1]?.width == 688
+        let column = three(room: 600).rest(3)
+        expect(three(room: 600).most == [1: 1] && three(room: 600).wide[1] == size(3, most: 1)
+               && column.frames[1].origin == CGPoint(x: 476, y: 0)
+               && column.frames[2].origin == CGPoint(x: 476, y: size(5).height + 26) && column.height == 555
                && three(room: 750).most.isEmpty && three(room: 750).wide[1] == size(3)
                && three(room: 500).wide[1] == nil && three(room: 500).most.isEmpty, true,
-               "grid: a directory that does not fit two to a row stands three to a row where that fits, and only then")
-        // Four stand two rows whatever the row: they fit under the five once those are two rows
-        // of three, at 555 (asked 2026-10-15).
+               "grid: a directory that does not fit two to a row stands in one column beside another where that fits, and only then")
+        // Four in one column are a row taller than the five: the session takes the cell under
+        // the five (asked 2026-10-15).
         func four(room: CGFloat) -> FleetLayout {
             beside.unfolding([5, 4, 1], room: room) { size($0, large: $1, most: $2) }
         }
-        expect(four(room: 600).most == [0: 3] && four(room: 600).wide[1] == size(4)
-               && four(room: 600).rest(3).height == 555
+        let under = four(room: 600).rest(3)
+        expect(four(room: 600).most == [1: 1] && under.frames[1].origin == CGPoint(x: 476, y: 0)
+               && under.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && under.height == 555
                && four(room: 500).most.isEmpty && four(room: 500).wide[1] == nil, true,
+               "grid: a column taller than the directory beside it leaves the cells under that one to the sessions")
+        // Three and three sessions: two to a row, the three end under the group at 410; in one
+        // column 410 as well, but three to a row in one row at 265.
+        expect(beside.unfolding([3, 1, 1, 1], room: 300) { size($0, large: $1, most: $2) }.most == [0: 3], true,
+               "grid: a directory that fits neither two to a row nor in one column stands three to a row")
+        // Six and six: under the first two to a row the second fits no way, three to a row
+        // ending at 700; under the first stood three to a row, both end at 555.
+        let sixes = beside.unfolding([6, 6], room: 600) { size($0, large: $1, most: $2) }
+        expect(sixes.most == [0: 3, 1: 3] && sixes.rest(2).height == 555, true,
                "grid: a directory that fits no way of its own unfolds under another stood three to a row")
         let two = GroupTile.alone(holding: 2, room: 700, in: 646, spacing: 26)
         let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
