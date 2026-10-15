@@ -1056,32 +1056,32 @@ struct GroupTile: View {
         let across = CGFloat(most(large: large))
         return (width - (across - 1) * gap(spacing) - 2 * margin(spacing)) / across
     }
-    /// Standing in the grid on the smaller cards: two of the grid's columns, border and all,
-    /// and a session stands in the third (asked 2026-10-15). Its cards are smaller, inside
-    /// the border, and its name stands at the top between the two first, whose corners by it
-    /// round wider.
+    /// Standing in the grid on the smaller cards: two of them take two of the grid's cells,
+    /// border and all, and a session stands in the third (asked 2026-10-15). Its cards are
+    /// smaller, inside the border, and its name stands in a square bite out of the top
+    /// corners where the first two meet — see `NotchedCard`.
     private var flush: Bool { open && !toggles && !large }
     /// Between a flush group's border and its cards, across and down, and between two of
     /// its cards: the one gap (asked 2026-10-15).
     static let inset: CGFloat = 10
-    /// A flush group's name: its size, where its line starts under the border, and the air
-    /// it keeps either side.
-    private static let flushName: CGFloat = 20
-    private static let flushNameTop: CGFloat = 3
-    private static let flushNameAir: CGFloat = 6
-    /// A flush group's cards, and the gap between its two columns: wide enough for the name
-    /// once the corners by it have curved away from it.
+    /// A flush group's name, and the room it keeps round it inside the bite: more either
+    /// side and under it than over it, where the border already is (asked 2026-10-15).
+    private static let flushName: CGFloat = 14 * 1.25
+    private static let flushNameLine = flushName * 1.2
+    private static let flushNameAir: CGFloat = 4
+    private static let flushNameSide: CGFloat = 9
+    private static let flushNameFoot: CGFloat = 8
+    /// A flush group's cards, and the bite each of the first two gives the name: together,
+    /// with the gap between them, as wide as the name and its air either side.
     static func flushCards(_ name: String, count: Int, in width: CGFloat,
-                           spacing: CGFloat) -> (card: CGSize, middle: CGFloat) {
+                           spacing: CGFloat) -> (card: CGSize, notch: CGSize) {
         let outer = size(holding: count, large: false, in: width, spacing: spacing)
         let perRow = perRow(count, large: false)
         let across = CGFloat(perRow), rows = CGFloat((count + perRow - 1) / perRow)
-        // How far each corner has curved away at the foot of the name's line.
-        let r = SessionTile.cornerByName, depth = flushNameTop + flushName * 1.2 - inset
-        let curve = r - (r * r - (r - depth) * (r - depth)).squareRoot()
-        let middle = across > 1 ? max(inset, flushNameWidth(name) + 2 * flushNameAir - 2 * curve) : inset
-        return (CGSize(width: (outer.width - 2 * inset - (across - 1) * middle) / across,
-                       height: (outer.height - (rows + 1) * inset) / rows), middle)
+        let notch = CGSize(width: max(2 * NotchedCard.bend, (flushNameWidth(name) + 2 * flushNameSide - inset) / 2),
+                           height: flushNameAir + flushNameLine + flushNameFoot)
+        return (CGSize(width: (outer.width - (across + 1) * inset) / across,
+                       height: (outer.height - (rows + 1) * inset) / rows), notch)
     }
     private static func flushNameWidth(_ name: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: flushName, weight: .semibold)
@@ -1154,9 +1154,9 @@ struct GroupTile: View {
                         .foregroundStyle(Self.tint)
                         .lineLimit(1)
                         .fixedSize()
-                        // In the middle of the gap between the two columns.
-                        .offset(x: Self.inset + cards.card.width + (cards.middle - Self.flushNameWidth(name)) / 2,
-                                y: Self.flushNameTop)
+                        // In the middle of the bite.
+                        .offset(x: Self.inset + cards.card.width + (Self.inset - Self.flushNameWidth(name)) / 2,
+                                y: Self.inset + Self.flushNameAir)
                 }
             }
             // A group that is folded up and opened again starts at the top, and a name still
@@ -1224,25 +1224,23 @@ struct GroupTile: View {
             let perRow = GroupTile.perRow(ordered.count, large: large)
             let inner = GroupTile.inner(size.width, large: large, spacing: spacing)
             let flushed = flush ? GroupTile.flushCards(name, count: ordered.count, in: size.width, spacing: spacing)
-                                : (card: CGSize(width: inner, height: SessionTile.height(width: inner)), middle: 0)
-            let card = flushed.card
+                                : (card: CGSize.zero, notch: CGSize.zero)
+            let card = flush ? flushed.card : CGSize(width: inner, height: SessionTile.height(width: inner))
             let between = flush ? GroupTile.inset : GroupTile.gap(spacing)
             let lines = stride(from: 0, to: ordered.count, by: perRow).map {
                 Array(ordered[$0 ..< min($0 + perRow, ordered.count)])
             }
             let rows = VStack(alignment: .leading, spacing: between) {
                 ForEach(Array(lines.enumerated()), id: \.element.first?.id) { line, row in
-                    HStack(alignment: .top, spacing: flush ? flushed.middle : between) {
+                    HStack(alignment: .top, spacing: between) {
                         ForEach(Array(row.enumerated()), id: \.element.id) { place, session in
                             // Inside a directory the card wears its topic: the directory is
                             // what these sessions have in common, and a row of cards all
                             // saying "portfolio" is a row you cannot choose from.
                             SessionTile(session: session, heading: session.label ?? session.topic,
                                         main: session.id == head, grouped: true, large: large,
-                                        // Centred on a card too short for two lines under
-                                        // its pills, a second line ran into them.
-                                        nameLines: card.height < 90 ? 1 : 2,
-                                        byName: !flush || line > 0 ? nil : place == 0 ? .trailing : .leading) {
+                                        notch: !flush || line > 0 || place > 1 ? nil
+                                            : .init(edge: place == 0 ? .trailing : .leading, size: flushed.notch)) {
                                 onActivate(session)
                             }
                             .frame(width: card.width, height: card.height)
@@ -1413,6 +1411,47 @@ struct HeadGlow: ViewModifier {
     }
 }
 
+/// A session card with a square bite out of one top corner, for a group's name to stand in
+/// (asked 2026-10-15): the bite's corners rounded, inverted where it turns back into the card.
+struct NotchedCard: InsettableShape {
+    let notch: SessionTile.Notch
+    var inset: CGFloat = 0
+    /// The card's own corners, the bite's, and the tighter one where it turns back into the
+    /// card (asked 2026-10-15: rounded less).
+    static let radius: CGFloat = 10
+    static let bend: CGFloat = 5
+    static let turn: CGFloat = 2
+
+    func inset(by amount: CGFloat) -> NotchedCard {
+        var shape = self
+        shape.inset += amount
+        return shape
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: inset, dy: inset)
+        let w = notch.size.width, h = notch.size.height
+        let corner = max(0, Self.radius - inset), out = max(0, Self.bend - inset), back = Self.turn + inset
+        // Drawn with the bite top right, and mirrored for one top left.
+        let points: [(CGPoint, CGFloat)] = [
+            (CGPoint(x: r.minX, y: r.minY), corner),
+            (CGPoint(x: r.maxX - w, y: r.minY), out),
+            (CGPoint(x: r.maxX - w, y: r.minY + h), back),
+            (CGPoint(x: r.maxX, y: r.minY + h), out),
+            (CGPoint(x: r.maxX, y: r.maxY), corner),
+            (CGPoint(x: r.minX, y: r.maxY), corner),
+        ]
+        var path = Path()
+        path.move(to: CGPoint(x: r.minX, y: r.midY))
+        for (i, (point, radius)) in points.enumerated() {
+            path.addArc(tangent1End: point, tangent2End: points[(i + 1) % points.count].0, radius: radius)
+        }
+        path.closeSubpath()
+        guard notch.edge == .leading else { return path }
+        return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.minX + rect.maxX, ty: 0))
+    }
+}
+
 /// One session, read at a glance: the name and the state border. Everything else is a
 /// distraction at this size; `--scan` is there when you want the details.
 struct SessionTile: View {
@@ -1429,19 +1468,14 @@ struct SessionTile: View {
     /// Inside a group that stands two to a row: a taller card, and the name at the size a
     /// topic has on the grid's own.
     var large = false
-    /// How many lines a topic may take.
-    var nameLines = 2
-    /// The top corner a group's name stands by, rounded wider — see `GroupTile.flush`.
-    var byName: HorizontalEdge?
-    static let cornerByName: CGFloat = 24
-
-    private var shape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(topLeadingRadius: byName == .leading ? Self.cornerByName : 10,
-                               bottomLeadingRadius: 10, bottomTrailingRadius: 10,
-                               topTrailingRadius: byName == .trailing ? Self.cornerByName : 10,
-                               style: .continuous)
-    }
+    /// The bite out of a top corner that a group's name stands in — see `GroupTile.flush`.
+    var notch: Notch?
     let onSelect: () -> Void
+
+    struct Notch {
+        var edge: HorizontalEdge
+        var size: CGSize
+    }
 
     /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
     /// the border wears when the agents are the only thing running: one colour, one meaning —
@@ -1455,6 +1489,13 @@ struct SessionTile: View {
     /// Every session card is 16:9 (asked 2026-10-15), on the grid and inside a group.
     static let height = width * 9 / 16
     static func height(width: CGFloat) -> CGFloat { width * 9 / 16 }
+
+    private func ground(_ shape: some Shape) -> some View {
+        shape
+            .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
+                    radius: hovering ? 16 : 8)
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -1486,20 +1527,32 @@ struct SessionTile: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
+                // Clear of a bite in either top corner: two pills ran over one on the left.
+                .padding(notch.map { $0.edge == .trailing ? .trailing : .leading } ?? [],
+                         notch?.size.width ?? 0)
             }
             // Inside a group, the height its row gives it — see `GroupTile.Cards`.
             .frame(height: grouped ? nil : Self.height, alignment: .top)
             // The glow is cast by the card's own ground, a single shape, rather than by the
             // card as a group: a shadow taken from a group of layers is an offscreen pass per
             // tile on every frame anything on the panel moves — a todo column scrolling included.
-            .background(
-                shape
-                    .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                    .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
-                            radius: hovering ? 16 : 8)
-            )
-            // Thinner inside a group (asked 2026-10-15), whose own border is round them.
-            .overlay(shape.strokeBorder(session.state.tint, lineWidth: grouped ? 2.5 * 0.75 : 2.5))
+            .background {
+                if let notch {
+                    ground(NotchedCard(notch: notch))
+                } else {
+                    ground(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+            .overlay {
+                // Thinner inside a group (asked 2026-10-15), whose own border is round them.
+                let line = grouped ? 2.5 * 0.75 : 2.5
+                if let notch {
+                    NotchedCard(notch: notch).strokeBorder(session.state.tint, lineWidth: line)
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(session.state.tint, lineWidth: line)
+                }
+            }
             .scaleEffect(hovering ? 1.015 : 1.0)
             // Without this the card snaps to its hovered size in one frame, which reads as a
             // flicker rather than as a response to the pointer.
@@ -1524,7 +1577,7 @@ struct SessionTile: View {
                           weight: .semibold))
             .foregroundStyle(.white)
             .modifier(HeadGlow(on: main))
-            .lineLimit(heading == nil ? 1 : nameLines)
+            .lineLimit(heading == nil ? 1 : 2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: .center)

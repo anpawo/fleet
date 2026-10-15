@@ -217,10 +217,10 @@ enum SelfCheck {
                && size(2, large: true).width == 688, true,
                "grid: a directory of two takes two cells' room, in width and height, and so does every row of more")
         let inside = GroupTile.flushCards("s14", count: 2, in: 688, spacing: 26)
-        expect(abs(2 * inside.card.width + inside.middle + 2 * GroupTile.inset - 450) < 0.001
+        expect(abs(2 * inside.card.width + 3 * GroupTile.inset - 450) < 0.001
                && inside.card.height == SessionTile.height - 2 * GroupTile.inset
-               && inside.middle > GroupTile.inset, true,
-               "grid: its cards inside its border, further apart where its name stands between them")
+               && 2 * inside.notch.width + GroupTile.inset > 19, true,
+               "grid: its cards inside its border, the one gap all round, a bite for its name")
         expect(size(3).height - size(2).height == cell.height + 26
                && size(4).height == size(3).height && size(5).width == 450, true,
                "grid: three stand two and one, four two and two")
