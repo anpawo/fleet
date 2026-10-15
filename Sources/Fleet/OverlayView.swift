@@ -1224,7 +1224,10 @@ struct GroupTile: View {
                             // what these sessions have in common, and a row of cards all
                             // saying "portfolio" is a row you cannot choose from.
                             SessionTile(session: session, heading: session.label ?? session.topic,
-                                        main: session.id == head, grouped: true, large: large) {
+                                        main: session.id == head, grouped: true, large: large,
+                                        // Centred on a card too short for two lines under
+                                        // its pills, a second line ran into them.
+                                        nameLines: card.height < 90 ? 1 : 2) {
                                 onActivate(session)
                             }
                             .frame(width: card.width, height: card.height)
@@ -1411,6 +1414,8 @@ struct SessionTile: View {
     /// Inside a group that stands two to a row: a taller card, and the name at the size a
     /// topic has on the grid's own.
     var large = false
+    /// How many lines a topic may take.
+    var nameLines = 2
     let onSelect: () -> Void
 
     /// Sub-agent work gets its own colour rather than the state tint, and it is the same purple
@@ -1434,9 +1439,6 @@ struct SessionTile: View {
                 // the border and the pill say its state.
                 name
                     .padding(.horizontal, 12)
-                    // Under the pills on a group's shorter cards, where the middle of the card
-                    // put the name against them.
-                    .padding(.top, grouped ? 26 : 0)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Pills side by side while the two of them fit the tile, stacked in the corner
@@ -1500,7 +1502,7 @@ struct SessionTile: View {
                           weight: .semibold))
             .foregroundStyle(.white)
             .modifier(HeadGlow(on: main))
-            .lineLimit(heading == nil ? 1 : 2)
+            .lineLimit(heading == nil ? 1 : nameLines)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: .center)
