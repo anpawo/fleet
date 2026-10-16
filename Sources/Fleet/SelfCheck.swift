@@ -239,10 +239,10 @@ enum SelfCheck {
         beside.wide = [size(3), nil, nil, nil]
         let tallRest = beside.rest(4)
         expect(besideRest.frames[1].minX == 476 && besideRest.frames[1].minY == 0
-               && besideRest.frames[2].origin == CGPoint(x: 476, y: size(2).height + 26)
+               && besideRest.frames[2].origin == CGPoint(x: 0, y: size(2).height + 26)
                && tallRest.frames[1].origin == CGPoint(x: 476, y: 0)
-               && tallRest.frames[3].origin == CGPoint(x: 476, y: size(3).height + 26), true,
-               "grid: sessions beside a directory two columns wide stack from the top right corner, a lone one under them on the right")
+               && tallRest.frames[3].origin == CGPoint(x: 0, y: size(3).height + 26), true,
+               "grid: sessions beside a directory two columns wide stack from the top right corner, a lone one under them on the left")
         let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1, most: $2) }
         expect(roomy.large.isEmpty && roomy.wide[0] == size(2, most: 1), true,
                "grid: a directory of two stands in one column, on its smaller cards while a session can stand beside it")
@@ -255,7 +255,7 @@ enum SelfCheck {
         let column = three(room: 600).rest(3)
         expect(three(room: 600).most == [1: 1] && three(room: 600).wide[1] == size(3, most: 1)
                && column.frames[1].origin == CGPoint(x: 476, y: 0)
-               && column.frames[2].origin == CGPoint(x: 476, y: size(5).height + 26) && column.height == 555
+               && column.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && column.height == 555
                && three(room: 750).most == [0: 1, 1: 1] && three(room: 750).rest(3).height == size(5, most: 1).height
                && three(room: 500).wide[1] == nil && three(room: 500).most.isEmpty, true,
                "grid: five or fewer stand in one column first, then two to a row, and in one column beside another where that is what fits")

@@ -882,13 +882,11 @@ struct FleetLayout: Layout {
             }
             y += max(bottom, tall) + spacing
         }
-        // A last row short of the grid's width stands at its right, under the column the
-        // sessions beside a directory stack in (asked 2026-10-15).
-        let short = (columns - queue.count % columns) % columns
+        // A last row short of the grid's width starts at its left (asked 2026-10-16), not under
+        // the column the sessions beside a directory stack in.
         for (n, i) in queue.enumerated() {
-            let row = n / columns, last = row == (queue.count - 1) / columns
-            frames[i] = CGRect(x: CGFloat(n % columns + (last ? short : 0)) * step.width,
-                               y: y + CGFloat(row) * step.height,
+            frames[i] = CGRect(x: CGFloat(n % columns) * step.width,
+                               y: y + CGFloat(n / columns) * step.height,
                                width: tile.width, height: tile.height)
         }
         return (frames, queue.isEmpty ? max(0, y - spacing) : y + rows(queue.count))
