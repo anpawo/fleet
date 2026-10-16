@@ -1220,7 +1220,7 @@ struct GroupTile: View {
                                                 in: full.width, spacing: spacing)
                     Text(name)
                         .font(.system(size: Self.flushName, weight: .semibold))
-                        .foregroundStyle(Self.tint)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
                         .fixedSize()
                         // In the middle of the bite, or over a column's cards.
