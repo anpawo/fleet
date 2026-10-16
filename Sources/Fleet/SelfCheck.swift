@@ -82,6 +82,31 @@ enum SelfCheck {
         press(kVK_Return)
         expect(inbox.items.map(\.id) == ["a"] && kept("b"), true, "inbox: only ↵ says yes")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
+        press(kVK_DownArrow)
+        press(kVK_Return)
+        expect(inbox.past && inbox.items.map(\.id) == ["d", "c", "b", "a"], true, "inbox: at 0, the lines set aside, newest first")
+        press(kVK_DownArrow)
+        expect(inbox.asking == nil, true, "inbox: ↓ asks nothing of a past line")
+        starts = true
+        let shown = inbox.current?.id ?? ""
+        press(kVK_Return)
+        expect(opened.last == shown && inbox.items.count == 4 && kept(shown), true, "inbox: ↵ on a past line opens its session and keeps the line")
+        func row(_ type: String, _ minute: String, _ content: Any, meta: Bool = false) -> String {
+            var entry: [String: Any] = ["type": type, "timestamp": "2026-10-15T10:\(minute):00.000Z", "message": ["content": content]]
+            if meta { entry["isMeta"] = true }
+            return String(decoding: (try? JSONSerialization.data(withJSONObject: entry)) ?? Data(), as: UTF8.self)
+        }
+        let transcript = folder.appending(path: "t.jsonl")
+        let at = ((try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse("2026-10-15T10:01:00.000Z"))?
+            .timeIntervalSince1970 ?? 0) * 1000
+        let ended = row("assistant", "00", [["type": "text", "text": "DONE: sent"]])
+        let after = [row("user", "05", "meta", meta: true), row("user", "06", [["type": "tool_result", "content": "r"]]),
+                     row("assistant", "07", [["type": "text", "text": "Sent."]])]
+        try? ([ended] + after).joined(separator: "\n").write(to: transcript, atomically: true, encoding: .utf8)
+        expect(Inbox.said(after: at, in: transcript) == nil, true, "inbox: a session he asked nothing of since the line is not summed up")
+        try? ([ended, row("user", "04", "send it")] + after).joined(separator: "\n").write(to: transcript, atomically: true, encoding: .utf8)
+        expect(Inbox.said(after: at, in: transcript) == "He: send it\n\nClaude: Sent.", true,
+               "inbox: what was said since the line, his prompts and Claude's text, nothing from before")
         var noon = DateComponents(calendar: .current, year: 2026, month: 10, day: 14, hour: 12)
         let now = noon.date!
         noon.hour = 9; noon.minute = 5

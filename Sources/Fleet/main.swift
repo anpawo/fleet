@@ -555,7 +555,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         let path = CommandLine.arguments[i + 1]
         func item(_ kind: String, _ subject: String, _ line: String) -> InboxItem {
             InboxItem(id: subject, at: Date().timeIntervalSince1970 * 1000 - Double(subject.count) * 3_600_000, kind: kind,
-                      subject: subject, line: line, dir: "/", options: [], prompt: nil)
+                      subject: subject, line: line, dir: "/", options: ["--resume", "x"], prompt: nil)
         }
         let items = [
             item("needs", "photo of her ID", "Mum sent her ID; the licence request now needs your FranceConnect login."),
@@ -569,6 +569,24 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         Inbox.render(items, on: "dark", to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
         Inbox.render(items, on: "white", to: path.replacingOccurrences(of: ".png", with: "-white.png"))
         Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
+        Inbox.render(items, past: true, outcomes: ["photo of her ID": "Licence request filed on ANTS, receipt saved"],
+                     to: path.replacingOccurrences(of: ".png", with: "-past.png"))
+        Inbox.render(items, index: 1, past: true, to: path.replacingOccurrences(of: ".png", with: "-past-summing.png"))
+        Inbox.render(items, index: 1, past: true, outcomes: ["CROUS deposit refund": ""],
+                     to: path.replacingOccurrences(of: ".png", with: "-past-aside.png"))
+        // `--real`: his own past lines, each summed up as the panel does it (a `claude -p` for each not yet kept).
+        if CommandLine.arguments.contains("--real") {
+            let inbox = Inbox()
+            inbox.refresh(force: true)
+            if inbox.past { inbox.sumUp() }
+            let end = Date().addingTimeInterval(180)
+            while !inbox.summing.isEmpty, Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+            for (i, item) in inbox.items.enumerated() {
+                print("\(item.id): \(inbox.outcomes[item.id] ?? "-")")
+                Inbox.render(inbox.items, index: i, past: inbox.past, outcomes: inbox.outcomes,
+                             to: path.replacingOccurrences(of: ".png", with: "-real-\(i).png"))
+            }
+        }
         exit(0)
     }
 }
