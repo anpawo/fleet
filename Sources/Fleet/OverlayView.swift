@@ -1137,8 +1137,7 @@ struct GroupTile: View {
     private static let flushNameSide: CGFloat = 20
     private static let flushNameFoot: CGFloat = 11
     /// One column wide, the name stands over the cards rather than in a bite (asked
-    /// 2026-10-15), this far in from them, in a band as tall as the bite.
-    private static let flushNameLead: CGFloat = 8
+    /// 2026-10-15), centred, in a band as tall as the bite.
     static let flushNameBand = flushNameAir + flushNameLine + flushNameFoot
     /// A flush group's cards, and the bite each of the first two gives the name: together,
     /// with the gap between them, as wide as the name and its air either side.
@@ -1227,7 +1226,7 @@ struct GroupTile: View {
                         .lineLimit(1)
                         .fixedSize()
                         // In the middle of the bite, or over a column's cards.
-                        .offset(x: most == 1 ? Self.inset + Self.flushNameLead
+                        .offset(x: most == 1 ? Self.inset + (cards.card.width - Self.flushNameWidth(name)) / 2
                                     : Self.inset + cards.card.width + (Self.inset - Self.flushNameWidth(name)) / 2,
                                 y: Self.inset + Self.flushNameAir)
                 }
