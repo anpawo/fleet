@@ -869,16 +869,18 @@ struct FleetLayout: Layout {
                 depth[column] = cells(wide[j]!.height)
                 bottom = max(bottom, wide[j]!.height)
             }
-            // From the top right corner down (asked 2026-10-15), not dropped to its foot.
-            let free = (0 ..< depth.max()!).flatMap { row in
+            // From the top right corner down (asked 2026-10-15), not dropped to its foot: in the
+            // columns right of every directory first, under a shorter one after (asked 2026-10-16).
+            let slots = (0 ..< depth.max()!).flatMap { row in
                 (0 ..< columns).filter { row >= depth[$0] }.map { (row: row, column: $0) }
             }
+            let free = slots.filter { depth[$0.column] == 0 } + slots.filter { depth[$0.column] > 0 }
             var tall: CGFloat = 0
             for slot in free {
                 guard let t = queue.popFirst() else { break }
                 frames[t] = CGRect(x: CGFloat(slot.column) * step.width, y: y + CGFloat(slot.row) * step.height,
                                    width: tile.width, height: tile.height)
-                tall = CGFloat(slot.row + 1) * step.height - spacing
+                tall = max(tall, CGFloat(slot.row + 1) * step.height - spacing)
             }
             y += max(bottom, tall) + spacing
         }

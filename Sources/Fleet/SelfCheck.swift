@@ -263,6 +263,12 @@ enum SelfCheck {
                && under.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && under.height == 555
                && four(room: 500).most.isEmpty && four(room: 500).wide[1] == nil, true,
                "grid: a column taller than the directory beside it leaves the cells under that one to the sessions")
+        // Five and two in one column each, three sessions: all three in the column right of
+        // both, none under the two (asked 2026-10-16).
+        beside.wide = [size(5, most: 1), size(2, most: 1), nil, nil, nil]
+        let right = beside.rest(5)
+        expect(right.frames[2...].map(\.origin) == (0 ..< 3).map { CGPoint(x: 476, y: CGFloat($0) * (cell.height + 26)) }, true,
+               "grid: sessions stand right of every directory before they take the cells under a shorter one")
         // Three and three sessions: two to a row, the three end under the group at 410; in one
         // column 410 as well, but three to a row in one row at 265.
         expect(beside.unfolding([3, 1, 1, 1], room: 300) { size($0, large: $1, most: $2) }.most == [0: 3], true,
