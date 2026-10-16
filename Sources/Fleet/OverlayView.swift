@@ -1129,7 +1129,7 @@ struct GroupTile: View {
     static let inset: CGFloat = 10
     /// A flush group's name, and the room it keeps round it inside the bite: more either
     /// side and under it than over it, where the border already is (asked 2026-10-15).
-    private static let flushName: CGFloat = 14 * 1.25
+    private static let flushName: CGFloat = 20
     private static let flushNameLine = flushName * 1.2
     private static let flushNameAir: CGFloat = 4
     private static let flushNameSide: CGFloat = 20
