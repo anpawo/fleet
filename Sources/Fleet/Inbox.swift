@@ -104,20 +104,17 @@ final class Inbox: NSObject, ObservableObject {
         return image
     }
 
-    /// What ↑ or ↓ asked about the line shown: ↑ to set it aside as done, ↓ to remove it for good. Only ↵ (or the
-    /// yes button) says yes: the same key twice, a double click, a key held down only ask again. Any other key keeps
-    /// the line as it is.
+    /// ↓ asked to set the line shown aside as done. Only ↵ (or the yes button) says yes: the same key twice, a double
+    /// click, a key held down only ask again. Any other key keeps the line as it is.
     struct Ask: Equatable {
         let id: String
-        let trash: Bool
     }
     @Published private(set) var asking: Ask?
     /// The key just pressed on the keyboard, for a moment: its button gives under it, as under a click.
     @Published private(set) var pressed: Int?
 
     /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, or says yes to a question;
-    /// ←→ move and keep every line; ↑ asks to set the shown one aside as done (`done/`, still on disk), ↓ asks to
-    /// remove it for good.
+    /// ←→ move and keep every line; ↓ asks to set the shown one aside as done (`done/`, still on disk).
     func key(_ code: UInt16) -> Bool {
         let was = asking
         asking = nil
@@ -126,9 +123,8 @@ final class Inbox: NSObject, ObservableObject {
         case kVK_LeftArrow: step(-1)
         case kVK_RightArrow: step(1)
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if let was, let item = current, was.id == item.id { take(item, keep: !was.trash) } else { openCurrent() }
-        case kVK_UpArrow: ask(trash: false, was)
-        case kVK_DownArrow: ask(trash: true, was)
+            if let was, let item = current, was.id == item.id { take(item) } else { openCurrent() }
+        case kVK_DownArrow: if let item = current { asking = Ask(id: item.id) }
         default: return false
         }
         let code = Int(code)
@@ -137,11 +133,6 @@ final class Inbox: NSObject, ObservableObject {
             if self?.pressed == code { self?.pressed = nil }
         }
         return true
-    }
-
-    private func ask(trash: Bool, _ was: Ask?) {
-        guard let item = current else { return }
-        asking = Ask(id: item.id, trash: trash)
     }
 
     private func step(_ by: Int) {
@@ -153,19 +144,14 @@ final class Inbox: NSObject, ObservableObject {
     private func openCurrent() {
         guard let item = current else { return }
         hide()
-        if launch(item) { take(item, keep: true) }
+        if launch(item) { take(item) }
     }
 
-    private func take(_ item: InboxItem, keep: Bool) {
-        let file = folder.appending(path: "\(item.id).json")
-        if keep {
-            let done = folder.appending(path: "done")
-            try? FileManager.default.createDirectory(at: done, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: done.appending(path: "\(item.id).json"))
-            try? FileManager.default.moveItem(at: file, to: done.appending(path: "\(item.id).json"))
-        } else {
-            try? FileManager.default.removeItem(at: file)
-        }
+    private func take(_ item: InboxItem) {
+        let done = folder.appending(path: "done")
+        try? FileManager.default.createDirectory(at: done, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: done.appending(path: "\(item.id).json"))
+        try? FileManager.default.moveItem(at: folder.appending(path: "\(item.id).json"), to: done.appending(path: "\(item.id).json"))
         refresh(force: true)
         if items.isEmpty { hide() }
     }
@@ -248,11 +234,11 @@ final class Inbox: NSObject, ObservableObject {
         "white": [.white, .white],
     ]
 
-    static func render(_ items: [InboxItem], index: Int = 0, asking: Bool? = nil, on backdrop: String = "light", to path: String) {
+    static func render(_ items: [InboxItem], index: Int = 0, asking: Bool = false, on backdrop: String = "light", to path: String) {
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
-        inbox.asking = asking.flatMap { trash in inbox.current.map { Ask(id: $0.id, trash: trash) } }
+        inbox.asking = asking ? inbox.current.map { Ask(id: $0.id) } : nil
         let backdrop = LinearGradient(colors: backdrops[backdrop] ?? [.gray], startPoint: .top, endPoint: .bottom)
         // SwiftUI's own renderer: a hosting view's `cacheDisplay` drew a short line off both ends of every stroked
         // capsule, which the screen does not.
@@ -349,16 +335,15 @@ struct InboxView: View {
         .block(in: Capsule())
     }
 
-    /// Where it stands, whole and centred. Every line of the list is laid under it unseen, with the questions ↑ and
-    /// ↓ ask: the bar keeps the widest, so nothing moves.
+    /// Where it stands, whole and centred. Every line of the list is laid under it unseen, with the question ↓
+    /// asks: the bar keeps the widest, so nothing moves.
     private var bar: some View {
         ZStack {
             ForEach(inbox.items, id: \.id) { Text($0.line).hidden() }
             if let item = inbox.current {
-                Text(Self.question(trash: false)).hidden()
-                Text(Self.question(trash: true)).hidden()
+                Text(Self.question).hidden()
                 if let ask = inbox.asking, ask.id == item.id {
-                    Text(Self.question(trash: ask.trash))
+                    Text(Self.question)
                 } else {
                     Text(item.line)
                 }
@@ -372,18 +357,15 @@ struct InboxView: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal, 28)
         .frame(minWidth: 620, minHeight: Inbox.barHeight)
-        .block(in: Capsule(), fill: inbox.asking.map { Spotlight.fill.mix(with: $0.trash ? Self.trash : Self.yes, by: 0.4) })
+        .block(in: Capsule(), fill: inbox.asking.map { _ in Spotlight.fill.mix(with: Self.yes, by: 0.4) })
         .contentShape(Capsule())
         .onTapGesture { _ = inbox.key(UInt16(kVK_Return)) }
     }
 
-    private static let trash = Color(red: 0.92, green: 0.20, blue: 0.20)
     /// The dot's green, deeper: under a white tick the dot's own is too pale to read.
     private static let yes = Color(red: 0.16, green: 0.62, blue: 0.28)
 
-    private static func question(trash: Bool) -> String {
-        (trash ? "Remove it for good?" : "Set it aside as done?") + " ↵ to confirm, any other key keeps it."
-    }
+    private static let question = "Set it aside as done? ↵ to confirm, any other key keeps it."
 
     /// Under the line: when it came on the left, which one of how many in the middle between the arrows that move
     /// through them, what can be done with it on the right.
@@ -400,16 +382,14 @@ struct InboxView: View {
             }
             Spacer(minLength: 24)
             HStack(alignment: .top, spacing: Inbox.gap) {
-                // While ↑ or ↓ asks, ↵ is the yes: its button says so in the question's colour.
+                // While ↓ asks, ↵ is the yes: its button says so in the question's colour.
                 let ask = inbox.asking
-                let colour = ask.map { $0.trash ? Self.trash : Self.yes }
+                let colour = ask.map { _ in Self.yes }
                 let needs = ask == nil && inbox.current?.kind == "needs"
                 let done = ask == nil && inbox.current?.kind == "done"
                 key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour, icon: needs ? Self.open : nil)
-                key("checkmark", ask?.trash == false ? "sure?" : "done", kVK_UpArrow,
-                    tint: ask?.trash == false ? Self.yes : nil, icon: done ? Self.done : nil)
-                key("trash", ask?.trash == true ? "sure?" : "trash", kVK_DownArrow,
-                    tint: ask?.trash == true ? Self.trash : nil)
+                key("checkmark", ask == nil ? "done" : "sure?", kVK_DownArrow,
+                    tint: ask == nil ? nil : Self.yes, icon: done ? Self.done : nil)
             }
         }
         .overlay(alignment: .top) {

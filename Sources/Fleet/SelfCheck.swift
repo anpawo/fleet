@@ -40,8 +40,8 @@ enum SelfCheck {
     // MARK: - Inbox
 
     /// The watcher's lines, from files as the checker writes them: in time order, ←→ wrap and take nothing away,
-    /// ↵ opens and sets the line aside in `done/` once its terminal has started; ↑ and ↓ only ask, however often,
-    /// and only ↵ says yes (↑ to `done/`, ↓ for good).
+    /// ↵ opens and sets the line aside in `done/` once its terminal has started; ↓ only asks, however often, and
+    /// only ↵ says yes (to `done/`).
     private static func inbox(_ expect: (Bool, Bool, String) -> Void) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-inbox-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -65,28 +65,22 @@ enum SelfCheck {
         starts = true
         press(kVK_Return)
         expect(inbox.items.map(\.id) == ["a", "b", "c"] && kept("d"), true, "inbox: an open that started sets its line aside as done")
-        press(kVK_UpArrow)
-        expect(inbox.items.count == 3 && inbox.asking == Inbox.Ask(id: "c", trash: false), true, "inbox: ↑ only asks")
-        press(kVK_Return)
-        expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↵ after ↑ sets it aside as done, opening nothing")
         press(kVK_DownArrow)
-        press(kVK_DownArrow)
-        expect(inbox.items.count == 2 && inbox.asking == Inbox.Ask(id: "b", trash: true), true, "inbox: ↓ asks, and ↓ again at once (a double click, a held key) still asks")
+        expect(inbox.items.count == 3 && inbox.asking == Inbox.Ask(id: "c"), true, "inbox: ↓ only asks")
         press(kVK_Return)
-        expect(inbox.items.map(\.id) == ["a"] && !kept("b") && opened.count == 2, true, "inbox: ↵ after ↓ removes it for good")
+        expect(inbox.items.map(\.id) == ["a", "b"] && kept("c") && opened.count == 2, true, "inbox: ↵ after ↓ sets it aside as done, opening nothing")
         starts = false
         press(kVK_DownArrow)
         press(kVK_Escape)
         press(kVK_Return)
-        expect(inbox.items.map(\.id) == ["a"] && opened.count == 3, true, "inbox: Esc after ↓ keeps it, and ↵ then opens")
-        press(kVK_UpArrow)
-        press(kVK_UpArrow)
+        expect(inbox.items.map(\.id) == ["a", "b"] && opened.count == 3, true, "inbox: Esc after ↓ keeps it, and ↵ then opens")
         press(kVK_DownArrow)
         press(kVK_DownArrow)
-        expect(inbox.items.map(\.id) == ["a"] && !kept("a"), true, "inbox: ↑↑ and ↓↓ only ask, however long apart")
-        press(kVK_UpArrow)
+        expect(inbox.items.count == 2 && inbox.asking == Inbox.Ask(id: "b") && !kept("b"), true, "inbox: ↓ again at once (a double click, a held key) still asks")
+        expect(inbox.key(UInt16(kVK_UpArrow)), false, "inbox: ↑ is left to go on")
+        press(kVK_DownArrow)
         press(kVK_Return)
-        expect(inbox.items.isEmpty && kept("a"), true, "inbox: only ↵ says yes")
+        expect(inbox.items.map(\.id) == ["a"] && kept("b"), true, "inbox: only ↵ says yes")
         expect(inbox.key(UInt16(kVK_ANSI_A)), false, "inbox: a letter is left to go on")
         var noon = DateComponents(calendar: .current, year: 2026, month: 10, day: 14, hour: 12)
         let now = noon.date!
