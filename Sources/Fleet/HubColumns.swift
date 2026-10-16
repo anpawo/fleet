@@ -127,7 +127,8 @@ struct CronColumn: View {
     @State private var overDetail = false
     /// The families whose line runs on past the block's right edge from where it is scrolled.
     @State private var runsOn: Set<String> = []
-    /// Unfolded — see `OpensUnderCommand`. Folded to its heading otherwise: fifteen healthy
+    /// Unfolded while the pointer is on it, no ⌘ needed (asked 2026-10-16; ⌘ was needed from
+    /// 2026-10-07). Folded to its heading otherwise: fifteen healthy
     /// routines are wallpaper, and the verdict on the heading says whether any of them is not.
     @State private var open = CommandLine.arguments.contains("--crons-open")
 
@@ -184,7 +185,7 @@ struct CronColumn: View {
         }
         .animation(TodoColumn.unroll, value: commandHeld)
         .animation(TodoColumn.unroll, value: natural)
-        .opens($open, underCommand: commandHeld)
+        .onHover { inside in withAnimation(OverlayView.fold) { open = inside } }
         // Its own height, not the slot's. A `maxHeight` alone reads as "flexible up to", so
         // the stack handed it the whole third and the block sat centred in the empty half.
         .fixedSize(horizontal: false, vertical: true)
@@ -774,38 +775,6 @@ struct Blinking: ViewModifier {
 
 extension View {
     func blinking(_ active: Bool) -> some View { modifier(Blinking(active: active)) }
-}
-
-/// A block that unfolds under the pointer only with ⌘ down, and then stays unfolded until the
-/// pointer leaves, ⌘ or no ⌘ (asked 2026-10-07, for CRONS and SPENDING; SPENDING has opened
-/// without ⌘ since 2026-10-12).
-///
-/// One rule for both events — the pointer moving and the key changing: open while the pointer
-/// is on the block and either ⌘ is down or the block was open already.
-struct OpensUnderCommand: ViewModifier {
-    @Binding var open: Bool
-    let commandHeld: Bool
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { inside in
-                hovering = inside
-                settle()
-            }
-            .onChange(of: commandHeld) { settle() }
-    }
-
-    /// In a transaction, so the block underneath grows and shrinks with it.
-    private func settle() {
-        withAnimation(OverlayView.fold) { open = hovering && (open || commandHeld) }
-    }
-}
-
-extension View {
-    func opens(_ open: Binding<Bool>, underCommand held: Bool) -> some View {
-        modifier(OpensUnderCommand(open: open, commandHeld: held))
-    }
 }
 
 /// A column with nothing in it — either because there is nothing, or because the first fetch
