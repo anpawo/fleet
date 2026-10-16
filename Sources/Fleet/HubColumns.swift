@@ -1833,8 +1833,9 @@ struct ReelBlock: View {
     let commandHeld: Bool
     /// The tallest the whole block may be under the pointer, pane included.
     let limit: CGFloat
-    /// The same at rest: what MAIL leaves of the column, the school folded. Open on it whenever
-    /// a card fits (asked 2026-10-15), the heading alone when not.
+    /// The same at rest: what MAIL leaves of the column, the school folded. Open on all of it
+    /// whenever half a card fits (asked 2026-10-16: a column ending short of its height left
+    /// that room empty), the heading alone when not.
     var room: CGFloat = 0
 
     /// Seeded from `--reels-open` so a render can show the list, which nothing else opens
@@ -1850,7 +1851,7 @@ struct ReelBlock: View {
 
     var body: some View {
         let pointed = open || hub.contextReelID != nil
-        let roomy = room - Self.chrome >= MailCard.room(forRows: 1)
+        let roomy = room - Self.chrome >= MailCard.room(forRows: 1) / 2
         let listing = (pointed || roomy) && !hub.readReels.isEmpty
         Block(title: "REELS", tint: Self.tint, fill: Self.tint.darkened(0.58)) {
             if hub.checkingReel != nil || hub.reinterpreting {
@@ -1868,7 +1869,7 @@ struct ReelBlock: View {
         } content: {
             if listing {
                 let height = min(natural > 0 ? natural : 60,
-                                 max(40, (pointed ? max(limit, room) : room) - Self.chrome))
+                                 pointed ? max(40, max(limit, room) - Self.chrome) : room - Self.chrome)
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
                         ForEach(hub.readReels) { reel in
