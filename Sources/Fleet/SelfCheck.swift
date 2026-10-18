@@ -197,11 +197,10 @@ enum SelfCheck {
 
     // MARK: - Grid
 
-    /// Which directories the grid shows unfolded: every one that fits, the one holding the most
-    /// sessions first, a smaller one where that one does not fit, none on a grid already full.
+    /// How the grid stands its directories: every one unfolded, the one holding the most sessions
+    /// placed first, past the room the way that ends the grid highest.
     private static func grid(_ expect: (Bool, Bool, String) -> Void) {
-        let grid = FleetLayout(tile: CGSize(width: 310, height: 186), spacing: 26, columns: 2,
-                               openSize: .zero, openHeight: 0, progress: 0)
+        let grid = FleetLayout(tile: CGSize(width: 310, height: 186), spacing: 26, columns: 2)
         // A group of four, a session alone, a group of two — unfolded, 100pt a session, and
         // 150 on the larger cards.
         func laid(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> FleetLayout {
@@ -212,11 +211,9 @@ enum SelfCheck {
         func unfolded(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> [Bool] {
             laid(sizes, room: room).wide.map { $0 != nil }
         }
-        expect(unfolded(room: 838) == [true, false, true], true, "grid: both directories unfolded when both fit")
-        expect(unfolded(room: 837) == [true, false, false], true, "grid: the bigger one alone when both do not")
-        expect(unfolded(room: 611) == [false, false, true], true, "grid: the smaller one when the bigger does not fit")
-        expect(unfolded(room: 411) == [false, false, false], true, "grid: none when neither fits")
-        expect(unfolded([2, 2], room: 425) == [true, false], true, "grid: of two the same size, the first")
+        expect(unfolded(room: 838) == [true, false, true] && unfolded(room: 0) == [true, false, true], true,
+               "grid: every directory unfolded, whether it fits or not")
+        expect(laid([2, 2], room: 526).large == [0], true, "grid: of two the same size, the first on the larger cards")
         let rest = laid(room: 838).rest(3)
         expect(rest.frames.map(\.minY) == [0, 652, 426] && rest.height == 838, true,
                "grid: unfolded directories lead, the other sessions under them")
@@ -251,7 +248,7 @@ enum SelfCheck {
         expect(size(4, large: true).height + 26 + SessionTile.height <= 658, true,
                "grid: four on the larger cards stand over one row of the grid on a laptop screen")
         var beside = FleetLayout(tile: CGSize(width: 212, height: SessionTile.height), spacing: 26,
-                                 columns: 3, openSize: .zero, openHeight: 0, progress: 0)
+                                 columns: 3)
         beside.wide = [size(2), nil, nil]
         let besideRest = beside.rest(3)
         beside.wide = [size(3), nil, nil, nil]
@@ -274,8 +271,7 @@ enum SelfCheck {
         expect(three(room: 600).most == [1: 1] && three(room: 600).wide[1] == size(3, most: 1)
                && column.frames[1].origin == CGPoint(x: 476, y: 0)
                && column.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && column.height == 555
-               && three(room: 750).most == [0: 1, 1: 1] && three(room: 750).rest(3).height == size(5, most: 1).height
-               && three(room: 500).wide[1] == nil && three(room: 500).most.isEmpty, true,
+               && three(room: 750).most == [0: 1, 1: 1] && three(room: 750).rest(3).height == size(5, most: 1).height, true,
                "grid: five or fewer stand in one column first, then two to a row, and in one column beside another where that is what fits")
         // Four in one column are a row taller than the five: the session takes the cell under
         // the five (asked 2026-10-15).
@@ -284,8 +280,7 @@ enum SelfCheck {
         }
         let under = four(room: 600).rest(3)
         expect(four(room: 600).most == [1: 1] && under.frames[1].origin == CGPoint(x: 476, y: 0)
-               && under.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && under.height == 555
-               && four(room: 500).most.isEmpty && four(room: 500).wide[1] == nil, true,
+               && under.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && under.height == 555, true,
                "grid: a column taller than the directory beside it leaves the cells under that one to the sessions")
         // Five and two in one column each, three sessions: all three in the column right of
         // both, none under the two (asked 2026-10-16).
@@ -302,11 +297,9 @@ enum SelfCheck {
         let sixes = beside.unfolding([6, 6], room: 600) { size($0, large: $1, most: $2) }
         expect(sixes.most == [0: 3, 1: 3] && sixes.rest(2).height == 555, true,
                "grid: a directory that fits no way of its own unfolds under another stood three to a row")
-        let two = GroupTile.alone(holding: 2, room: 700, in: 646, spacing: 26)
-        let eight = GroupTile.alone(holding: 8, room: 300, in: 646, spacing: 26)
-        expect(two.large && two.size == CGSize(width: 646, height: 700)
-               && !eight.large && eight.size == CGSize(width: 646, height: 300), true,
-               "grid: a directory given the block takes the whole of it, whatever its cards need")
+        // Six: two to a row end at 410, in one column at 845, three to a row at 265.
+        expect(beside.unfolding([6], room: 0) { size($0, large: $1, most: $2) }.most == [0: 3], true,
+               "grid: a directory that fits no way still unfolds, the way that ends the grid highest")
     }
 
     // MARK: - Money

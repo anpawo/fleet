@@ -21,7 +21,6 @@ final class AppController: ObservableObject {
         didSet {
             statusItem?.update(off: popupsOff)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
-            electHeads()
             nameOutsiders()
         }
     }
@@ -62,72 +61,6 @@ final class AppController: ObservableObject {
     /// when the session's subject changes. The session's own AI title is the input — Claude
     /// Code writes one on every session, so nothing here reads a transcript — and a session
     /// too new to have one waits for it.
-    /// Who heads each group, settled once and kept. The evidence moves under you — a brief
-    /// lands, a session ends, two pids tie and a dictionary hands back whichever it feels like
-    /// — so a head worked out afresh on every tick changes with nothing on screen to explain
-    /// it, and what ⌘ opens changes with it. A session joining the group is the one thing that
-    /// reopens the question: the newcomer may well be the one driving it.
-    private func electHeads() {
-        let groups = Dictionary(grouping: sessions, by: \.groupKey).filter { $0.value.count > 1 }
-        var heads: [String: pid_t] = [:]
-        for (key, members) in groups {
-            let pids = Set(members.map(\.id))
-            if let held = Self.elected[key], pids.contains(held.pid),
-               held.members.isSuperset(of: pids) {
-                heads[key] = held.pid
-                Self.elected[key] = (held.pid, held.members)
-                continue
-            }
-            guard let winner = Self.elect(members) else { continue }
-            heads[key] = winner.id
-            Self.elected[key] = (winner.id, pids)
-        }
-        Self.elected = Self.elected.filter { heads[$0.key] != nil }
-        guard heads != Session.heads else { return }
-        Session.heads = heads
-        publishHeads(heads)
-    }
-
-    private static var elected: [String: (pid: pid_t, members: Set<pid_t>)] = [:]
-
-    /// The head on the evidence alone: whoever briefed the most of the others, and the session
-    /// that started first when nobody briefed anybody. Ties go to the earliest too, so the same
-    /// group elects the same session however the dictionary is ordered that time.
-    private static func elect(_ members: [Session]) -> Session? {
-        var votes: [pid_t: Int] = [:]
-        for session in members {
-            if let by = session.transcript?.briefedBy, members.contains(where: { $0.id == by }) {
-                votes[by, default: 0] += 1
-            }
-        }
-        let candidates = members.filter { votes[$0.id] != nil }
-        if let winner = candidates.max(by: { a, b in
-            let (x, y) = (votes[a.id] ?? 0, votes[b.id] ?? 0)
-            return x == y ? a.proc.startedAt > b.proc.startedAt : x < y
-        }) { return winner }
-        return members.min { $0.proc.startedAt < $1.proc.startedAt }
-    }
-
-    /// The heads, one `<session id> <group>` per line, where their own status line can find
-    /// them — beside the stop marks the hook already writes there. A session that heads a
-    /// group says so on its own screen, which is the only place you are looking when you are
-    /// in it. The group travels with the id: a session that has `cd`'d elsewhere still heads
-    /// the group it was named in, and its status line should not have to guess which.
-    private func publishHeads(_ heads: [String: pid_t]) {
-        let ids = sessions.filter { heads[$0.groupKey] == $0.id }
-            .compactMap { session -> String? in
-                guard let path = session.transcript?.path else { return nil }
-                let id = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-                return id + " " + session.groupKey
-            }
-        let file = URL(fileURLWithPath: NSHomeDirectory())
-            .appending(path: ".claude/fleet/state/heads")
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? ids.joined(separator: "\n").appending("\n").write(to: file, atomically: true,
-                                                                encoding: .utf8)
-    }
-
     private func nameOutsiders() {
         // An offscreen render or bench draws the names the app last stored. Asking here started
         // one `claude -p` per session on every run, left running when the render exited: two
@@ -180,24 +113,6 @@ final class AppController: ObservableObject {
     /// list you can only read becomes a list you can clear without ever leaving the panel.
     @Published private(set) var commandHeld = false
 
-    /// The one directory group given the whole block, if any. On the controller rather than on
-    /// the view: Esc and the panel chord fold it as they take the panel away, and a piece
-    /// of `@State` inside `OverlayView` is not something they can reach.
-    @Published var openGroup: String? {
-        didSet {
-            if let openGroup { lastGroup = openGroup }
-            guard openGroup != oldValue, isPanelVisible else { return }
-            // The grid moves for that long, and its first frame takes a moment to come.
-            quietUntil = Date().addingTimeInterval(OverlayView.unfoldDuration + 0.1)
-            overlay?.trace(openGroup == nil ? "group folding" : "group opening",
-                           lasting: OverlayView.unfoldDuration)
-        }
-    }
-
-    /// The directory the grid last had open. Survives the close so the card has somewhere to
-    /// shrink back to, whatever closed it — a click, Esc, the chord.
-    private(set) var lastGroup: String?
-
     /// The two side columns: the mail worth reading and the todo list, both from the phone's
     /// Firestore project. Owned here so what arrived last outlives the panel being dismissed.
     let hub = HubStore()
@@ -230,10 +145,6 @@ final class AppController: ObservableObject {
     private var lastTickAt = Date()
     private var lastTickInterval: TimeInterval = 0
     private var currentInterval: TimeInterval = 0
-    /// While a group opens or folds, what can wait does: a tick is 3 to 10 ms of main thread,
-    /// 17 with the Reaper's scan, in a move whose every frame has 16.7 (60 Hz). Once a second
-    /// against a move of 0.28 s, it fell inside about one fold in four.
-    private var quietUntil = Date.distantPast
     private var suspended = false
 
     /// Guards against the panel reappearing the instant it is dismissed. Re-arms only once
@@ -303,7 +214,7 @@ final class AppController: ObservableObject {
             MainActor.assumeIsolated { self?.fluidityChanged(struggling, reason) }
         }
         registry.onScreenChange = { [weak self] in
-            guard let self, !suspended, pretendFleet == nil, quietUntil < Date() else { return }
+            guard let self, !suspended, pretendFleet == nil else { return }
             sessions = registry.refresh()
         }
         // Whatever the last run left behind is not evidence about this one.
@@ -359,7 +270,7 @@ final class AppController: ObservableObject {
     /// so triggering it twice puts it away again.
     func toggleOnDemand() {
         if isPanelVisible {
-            if !foldOpenGroup() { hidePanel() }
+            hidePanel()
             return
         }
         forceShow()
@@ -392,13 +303,6 @@ final class AppController: ObservableObject {
     }
 
     private func tick() {
-        let wait = quietUntil.timeIntervalSinceNow
-        if wait > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
-                MainActor.assumeIsolated { self?.tick() }
-            }
-            return
-        }
         // Ahead of the suspended gate: with the display asleep this is the only thing still
         // ticking, and a hold nobody releases keeps the machine awake all night.
         let running = ProcessScanner.anyClaudeRunning()
@@ -496,20 +400,10 @@ final class AppController: ObservableObject {
         sessions = registry.refresh()
     }
 
-    /// The one directory every session is in, when that is all the fleet is.
-    private var loneGroup: String? {
-        let keys = Set(sessions.map(\.groupKey))
-        guard keys.count == 1, sessions.count > 1 else { return nil }
-        return keys.first
-    }
-
     // MARK: - Panel
 
     private func showPanel() {
         isPanelVisible = true
-        // A fleet that is one directory has nothing to choose between on the grid: the
-        // group is the panel, so it comes up unfolded rather than as a lone card to click.
-        if openGroup == nil { openGroup = loneGroup }
         hub.advanceSpotlight()
         // Three GETs, and only if the last batch is over ten minutes old. The columns draw whatever
         // they already have in the meantime rather than waiting on the network.
@@ -533,7 +427,6 @@ final class AppController: ObservableObject {
     private(set) lazy var dismiss: () -> Void = { [unowned self] in hidePanel() }
 
     func hidePanel() {
-        openGroup = nil
         guard isPanelVisible else { return }
         isPanelVisible = false
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
@@ -603,16 +496,6 @@ final class AppController: ObservableObject {
         if hub.stopEditing() { return }
         if hub.stopComposing() { return }
         hidePanel()
-    }
-
-    /// Folds the open directory, and says whether there was one. What the `fleet` command and
-    /// Spotlight do before they dismiss. Esc and the panel chord did too until 2026-10-12:
-    /// asked to put the panel away, they now do, whatever is open in it.
-    @discardableResult
-    func foldOpenGroup() -> Bool {
-        guard openGroup != nil else { return false }
-        openGroup = nil
-        return true
     }
 
     /// Tile click: drop the panel, then raise the terminal running that session. Deliberately

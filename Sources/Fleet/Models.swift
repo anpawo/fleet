@@ -300,8 +300,6 @@ struct TranscriptInfo {
     var lastPromptAt: Date?
     /// The last brief a peer session sent — see `ParseState.briefing`.
     var briefing: String?
-    /// The pid of the session that sent it. A group's head is the member the others name here.
-    var briefedBy: pid_t?
     var permissionMode: String?
     var hasPendingTool: Bool
     /// Tools in flight, most recently started first.
@@ -413,13 +411,6 @@ struct Session: Identifiable {
     /// project and two sessions sharing one have nothing in common — "mr" held a bank API and
     /// a question about models — so each keeps a group of its own.
     var groupKey: String { isSelf ? dirName : id.description }
-
-    /// Which session heads each group, by group key — elected by `AppController` and read by
-    /// the grid, for the same reason `labels` lives here.
-    @MainActor static var heads: [String: pid_t] = [:]
-
-    /// Whether this session is the one Fleet settled on as its group's main.
-    @MainActor var isHead: Bool { Session.heads[groupKey] == id }
 
     /// The name Claude was asked to give this session, if it has one.
     @MainActor var label: String? {

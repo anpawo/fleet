@@ -280,59 +280,6 @@ if CommandLine.arguments.contains("--bench-panel") {
         time("tick (sessions republished)", steps: 150) { _ in
             controller.injectSessions(registry.refresh())
         }
-        // A directory opened and folded back up. The layout is re-run at every frame of the
-        // move, so a pass that costs more than a frame is a frame dropped.
-        let byGroup = Dictionary(grouping: controller.sessions, by: \.groupKey)
-        if let group = byGroup.max(by: { $0.value.count < $1.value.count }), group.value.count > 1 {
-            // The first frame is the whole panel taking the change in, and it is timed from the
-            // click: most of it is spent before `layout()` is reached.
-            @MainActor func fold(to target: String?) -> (first: Double, rest: [Double]) {
-                settle()
-                hosting.frames = []
-                let clicked = cpu()
-                controller.openGroup = target
-                let end = Date().addingTimeInterval(0.6)
-                while Date() < end {
-                    RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.004))
-                }
-                // A layout that found nothing to do is not a frame.
-                return (hosting.firstFrameAt - clicked, hosting.frames.dropFirst().map(\.cost).filter { $0 > 0.05 })
-            }
-            // One click's first frame reads anywhere from 11 to 32 ms: five of each, the median.
-            var opening: [(first: Double, rest: [Double])] = [], folding = opening
-            for _ in 0 ..< 5 {
-                opening.append(fold(to: group.key))
-                folding.append(fold(to: nil))
-            }
-            for (name, runs) in [("group opening (\(group.value.count) sessions)", opening),
-                                 ("group folding", folding)] {
-                let frames = runs.flatMap(\.rest), firsts = runs.map(\.first).sorted()
-                print(String(format: "  %-34s %7.2f ms/frame  worst %7.2f ms   first frame %.1f ms (median of %d)",
-                             (name as NSString).utf8String!,
-                             frames.reduce(0, +) / Double(max(frames.count, 1)), frames.max() ?? 0,
-                             firsts[firsts.count / 2], firsts.count))
-            }
-            // The line the app writes for that move on the real window, written for this one.
-            settle()
-            hosting.trace("group opening, as the app logs it", asked: CACurrentMediaTime(),
-                          lasting: OverlayView.unfoldDuration)
-            _ = fold(to: group.key)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
-            _ = fold(to: nil)
-            hosting.counting = true
-            // `--churn`: sixty more of each, for `sample`. The click's own frame is taken in on
-            // a line of its own, so the call tree keeps it apart from the frames of the move.
-            if CommandLine.arguments.contains("--churn") {
-                for _ in 0 ..< 60 {
-                    controller.openGroup = group.key
-                    settle()
-                    RunLoop.main.run(until: Date().addingTimeInterval(0.35))
-                    controller.openGroup = nil
-                    settle()
-                    RunLoop.main.run(until: Date().addingTimeInterval(0.35))
-                }
-            }
-        }
         // The rightmost scroll view is the todo column.
         let scrolls = scrollViews(hosting).sorted { a, b in
             a.convert(a.bounds, to: nil).minX < b.convert(b.bounds, to: nil).minX
@@ -932,14 +879,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
             controller.fixer.simulate(CommandLine.arguments[f + 1])
         }
 
-        // `--open <directory>` draws a group unfolded. It is the one state a render cannot
-        // otherwise reach — nothing opens a group but a click — and it is the state whose
-        // spacing is hardest to get right, since the cards inside carry their own glow.
-        if let o = CommandLine.arguments.firstIndex(of: "--open"),
-           o + 1 < CommandLine.arguments.count {
-            controller.openGroup = CommandLine.arguments[o + 1]
-        }
-
         // `--size <w>x<h>` frames the render. The default is a laptop screen; a screenshot for
         // somewhere else usually wants a different shape, and cropping one out of the other
         // moves the panel off its own centre.
@@ -1088,7 +1027,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--idle"),
 // to look like a silent success, and left a second copy of Fleet scanning beside launchd's.
 let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
-    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks", "--open",
+    "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks",
     "--launch", "--mail", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--school-open", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
