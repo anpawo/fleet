@@ -493,54 +493,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-settings"),
     }
 }
 
-// `--render-inbox <path.png>` draws the watcher's ⌘⌥K line offscreen, on lines that test it: one that
-// needs him, a second one, long enough to be cut, shown as the arrows reach it, and none at all.
-if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
-   i + 1 < CommandLine.arguments.count {
-    MainActor.assumeIsolated {
-        _ = NSApplication.shared
-        let path = CommandLine.arguments[i + 1]
-        func item(_ kind: String, _ subject: String, _ line: String) -> InboxItem {
-            InboxItem(id: subject, at: Date().timeIntervalSince1970 * 1000 - Double(subject.count) * 3_600_000, kind: kind,
-                      subject: subject, line: line, dir: "/", options: ["--resume", "x"], prompt: nil)
-        }
-        let items = [
-            item("needs", "photo of her ID", "Mum sent her ID; the licence request now needs your FranceConnect login."),
-            item("done", "CROUS deposit refund", "CROUS confirmed the 412 € refund, so the todo is ticked and its reply is filed with the ARPEJ papers."),
-        ]
-        Inbox.render(items, to: path)
-        Inbox.render(items, index: 1, to: path.replacingOccurrences(of: ".png", with: "-next.png"))
-        Inbox.render([items[0]], to: path.replacingOccurrences(of: ".png", with: "-one.png"))
-        Inbox.render(items, asking: true, to: path.replacingOccurrences(of: ".png", with: "-done.png"))
-        Inbox.render([], to: path.replacingOccurrences(of: ".png", with: "-empty.png"))
-        Inbox.render(items, on: "dark", to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
-        Inbox.render(items, on: "white", to: path.replacingOccurrences(of: ".png", with: "-white.png"))
-        Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
-        let state = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".local/state/checker")
-        let real = CheckEntry.load(state: state)
-        Inbox.render([], checks: real.entries, lastCheck: real.last, to: path.replacingOccurrences(of: ".png", with: "-checks.png"))
-        Inbox.render(items, past: true, outcomes: ["photo of her ID": "Licence request filed on ANTS, receipt saved"],
-                     to: path.replacingOccurrences(of: ".png", with: "-past.png"))
-        Inbox.render(items, index: 1, past: true, to: path.replacingOccurrences(of: ".png", with: "-past-summing.png"))
-        Inbox.render(items, index: 1, past: true, outcomes: ["CROUS deposit refund": ""],
-                     to: path.replacingOccurrences(of: ".png", with: "-past-aside.png"))
-        // `--real`: his own past lines, each summed up as the panel does it (a `claude -p` for each not yet kept).
-        if CommandLine.arguments.contains("--real") {
-            let inbox = Inbox()
-            inbox.refresh(force: true)
-            if inbox.past { inbox.sumUp() }
-            let end = Date().addingTimeInterval(180)
-            while !inbox.summing.isEmpty, Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
-            for (i, item) in inbox.items.enumerated() {
-                print("\(item.id): \(inbox.outcomes[item.id] ?? "-")")
-                Inbox.render(inbox.items, index: i, past: inbox.past, outcomes: inbox.outcomes,
-                             to: path.replacingOccurrences(of: ".png", with: "-real-\(i).png"))
-            }
-        }
-        exit(0)
-    }
-}
-
 if CommandLine.arguments.contains("--selftest") {
     MainActor.assumeIsolated { exit(SelfCheck.run() == 0 ? 0 : 1) }
 }
@@ -1032,7 +984,7 @@ let knownFlags: Set<String> = [
     "--ax-probe", "--bench", "--bench-panel", "--check-reel", "--close", "--cmd", "--crons-open", "--demo",
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks",
     "--launch", "--mail", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
-    "--live", "--money-open", "--reels-run", "--render", "--render-inbox", "--render-settings", "--route", "--scan", "--school-open", "--screen",
+    "--live", "--money-open", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--school-open", "--screen",
     "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]
