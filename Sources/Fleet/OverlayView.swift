@@ -496,7 +496,7 @@ struct OverlayView: View {
         groups(of: controller.sessions).compactMap { group -> FleetCell? in
             // A directory holding one session has nothing to gather: its card is the session.
             if group.sessions.count == 1, let only = group.sessions.first {
-                return .session(only, heading: nil)
+                return .session(only, heading: only.label ?? only.topic)
             }
             return .group(group.name, group.sessions)
         }

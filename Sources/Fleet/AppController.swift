@@ -67,14 +67,9 @@ final class AppController: ObservableObject {
         // sessions rendering again and again started some 85 in six minutes, load 66
         // (2026-10-15).
         guard Firestore.reads else { return }
-        // A project with one session in it needs no name for it: the tile says the project,
-        // and the project is what that session is doing.
-        let shared = Set(Dictionary(grouping: sessions.filter(\.isSelf), by: \.dirName)
-            .filter { $0.value.count > 1 }.keys)
         for session in sessions {
             let project = session.isSelf ? session.dirName : nil
-            guard !session.isSelf || shared.contains(session.dirName) else { continue }
-            // A session a peer drives by message gets no `ai-title` from Claude Code, and its
+                        // A session a peer drives by message gets no `ai-title` from Claude Code, and its
             // card would keep the whole brief for a name. The brief is what names it, and it
             // changes only when the peer hands it a new job.
             guard let file = session.transcript?.path else { continue }
