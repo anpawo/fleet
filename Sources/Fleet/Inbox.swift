@@ -35,6 +35,7 @@ final class Inbox: NSObject, ObservableObject {
     static let bubble: CGFloat = 38
     static let gap: CGFloat = 12
     static let window = NSSize(width: 1380, height: 260)
+    static let settingsHeight: CGFloat = 700
     static let margin: CGFloat = 30
     /// It fades in while rising these last points into its place.
     static let rise: CGFloat = 14
@@ -50,6 +51,10 @@ final class Inbox: NSObject, ObservableObject {
     @Published private(set) var outcomes: [String: String] = [:]
     private(set) var summing: Set<String> = []
     private static let keptOutcomes = "echoOutcomes"
+    /// S: every check of the hourly watcher, instead of the lines.
+    @Published private(set) var settings = false
+    @Published private(set) var checks: [CheckEntry] = []
+    @Published private(set) var lastCheck = ""
 
     /// What opening does. A stand-in in the selftest, which must not start a terminal.
     var launch: (InboxItem) -> Bool = Inbox.resume
@@ -189,9 +194,15 @@ final class Inbox: NSObject, ObservableObject {
     /// Every key the panel takes, and what each button sends; the others go on. ↵ opens, or says yes to a question;
     /// ←→ move and keep every line; ↓ asks to set the shown one aside as done (`done/`, still on disk).
     func key(_ code: UInt16) -> Bool {
+        if settings {
+            guard code == UInt16(kVK_ANSI_S) || code == UInt16(kVK_Escape) else { return false }
+            showSettings(false)
+            return true
+        }
         let was = asking
         asking = nil
         switch Int(code) {
+        case kVK_ANSI_S: showSettings(true)
         case kVK_Escape: if was == nil { hide() }
         case kVK_LeftArrow: step(-1)
         case kVK_RightArrow: step(1)
@@ -209,6 +220,20 @@ final class Inbox: NSObject, ObservableObject {
             if self?.pressed == code { self?.pressed = nil }
         }
         return true
+    }
+
+    private func showSettings(_ on: Bool) {
+        settings = on
+        if on { (checks, lastCheck) = CheckEntry.load(state: folder.deletingLastPathComponent()) }
+        guard let panel, panel.isVisible else { return }
+        let screen = OverlayWindowController.activeScreen().visibleFrame
+        if on {
+            let height = min(Self.settingsHeight, screen.height)
+            panel.setFrame(NSRect(x: panel.frame.minX, y: screen.maxY - height, width: panel.frame.width, height: height), display: true)
+        } else {
+            panel.setContentSize(Self.window)
+            panel.setFrame(place(panel), display: true)
+        }
     }
 
     private func step(_ by: Int) {
@@ -281,7 +306,10 @@ final class Inbox: NSObject, ObservableObject {
         }
     }
 
-    func hide() { panel?.orderOut(nil) }
+    func hide() {
+        settings = false
+        panel?.orderOut(nil)
+    }
 
     /// Non-activating, as Spotlight: it takes the keys without taking the app in front away from him. No window
     /// shadow: the bar draws its own, in the clear margin around it.
@@ -312,12 +340,13 @@ final class Inbox: NSObject, ObservableObject {
     ]
 
     static func render(_ items: [InboxItem], index: Int = 0, asking: Bool = false, past: Bool = false,
-                       outcomes: [String: String] = [:], on backdrop: String = "light", to path: String) {
+                       outcomes: [String: String] = [:], checks: [CheckEntry]? = nil, lastCheck: String = "", on backdrop: String = "light", to path: String) {
         let inbox = Inbox(folder: URL(fileURLWithPath: "/nonexistent"))
         inbox.items = items
         inbox.index = index
         inbox.past = past
         inbox.outcomes = outcomes
+        if let checks { (inbox.settings, inbox.checks, inbox.lastCheck) = (true, checks, lastCheck) }
         inbox.asking = asking ? inbox.current.map { Ask(id: $0.id) } : nil
         let backdrop = LinearGradient(colors: backdrops[backdrop] ?? [.gray], startPoint: .top, endPoint: .bottom)
         // SwiftUI's own renderer: a hosting view's `cacheDisplay` drew a short line off both ends of every stroked
@@ -387,6 +416,10 @@ struct InboxView: View {
     }
 
     var body: some View {
+        if inbox.settings { ChecksView(inbox: inbox) } else { main }
+    }
+
+    private var main: some View {
         // Fixed to its ideal size, the stack is as wide as the line, and the row under it spreads to that width.
         VStack(spacing: 10) {
             subject
@@ -489,6 +522,7 @@ struct InboxView: View {
                 key("return", ask == nil ? "open" : "yes", kVK_Return, tint: colour, icon: needs ? Self.open : nil)
                 key("checkmark", ask == nil ? "done" : "sure?", kVK_DownArrow,
                     tint: ask == nil ? nil : Self.yes, icon: done ? Self.done : nil)
+                key("gearshape", "settings", kVK_ANSI_S)
             }
         }
         .overlay(alignment: .top) {
@@ -503,8 +537,8 @@ struct InboxView: View {
     }
 
     private func key(_ symbol: String, _ label: String, _ code: Int, tint: Color? = nil, icon: Color? = nil) -> some View {
-        let off = inbox.current == nil || ((code == kVK_LeftArrow || code == kVK_RightArrow) && inbox.items.count < 2)
-            || (inbox.past && (code == kVK_DownArrow || (code == kVK_Return && inbox.current?.session == nil)))
+        let off = code != kVK_ANSI_S && (inbox.current == nil || ((code == kVK_LeftArrow || code == kVK_RightArrow) && inbox.items.count < 2)
+            || (inbox.past && (code == kVK_DownArrow || (code == kVK_Return && inbox.current?.session == nil))))
         return KeyBubble(symbol: symbol, label: label, off: off, tint: tint, icon: icon, pressed: inbox.pressed == code) {
             _ = inbox.key(UInt16(code))
         }
@@ -514,7 +548,7 @@ struct InboxView: View {
 /// One of the keys, as a round button, as Spotlight puts its own, with its name under it on a chip of its own: on
 /// the wallpaper bare, white or black, it was lost on one colour or the other. Filled with its colour when it has
 /// one, the icon white on it; or with only its icon coloured, when it is the key to press next.
-private struct KeyBubble: View {
+struct KeyBubble: View {
     let symbol: String
     let label: String
     var off = false

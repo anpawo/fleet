@@ -516,6 +516,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-inbox"),
         Inbox.render(items, on: "dark", to: path.replacingOccurrences(of: ".png", with: "-dark.png"))
         Inbox.render(items, on: "white", to: path.replacingOccurrences(of: ".png", with: "-white.png"))
         Inbox.renderBadges(to: path.replacingOccurrences(of: ".png", with: "-badge.png"))
+        let state = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".local/state/checker")
+        let real = CheckEntry.load(state: state)
+        Inbox.render([], checks: real.entries, lastCheck: real.last, to: path.replacingOccurrences(of: ".png", with: "-checks.png"))
         Inbox.render(items, past: true, outcomes: ["photo of her ID": "Licence request filed on ANTS, receipt saved"],
                      to: path.replacingOccurrences(of: ".png", with: "-past.png"))
         Inbox.render(items, index: 1, past: true, to: path.replacingOccurrences(of: ".png", with: "-past-summing.png"))
