@@ -1023,10 +1023,9 @@ struct GroupTile: View {
         .clipShape(RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous)
+                // No glow at all: a group has had nothing to click since 2026-10-18, and its
+                // glow still read as a shadow behind it while one of its cards was hovered.
                 .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                // Never lit by the pointer: a group has had nothing to click since 2026-10-18,
-                // and a card's hover lit its group teal round it.
-                .shadow(color: Self.tint.opacity(0.18), radius: 8)
         )
         .overlay(
             RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous)
