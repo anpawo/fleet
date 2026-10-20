@@ -130,5 +130,7 @@ enum DemoFleet {
 
         controller.hub.pretend(mail: mail, todos: todos, school: folder.appending(path: "state.json"))
         controller.money.file = folder.appending(path: "payments.csv")
+        // A folder never written: no block of his on a picture meant to be published.
+        controller.plugins.folder = folder.appending(path: "blocks")
     }
 }

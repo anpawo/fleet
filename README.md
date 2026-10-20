@@ -400,6 +400,29 @@ Prints every session it can see, with the transcript it bound, the state it deri
       pending: Bash
 ```
 
+## Blocks from other programs
+
+Any program can put a block on the panel without touching Fleet: it writes
+`~/.local/state/fleet/blocks/<name>.json`, and the block shows under SPENDING, folded to its
+title until the pointer is on it. Fleet only reads the file, so whatever gathers the data runs
+on its own schedule, and if it dies the block keeps its last state.
+
+```json
+{
+  "title": "Deploys",
+  "tint": "#2E7D6B",
+  "layout": "rows",
+  "groups": [
+    { "title": "Today", "items": [ { "text": "api", "detail": "09:12", "help": "green" } ] }
+  ]
+}
+```
+
+`layout` is `rows` (one line per item, `detail` at the right) or `faces` (three to a line, a
+round `image` over the `text`; `image` is a path relative to the blocks folder). `help` shows
+under the pointer. A group with no items is skipped, a block with none is not drawn, and a file
+that does not parse is logged to `/tmp/fleet.log`. Blocks are ordered by file name.
+
 ## Options
 
 `fleet` with no arguments toggles the panel. Anything else is passed to the binary:

@@ -29,6 +29,7 @@ enum SelfCheck {
         judging(expect)
         repairs(expect)
         money(expect)
+        plugins(expect)
         grid(expect)
         reads(expect)
 
@@ -202,6 +203,21 @@ enum SelfCheck {
         // Six: two to a row end at 410, in one column at 845, three to a row at 265.
         expect(beside.unfolding([6], room: 0) { size($0, large: $1, most: $2) }.most == [0: 3], true,
                "grid: a directory that fits no way still unfolds, the way that ends the grid highest")
+    }
+
+    // MARK: - Plugins
+
+    /// An empty group left out, the file's order kept, an empty block and a broken file not drawn.
+    private static func plugins(_ expect: (Bool, Bool, String) -> Void) {
+        let json = #"{"title":"T","groups":[{"title":"a","items":[]},"#
+            + #"{"title":"b","items":[{"text":"B"},{"text":"A","detail":"x"}]}]}"#
+        let block = PluginStore.decode(Data(json.utf8), id: "t.json")
+        expect(block?.groups.map(\.title) == ["b"], true, "plugins: a group with nothing in it left out")
+        expect(block?.groups.first?.items.map(\.text) == ["B", "A"], true, "plugins: the file's order kept")
+        expect(PluginStore.decode(Data(#"{"title":"T","groups":[{"items":[]}]}"#.utf8), id: "e") == nil, true,
+               "plugins: a block with nothing in it is not drawn")
+        expect(PluginStore.decode(Data(#"{"groups":[]"#.utf8), id: "b") == nil, true,
+               "plugins: a broken file is not drawn")
     }
 
     // MARK: - Money

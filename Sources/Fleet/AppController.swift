@@ -119,6 +119,8 @@ final class AppController: ObservableObject {
 
     /// What the bank account has paid out, by month — see `Money`.
     let money = MoneyStore()
+    /// The blocks other programs write — see `PluginBlock`.
+    let plugins = PluginStore()
 
     /// The headless Claudes out on a line of ALERT — see `Fixer`.
     let fixer = Fixer()
@@ -318,6 +320,7 @@ final class AppController: ObservableObject {
         // and the Claude below go by.
         hub.rereadEpitechIfWritten()
         money.rereadIfWritten()
+        plugins.rereadIfWritten()
         launchd.tick(now: now)
         // What the bar shows goes to a Claude without a click (04-10). With a network only:
         // without one it fixes nothing, and the lines an outage writes leave with the outage.
