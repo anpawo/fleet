@@ -33,8 +33,8 @@ final class Glass: NSVisualEffectView {
     /// What macOS captures behind a glass, against the screen's pixels. Its own 1/8 left a thin
     /// line round whatever part of the screen it redrew alone, flickering as the card under the
     /// pointer grew, and none of it in a screenshot, which draws the whole screen at once
-    /// (2026-10-21). The blur radius counts captured pixels, so it grows as much: `blur` is the
-    /// radius at macOS's 1/8, the look the panel had.
+    /// (2026-10-21). The radius stays Echo's: four times larger with the capture, the veil
+    /// blurred far more than Echo's (asked the same day).
     static let capture = 0.5
 
     let blur: Double
@@ -49,7 +49,7 @@ final class Glass: NSVisualEffectView {
         }
         guard let gauss = make("gaussianBlur") else { return nil }
         gauss.setValue("cssBlur", forKey: "name")
-        gauss.setValue(blur * Self.capture / 0.125, forKey: "inputRadius")
+        gauss.setValue(blur, forKey: "inputRadius")
         gauss.setValue(true, forKey: "inputNormalizeEdges")
         guard let tone else { return [gauss] }
         guard let colour = make("colorMatrix") else { return nil }
