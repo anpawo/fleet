@@ -397,6 +397,7 @@ private struct ParseState {
     var lastMessageAt: Date?
     /// When you last sent this session a prompt. A task notification waking it up is not you.
     var lastPromptAt: Date?
+    var compacted = false
     /// Agent spawns and endings, by the `tool_use` id that started them. A spawn whose id has
     /// no later ending is an agent still working — see `TranscriptInfo.unfinishedAgentIDs`.
     /// Both outlive the entries they came from: an async agent's spawn and its notification can
@@ -462,6 +463,7 @@ private struct ParseState {
         // sat idle is answered by nobody (12-10: trading NEEDS YOU, compacted at its prompt).
         let transcriptOnly = obj["queueTranscriptOnly"] as? Bool == true
             || obj["isCompactSummary"] as? Bool == true
+        if obj["isCompactSummary"] as? Bool == true { compacted = true }
 
         // A turn cancelled with Esc names the message it cut short, and the tool calls in that
         // message are never answered — nothing is coming back for them. Left in `pending` they
@@ -677,6 +679,7 @@ private struct ParseState {
             turnOpen: turnOpen,
             lastActivity: mtime,
             lastMessageAt: lastMessageAt,
+            compacted: compacted,
             preview: preview,
             workflows: workflowFiles.compactMap { id, files in
                 guard let since = shellSpawnedAt[id], agentEndedAt[id] == nil else { return nil }

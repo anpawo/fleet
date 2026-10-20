@@ -673,6 +673,10 @@ enum SelfCheck {
         try? (local + reply).write(toFile: path, atomically: true, encoding: .utf8)
         expect(TranscriptStore().info(for: path)?.untouched == false ? 1 : 0, 1,
                "and one Claude has answered is not")
+        let summary = #"{"type":"user","timestamp":"2026-10-13T09:00:00.000Z","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"content":"This session is being continued from a previous conversation that ran out of context."}}"# + "\n"
+        try? summary.write(toFile: path, atomically: true, encoding: .utf8)
+        expect(TranscriptStore().info(for: path)?.untouched == false ? 1 : 0, 1,
+               "nor one whose tail holds only a compaction's summary")
     }
 
     // MARK: - Sub-agents

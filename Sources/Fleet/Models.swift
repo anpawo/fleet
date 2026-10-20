@@ -343,7 +343,11 @@ struct TranscriptInfo {
     var lastWord: Date { lastMessageAt ?? lastActivity }
     /// Nothing asked and nothing answered. A local command (`/model`, `/mcp`) leaves user
     /// lines and a stamp behind it and starts no turn, so neither can be what is tested.
-    var untouched: Bool { lastPromptAt == nil && preview.allSatisfy { $0.kind == .user } }
+    var untouched: Bool { lastPromptAt == nil && !compacted && preview.allSatisfy { $0.kind == .user } }
+    /// A compaction's summary is in the parsed tail. What it re-attaches can fill the whole
+    /// window a cold read covers, leaving no prompt and no reply to go by (20-10: a
+    /// session NEW after a Fleet restart, 262 KB written by its idle compaction).
+    var compacted = false
     var preview: [PreviewLine]
     /// Sub-agents spawned and not yet finished. Filled in after the parse — it needs the
     /// sub-agents' own files, which the main transcript only points at.
