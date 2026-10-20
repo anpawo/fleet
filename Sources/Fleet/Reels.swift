@@ -447,7 +447,7 @@ enum ReelDigest {
             .filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }.sorted()
     }
 
-    /// The sub-categories each theme already has in `graph.jsonl` — the list the Reels page opens
+    /// The sub-categories each theme already has in `graph.jsonl`: the list the Reels page opens
     /// under a topic's pill. A new one is added by hand there; the digest only picks among them.
     static func subs() -> [String: [String]] {
         let text = (try? String(contentsOfFile: "\(notes)/graph.jsonl", encoding: .utf8)) ?? ""
