@@ -1131,8 +1131,8 @@ struct SessionTile: View {
             // A shadow fades out about twice its radius away. At 16 the hover glow ran past the
             // room it is given, and was cut in a straight line: by the scroll view over the top
             // row, by a group's border, and over the card beside it in a group (2026-10-20).
-            .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
-                    radius: grouped ? 4 : 8)
+            // The pointer no longer brightens it at all (asked the same day).
+            .shadow(color: session.state.tint.opacity(0.18), radius: grouped ? 4 : 8)
     }
 
     var body: some View {
