@@ -981,8 +981,6 @@ struct GroupTile: View {
         return (name as NSString).size(withAttributes: [.font: font]).width
     }
 
-    @State private var hovering = false
-
     var body: some View {
         GeometryReader { box in
             ZStack(alignment: .topLeading) {
@@ -1026,15 +1024,14 @@ struct GroupTile: View {
         .background(
             RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous)
                 .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
-                .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
-                        radius: hovering ? 16 : 8)
+                // Never lit by the pointer: a group has had nothing to click since 2026-10-18,
+                // and a card's hover lit its group teal round it.
+                .shadow(color: Self.tint.opacity(0.18), radius: 8)
         )
         .overlay(
             RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous)
                 .strokeBorder(Self.tint, lineWidth: 2.5)
         )
-        .animation(.easeOut(duration: 0.18), value: hovering)
-        .onHover { hovering = $0 }
     }
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
@@ -1132,8 +1129,11 @@ struct SessionTile: View {
     private func ground(_ shape: some Shape) -> some View {
         shape
             .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+            // A shadow fades out about twice its radius away. At 16 the hover glow ran past the
+            // room it is given, and was cut in a straight line: by the scroll view over the top
+            // row, by a group's border, and over the card beside it in a group (2026-10-20).
             .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
-                    radius: hovering ? 16 : 8)
+                    radius: grouped ? 4 : 8)
     }
 
     var body: some View {
