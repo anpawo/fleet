@@ -148,7 +148,9 @@ struct FrostedGlass: View {
                     .offset(x: -at.minX, y: -at.minY)
             }
         } else {
-            GlassView(blur: 40, tone: Glass.matrix, radius: Glass.radius)
+            // Twice Echo's 40: at 40 a YouTube page behind the fleet still showed the video's
+            // frame against the thumbnails beside it, a faint square in the glass (2026-10-20).
+            GlassView(blur: 80, tone: Glass.matrix, radius: Glass.radius)
         }
     }
 }
