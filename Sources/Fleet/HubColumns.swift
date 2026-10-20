@@ -10,15 +10,15 @@ import SwiftUI
 /// a click anywhere in these columns dismisses the panel, like any other empty space.
 struct MailColumn: View {
     @ObservedObject var hub: HubStore
-    /// ⌘ est enfoncée : la carte sous le pointeur se déplie et montre ses quatre boutons. Le
-    /// même marché que la colonne TODO — sans ⌘ il n'y a rien à viser et rien à rater.
+    /// ⌘ is held: the card under the pointer unfolds and shows its four buttons. The same deal
+    /// as the TODO column: without ⌘ there is nothing to aim at and nothing to miss.
     var commandHeld = false
     /// Off for an offscreen render, like the two columns below it: `ImageRenderer` draws
     /// nothing inside a `ScrollView`.
     var scrolling = true
 
-    /// La carte sous le pointeur. Sur la colonne et pas sur la carte : une carte est reconstruite
-    /// à chaque tick.
+    /// The card under the pointer. Kept on the column, not on the card: a card is rebuilt on
+    /// every tick.
     @State private var hovered: String?
 
     /// The tallest the block may be: it is as tall as its mails, up to this, and scrolls past it.
@@ -68,8 +68,8 @@ struct MailColumn: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        // ⌘ enfoncée alors que le pointeur est déjà sur une carte : le changement vient du
-        // contrôleur, pas du survol, donc il lui faut son animation à lui.
+        // ⌘ pressed with the pointer already on a card: the change comes from the controller,
+        // not from the hover, so it needs an animation of its own.
         .animation(TodoColumn.unroll, value: commandHeld)
     }
 
@@ -80,8 +80,8 @@ struct MailColumn: View {
         ForEach(hub.mail) { mail in
             MailCard(hub: hub, mail: mail,
                      expanded: commandHeld && hovered == mail.id,
-                     // Une transaction, comme dans CronColumn : sans elle la carte se déplie
-                     // d'un coup et les mails du dessous sautent à leur nouvelle place.
+                     // A transaction, as in CronColumn: without it the card unfolds at once and
+                     // the mails below jump to their new place.
                      onHover: { inside in
                          withAnimation(TodoColumn.unroll) {
                              if inside { hovered = mail.id } else if hovered == mail.id { hovered = nil }
@@ -794,7 +794,7 @@ struct HubEmptyLine: View {
 struct MailCard: View {
     @ObservedObject var hub: HubStore
     let mail: Mail
-    /// ⌘ est enfoncée et le pointeur est ici.
+    /// ⌘ is held and the pointer is here.
     var expanded = false
     var onHover: (Bool) -> Void = { _ in }
 
@@ -844,8 +844,8 @@ struct MailCard: View {
                 .lineLimit(1)
 
             if expanded {
-                // Ce que le moteur a compris, puis ce qu'on peut en faire. Le résumé d'abord :
-                // les quatre boutons ne veulent rien dire tant qu'on n'a pas lu le mail.
+                // What the engine understood, then what can be done about it. The summary
+                // first: the four buttons mean nothing until the mail has been read.
                 if !mail.summary.isEmpty {
                     Text(mail.summary)
                         .font(.system(size: 10))
@@ -853,8 +853,8 @@ struct MailCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                 }
-                // Deux par ligne : quatre boutons sur une ligne dans un cinquième de panneau
-                // sont quatre cibles de vingt points.
+                // Two to a line: four buttons on one line in a fifth of the panel are four
+                // twenty-point targets.
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         MailActionButton(.seen) { hub.act(.seen, on: mail) }
@@ -882,10 +882,10 @@ struct MailCard: View {
     }
 }
 
-/// Un des quatre boutons du bas d'une carte dépliée.
+/// One of the four buttons at the bottom of an unfolded card.
 ///
-/// Les couleurs sont celles du téléphone, au point près — my-hub montre le même verdict en
-/// glissant la carte, et un geste vert là-bas ne doit pas être un bouton gris ici.
+/// The colours are the phone's, to the point: my-hub shows the same verdict as the card is
+/// swiped, and a green gesture there must not be a grey button here.
 struct MailActionButton: View {
     let action: HubStore.MailAction
     let run: () -> Void
