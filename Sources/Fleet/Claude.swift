@@ -389,6 +389,10 @@ enum Claude {
         }
         // A fact-check with no web is a guess: the tools named are used without asking.
         if !tools.isEmpty { process.arguments! += ["--allowedTools", tools.joined(separator: ",")] }
+        // Nothing reads a turn's transcript back (the answer is stdout), and the naming turns
+        // alone left 1.9 GB of them in a month (0.35 MB each, measured 20-10-2026). A fix keeps
+        // its own: it is the only record of the commands it ran on his Mac.
+        if !unattended { process.arguments! += ["--no-session-persistence"] }
         // Run somewhere disposable. A headless turn writes a transcript into whatever
         // directory it starts in, and starting in a real project would drop a stray session
         // into that project's history — which Fleet itself would then display as a tile.
