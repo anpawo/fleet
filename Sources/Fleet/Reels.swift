@@ -531,6 +531,7 @@ enum ReelDigest {
             "note": digest.note != nil && safe(digest.theme) ? "reels/\(digest.theme).md" : "",
             "projects": digest.projects.map(\.0),
             "tags": digest.tags,
+            "screen": digest.screen ?? "",
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
               let line = String(data: data, encoding: .utf8) else { return }

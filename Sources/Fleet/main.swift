@@ -445,7 +445,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
             else { print("no such reel"); exit(1) }
             let d = try await Claude.digest(Reel(doc), themes: ReelDigest.themes(),
                                             projects: ReelDigest.projects(), sessions: [:])
-            print("name: \(d.name ?? "-")\ngist: \(d.gist ?? "-")\nnote [\(d.theme)]: \(d.note ?? "-")\ntodo: \(d.todo ?? "-")")
+            print("name: \(d.name ?? "-")\ngist: \(d.gist ?? "-")\nnote [\(d.theme)]: \(d.note ?? "-")\ntodo: \(d.todo ?? "-")\nscreen: \(d.screen ?? "-")")
             for (name, line) in d.projects { print("project \(name): \(line)") }
         } catch { print(error.localizedDescription); exit(1) }
         exit(0)

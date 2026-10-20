@@ -258,6 +258,7 @@ enum Claude {
         var projects: [(String, String)]
         var sessions: [(String, String)]
         var tags: [String]
+        var screen: String?
     }
 
     static func digest(_ reel: Reel, themes: [String], projects: [(name: String, about: String)],
@@ -279,8 +280,8 @@ enum Claude {
         background and decide what, if anything, it leaves behind. Reply with one JSON object \
         and nothing else:
         {"name": "...", "gist": "..." or null, "note": "..." or null, "theme": "...", \
-        "todo": "..." or null, "tags": ["..."], "projects": [{"name": "...", "line": "..."}], \
-        "sessions": [{"id": "...", "message": "..."}]}
+        "todo": "..." or null, "tags": ["..."], "screen": "laptop" or "phone" or null, \
+        "projects": [{"name": "...", "line": "..."}], "sessions": [{"id": "...", "message": "..."}]}
 
         name: what the Reel is about, in English, two to five words and at most thirty \
         characters — a label to tell it from the others in a list ("LLM jailbreak by leetspeak"), \
@@ -300,6 +301,9 @@ enum Claude {
         technical words (swiftui, llm, rate-limiting) and \(Config.language) when no English term \
         exists. A tag is what he would type to search for this the day the subject comes back — \
         never a vague one like "tech" or "video". Always give tags, even when the note is null.
+        screen: "laptop" when the Reel shows the look of an interface made for a computer \
+        (website, web app, desktop app), "phone" when it is made for a phone (iOS or Android app, \
+        mobile screen), null when it shows no interface or its design rule holds on any screen.
         projects: the projects below this Reel concretely helps — a technique or tool that fits \
         what that project is — each with one line in English saying how. Usually empty.
         sessions: the live Claude Code sessions below whose current task this Reel bears on \
@@ -342,7 +346,8 @@ enum Claude {
                       todo: clean(object["todo"]).map { $0 + " — " + url },
                       projects: pairs("projects", "name", "line"),
                       sessions: pairs("sessions", "id", "message"),
-                      tags: Array(tags.prefix(6)))
+                      tags: Array(tags.prefix(6)),
+                      screen: clean(object["screen"]).flatMap { ["laptop", "phone"].contains($0) ? $0 : nil })
     }
 
     // MARK: - Fixing
