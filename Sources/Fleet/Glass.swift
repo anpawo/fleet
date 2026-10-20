@@ -42,7 +42,8 @@ final class Glass: NSVisualEffectView {
         }
         guard let gauss = make("gaussianBlur") else { return nil }
         gauss.setValue("cssBlur", forKey: "name")
-        gauss.setValue(blur, forKey: "inputRadius")
+        let tuned = tone == nil ? nil : UserDefaults.standard.object(forKey: "glassBlur") as? Double
+        gauss.setValue(tuned ?? blur, forKey: "inputRadius")
         gauss.setValue(true, forKey: "inputNormalizeEdges")
         guard let tone else { return [gauss] }
         guard let colour = make("colorMatrix") else { return nil }
@@ -95,7 +96,21 @@ final class Glass: NSVisualEffectView {
         let names = (backdrop.filters ?? []).compactMap { ($0 as? NSObject)?.value(forKey: "name") as? String }
         guard !names.contains("cssBlur"), let css = filters() else { return }
         backdrop.filters = (backdrop.filters ?? []).filter { ($0 as? NSObject)?.value(forKey: "name") as? String == "sdrNormalize" } + css
+        // ponytail: knobs and log for the faint square that flickers over the glass on hover
+        // and that no screenshot shows (2026-10-21); out once its cause is known.
+        applied += 1
+        if applied > 1, Self.resets < 20 {
+            Self.resets += 1
+            NSLog("Fleet: the system put its own filters back on a glass (blur \(blur)), ours again (\(applied)x)")
+        }
+        let tune = UserDefaults.standard
+        guard tone != nil else { return }
+        if let scale = tune.object(forKey: "glassScale") as? Double { backdrop.setValue(scale, forKey: "scale") }
+        if tune.bool(forKey: "glassNoCache") { backdrop.setValue(true, forKey: "disableFilterCache") }
     }
+
+    private var applied = 0
+    private static var resets = 0
 }
 
 private struct GlassView: NSViewRepresentable {
@@ -148,9 +163,7 @@ struct FrostedGlass: View {
                     .offset(x: -at.minX, y: -at.minY)
             }
         } else {
-            // Twice Echo's 40: at 40 a YouTube page behind the fleet still showed the video's
-            // frame against the thumbnails beside it, a faint square in the glass (2026-10-20).
-            GlassView(blur: 80, tone: Glass.matrix, radius: Glass.radius)
+            GlassView(blur: 40, tone: Glass.matrix, radius: Glass.radius)
         }
     }
 }
