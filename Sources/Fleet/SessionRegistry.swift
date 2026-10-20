@@ -266,8 +266,12 @@ final class SessionRegistry {
         var claimed = Set(bindings.values)
 
         for proc in unbound {
+            // A file not written since the process started is the folder's last conversation,
+            // not this one: a session not yet prompted took it and showed READY under its name
+            // instead of NEW (20-10: templates, a merge that had ended four minutes before).
             let recent = candidates.first { file in
-                !claimed.contains(file.path) && store.info(for: file.path)?.cwd == proc.cwd
+                !claimed.contains(file.path) && file.mtime > proc.startedAt
+                    && store.info(for: file.path)?.cwd == proc.cwd
             }?.path
             // Failing that, `claude --resume <id>` names its file whichever folder holds it and
             // however long ago it was written: the window loses a session that sat idle through
