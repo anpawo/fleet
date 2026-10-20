@@ -17,8 +17,8 @@ extension SessionState {
         // the session on purpose until memory frees up.
         case .paused: return Color(red: 1.00, green: 0.88, blue: 0.20)
         // No hue at all: every one is spoken for by a state or a block, and a blank page is
-        // what the session is.
-        case .fresh: return .white
+        // what the session is. Slate, the site's grey: white was lost on the light glass.
+        case .fresh: return Color(red: 0x5F / 255, green: 0x6B / 255, blue: 0x7C / 255)
         }
     }
 
@@ -63,8 +63,6 @@ struct OverlayView: View {
     ///
     /// Three (asked 2026-10-15), on tiles narrow enough that the side columns keep their width.
     static let tilesPerRow = 3
-    /// How dark the panel sits over your desktop. Lower shows more of what's behind it.
-    private static let tintOpacity: Double = 0.80
 
     private let tileWidth = SessionTile.width
     /// Wider than it looks like it needs to be: the hover glow is a 16pt shadow, and the
@@ -150,19 +148,17 @@ struct OverlayView: View {
 
     var body: some View {
         ZStack {
-            // Flat scrim rather than a live blur. Two reasons, and the second one is why the
-            // frosted version was tried and dropped: a full-screen material is continuous GPU
-            // work in an app that exists to save power, and macOS's behind-window blur has a
-            // fixed radius — there is no dialling it down. It obliterates what is behind it or
-            // it is not on. A plain black wash keeps your windows recognisable underneath,
-            // which is the point of a panel that floats over your work.
-            Color.black.opacity(Self.tintOpacity)
+            // Echo's veil (asked 2026-10-20): the screen blurred 4 pt and dimmed, each block
+            // a frosted glass on it — see `Site`. The flat black wash of 2026-08-10 was there
+            // because macOS's blur has one radius; Echo's private filter dials it.
+            Veil()
                 .ignoresSafeArea()
 
             board(scrolling: !eagerLayout)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 100)
         }
+        .environment(\.colorScheme, .light)
         // Anything not claimed by a tile dismisses, matching Esc. Tiles are Buttons and
         // consume their own taps, so this only fires on the surrounding space.
         //
@@ -378,7 +374,7 @@ struct OverlayView: View {
         // Tighter tracking than the side headings, which are one short word each: at theirs
         // this one runs into the key beside it.
         Block(title: "CLAUDE CODE FLEET", tracking: 2.6, tint: BlockTint.fleet,
-              fill: .black.opacity(0.71), spread: Self.fleetSpread, bottomSpread: 13,
+              spread: Self.fleetSpread, bottomSpread: 13,
               // The grid brings 18pt of glow room over its first row and the frame starts 13pt
               // over the block: five back leaves the tiles their 26pt under the line too.
               titleInset: Self.fleetSpread, titleOnLine: true, bodyGap: -5) {
@@ -387,7 +383,7 @@ struct OverlayView: View {
             if !controller.sessions.isEmpty {
                 Text("\(controller.sessions.count)")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Site.ink.opacity(0.6))
                     .titleGround(1)
             }
         } content: {
@@ -469,13 +465,12 @@ struct OverlayView: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+        // Opaque: it sits on the fleet's own line, which a whiter glass lets run through it.
+        .background(.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                // White, where every other card on the panel is outlined at 0.07: the key
-                // sits on the fleet's own line, and the fleet's line is black now.
-                .strokeBorder(.white.opacity(0.75), lineWidth: 1)
+                .strokeBorder(Site.line, lineWidth: 1)
         )
     }
 
@@ -1002,7 +997,7 @@ struct GroupTile: View {
                                           in: width, spacing: spacing)
                     Text(name)
                         .font(.system(size: Self.flushName, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Site.ink)
                         .lineLimit(1)
                         .fixedSize()
                         .offset(x: (outer.width - Self.flushNameWidth(name)) / 2,
@@ -1010,7 +1005,7 @@ struct GroupTile: View {
                 } else {
                     Text(name)
                         .font(.system(size: Self.nameSize, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Site.ink)
                         .lineLimit(1)
                         .fixedSize()
                         .offset(x: max(12, (box.size.width - nameWidth) / 2), y: spacing / 2)
@@ -1030,7 +1025,7 @@ struct GroupTile: View {
         .clipShape(RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: flush ? 10 + Self.inset : 10, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .fill(.white.opacity(0.25))
                 .shadow(color: Self.tint.opacity(hovering ? 0.45 : 0.18),
                         radius: hovering ? 16 : 8)
         )
@@ -1099,10 +1094,10 @@ struct GroupTile: View {
         Text("\(sessions.count)")
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
-            .foregroundStyle(Self.tint)
+            .foregroundStyle(Self.tint.darkened(0.5))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Self.tint.opacity(0.14), in: Capsule())
+            .background(Self.tint.opacity(0.18), in: Capsule())
     }
 }
 
@@ -1136,7 +1131,7 @@ struct SessionTile: View {
 
     private func ground(_ shape: some Shape) -> some View {
         shape
-            .fill(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .fill(Site.card)
             .shadow(color: session.state.tint.opacity(hovering ? 0.45 : 0.18),
                     radius: hovering ? 16 : 8)
     }
@@ -1205,7 +1200,7 @@ struct SessionTile: View {
             // group's smaller cards bigger again the same day.
             .font(.system(size: grouped ? (large ? 22 * 0.9 : 16) : (heading == nil ? 31 : 22) * 0.9 * 0.75,
                           weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(Site.ink)
             .lineLimit(heading == nil ? 1 : 2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.6)
@@ -1215,7 +1210,7 @@ struct SessionTile: View {
     private var folder: some View {
         Text(session.folder)
             .font(.system(size: 10.5, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.4))
+            .foregroundStyle(Site.ink.opacity(0.6))
             .lineLimit(1)
             .truncationMode(.head)
             // Capped so a long path outside ~/self truncates instead of stacking the pills.
@@ -1231,10 +1226,10 @@ struct SessionTile: View {
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)
                 .lineLimit(1)
-                .foregroundStyle(Self.subagentTint)
+                .foregroundStyle(Self.subagentTint.darkened(0.5))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(Self.subagentTint.opacity(0.14), in: Capsule())
+                .background(Self.subagentTint.opacity(0.18), in: Capsule())
         }
     }
 
@@ -1249,7 +1244,7 @@ struct SessionTile: View {
                 // "in" after the age: with it, a group's card cut the label from an hour on.
                 return session.state == .delegated
                     ? Text("\(label) · \(age)")
-                    : Text("\(label) · ") + Text("BG-TASK \(age)").foregroundStyle(Self.subagentTint)
+                    : Text("\(label) · ") + Text("BG-TASK \(age)").foregroundStyle(Self.subagentTint.darkened(0.5))
             }
             ?? Text(label)
         return text
@@ -1260,10 +1255,10 @@ struct SessionTile: View {
             // workflow's progress too long even alone on its line is cut, not scaled.
             .lineLimit(1)
             .truncationMode(.middle)
-            .foregroundStyle(session.state.tint)
+            .foregroundStyle(session.state.tint.darkened(0.5))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(session.state.tint.opacity(0.14), in: Capsule())
+            .background(session.state.tint.opacity(0.18), in: Capsule())
     }
 }
 
@@ -1308,7 +1303,6 @@ struct MemoryStrip: View {
 
     var body: some View {
         let tight = reaper.struggling && !reaper.hogs.isEmpty
-        let tint = tight ? amber : Color.white
         // "One line at rest" was written and never enforced: with nothing to put under the
         // heading the frame still ran 13pt past it, so an idle machine got a bar of empty
         // amber with a chip sitting on it. A block with nothing to say is the heading alone.
@@ -1319,9 +1313,8 @@ struct MemoryStrip: View {
         // gauge: a dark pane filled from the left to the share of the RAM in use. Every other
         // block is a flat tint because every other block is a count of things; this is a level.
         return Block(title: "MEMORY",
-                     titleColor: tight ? tint : .white.opacity(0.92),
-                     tint: ramTint.opacity(0.45),
-                     fill: .black.opacity(0.41),
+                     titleColor: tight ? amber.darkened(0.45) : Site.ink,
+                     tint: BlockTint.memory,
                      level: BlockLevel(share: share(reaper.footprint.used), tint: ramTint.opacity(0.42)),
                      // 10pt of pane between the chips' ground and the first process, as round
                      // the chips: at 6 the list sat 3pt under them (asked 2026-09-28).
@@ -1341,9 +1334,9 @@ struct MemoryStrip: View {
             // The whole readout, where every other block puts its count. The share in the
             // block's own colour — the same verdict the frame is painted in, said twice on
             // the one line where it can be read as a figure.
-            (Text("RAM \u{00B7} ").foregroundColor(.white.opacity(0.9))
-                + Text(percentLabel).foregroundColor(ramTint)
-                + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
+            (Text("RAM \u{00B7} ").foregroundColor(Site.ink)
+                + Text(percentLabel).foregroundColor(ramTint.darkened(0.35))
+                + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(Site.ink))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .titleGround()
         } content: {
@@ -1435,48 +1428,30 @@ extension Color {
                      green: Double(rgb.greenComponent) * keep,
                      blue: Double(rgb.blueComponent) * keep)
     }
-
-    /// The same hue pulled towards white. A label in the tint over a block already filled with
-    /// that tint sits at 2.5:1; mixing it with white keeps the hue and clears 4.5:1.
-    func lightened(_ amount: Double) -> Color {
-        let rgb = NSColor(self).usingColorSpace(.sRGB) ?? .white
-        let mix = min(1, max(0, amount))
-        return Color(red: Double(rgb.redComponent) * (1 - mix) + mix,
-                     green: Double(rgb.greenComponent) * (1 - mix) + mix,
-                     blue: Double(rgb.blueComponent) * (1 - mix) + mix)
-    }
 }
 
 extension View {
-    /// A dark chip behind a column's name. The panel is a wash over your desktop, and a
-    /// heading standing on a bright wallpaper is a heading you have to hunt for.
-    ///
-    /// Not a material: macOS's blur has a fixed radius, and the panel already turned frosted
-    /// glass down for that reason. The negative padding puts the chip outside the text's own
-    /// bounds, so nothing on the heading line moves.
-    /// The outline around a whole block, in the block's own colour, with the heading inside it
+    /// The frame around a whole block — the site's frosted glass, washed in the block's own
+    /// colour, a white rim inside a dark one (Echo's card) — with the heading inside it
     /// like MEMORY's: 13pt of pane over the name, as on the other three sides. It used to run
     /// through the middle of the heading line, broken by the chips; asked on 2026-09-27 to take
     /// the names in, like MEMORY and REELS.
     ///
     /// Drawn outside the block's own bounds rather than padded into them, so hanging a frame on
     /// a column moves nothing inside it: the cards keep the width they had.
-    /// `bottomSpread` pour les blocs qui gardent de la place en bas à l'intérieur — le fleet
-    /// laisse 20pt sous la dernière rangée pour le halo au survol. Sans lui, ces 20pt
-    /// s'ajoutent au débord et le noir descend deux fois plus bas sur le bas que sur les côtés.
-    func blockFrame(_ tint: Color, fill: Color? = nil, spread: CGFloat = 13,
+    /// `bottomSpread` is for the blocks that keep room at the bottom inside them: the fleet leaves
+    /// 20pt under its last row for the hover glow. Without it those 20pt add to the spread, and
+    /// the frame reaches twice as far below as on the sides.
+    func blockFrame(_ tint: Color, spread: CGFloat = 13,
                     bottomSpread: CGFloat? = nil, topSpread: CGFloat = 13,
                     level: BlockLevel? = nil) -> some View {
         background(alignment: .top) {
-            let corner = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            // Circular, as the glass's own mask is, so the two corners meet.
+            let corner = RoundedRectangle(cornerRadius: Site.radius)
             corner
-                // The same colour as the line, laid over the panel's black scrim — which
-                // is what darkens it. A block is tinted, not coloured: the cards inside are
-                // opaque and keep their own near-black, so this only ever shows in the margins.
-                // Darkened rather than thinned: the hue is taken down towards black first,
-                // so it stays its own colour. The sliver of transparency on top only lets
-                // the desktop show through the margins.
-                .fill((fill ?? tint.darkened(0.48)).opacity(0.78))
+                // A block is tinted, not coloured: the hue at a light theme's brightness, thin
+                // over the glass, so the cards on it stay the whitest thing in it.
+                .fill(tint.bright.opacity(0.22))
                 .overlay(alignment: .leading) {
                     if let level {
                         GeometryReader { box in
@@ -1490,8 +1465,11 @@ extension View {
                         }
                     }
                 }
+                .background(Site.glass)
+                .background { FrostedGlass() }
                 .clipShape(corner)
-                .overlay(corner.strokeBorder(tint, lineWidth: 1))
+                .overlay(corner.strokeBorder(.white.opacity(0.4), lineWidth: 1))
+                .overlay(corner.strokeBorder(Site.ink.opacity(0.1), lineWidth: 1).padding(-1))
                 // A gauge inherits whatever animation is in flight when the panel opens, and
                 // one being animated in is one you watch fill up. It is a reading: it is right
                 // the instant it is on screen. Other blocks keep theirs, to fold smoothly.
@@ -1502,45 +1480,33 @@ extension View {
         }
     }
 
-    /// Grey and half there, whatever the block: the colour is the block's own background now,
-    /// and a chip in that same colour laid on top of it was a second statement of it. What a
-    /// chip has to do is break the outline and stay readable, which a wash and an edge do.
-    /// `ground` thins the near-black behind the words. Every chip sits *in* its block now, and
-    /// a solid one is a hole punched in the block's colour: letting some of it through is what
-    /// says the chip is in it.
+    /// The chip behind a heading's words: the site's `block`, a whiter glass with its grey
+    /// border, whatever the block. The negative padding puts it outside the text's own bounds,
+    /// so nothing on the heading line moves. `ground` 1 is opaque, for a chip on a frame's own
+    /// line, which a translucent one lets run through the words.
     func titleGround(_ ground: Double = 0.55) -> some View {
         padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                // Opaque first, wash second. The block's own colour starts at this line, and a
-                // translucent chip let it through — the name sat on a coloured smear instead of
-                // on the panel. The near-black is the one every card on the panel is drawn on.
-                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(ground))
+                .fill(.white.opacity(ground < 1 ? 0.6 : 1))
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.white.opacity(0.12 * ground)))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(.white.opacity(0.55), lineWidth: 1)))
+                    .strokeBorder(Site.line, lineWidth: 1)))
             .padding(.horizontal, -7)
             .padding(.vertical, -3)
     }
 }
 
-/// A colour per block, worn on the heading's own chip and nowhere else.
-///
-/// Dark enough that the name stays white on top of it: these are labels on the quietest panel
-/// on the machine, and a block that announces itself in full-strength yellow would outshout the
-/// only thing here that uses colour to mean something — a session's state.
+/// A colour per block, chosen dark for the black panel and worn bright since 2026-10-20 — see
+/// `Color.bright`: a wash on the block's glass, and the ink of its heading.
 enum BlockTint {
     static let mail = Color(red: 0.40, green: 0.32, blue: 0.05)
-    /// Deeper and more violet than the todo column's steel blue, and as light: the outline is
-    /// drawn in the tint itself, and at the old navy the block had no visible edge at all.
+    /// More violet than the todo column's steel blue, so the two blue blocks tell apart.
     static let epitech = Color(red: 0.18, green: 0.24, blue: 0.62)
-    /// Gris, comme SOCIAL MEDIA : ces deux blocs constatent, ils ne demandent rien. Seule la
-    /// jauge de RAM garde une couleur, et elle la tient de son propre taux.
+    /// Grey: the block states, it asks for nothing. Only the RAM gauge has a colour, and it
+    /// takes it from its own rate.
     static let memory = Color(white: 0.24)
-    /// Grey, the outline alone: the fill stays black (see `fleet`), because the fleet is the
-    /// only block whose contents already carry colour — six session states, on every tile. The
-    /// outline is drawn in the tint like every other block's, light enough to be seen.
+    /// Grey, because the fleet is the only block whose contents already carry colour: six
+    /// session states, on every tile.
     static let fleet = Color(white: 0.5)
     static let todo = Color(red: 0.13, green: 0.28, blue: 0.52)
     /// SPENDING's green, asked for by name. Deep, so the kinds' own colours stay the brightest
@@ -1573,27 +1539,27 @@ private struct HogPill: View {
         HStack(spacing: 8) {
             Text(hog.name)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(Site.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             Text(hog.sizeLabel)
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Site.ink.opacity(0.6))
 
             if hog.reapable {
                 // Already condemned: saying so is more useful than offering a ✕ for something
                 // that is about to go by itself.
                 Text("auto")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(tint.opacity(0.9))
+                    .foregroundStyle(tint.darkened(0.4))
                     .fixedSize()
                     .frame(width: Self.button, alignment: .trailing)
             } else {
                 Button { Reaper.dismiss(pid: hog.pid) } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.35))
+                        .foregroundStyle(Site.ink.opacity(hovering ? 1 : 0.5))
                         // The one width both endings share, so the ✕ of one line and the
                         // "auto" of the next end on the same edge.
                         .frame(width: Self.button, alignment: .trailing)
@@ -1609,7 +1575,7 @@ private struct HogPill: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Capsule().fill(.white.opacity(0.06))
+            Capsule().fill(Site.card)
                 .overlay(Capsule().stroke(tint.opacity(0.25), lineWidth: 1))
         )
     }

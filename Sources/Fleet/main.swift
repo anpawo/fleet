@@ -852,10 +852,17 @@ if let i = CommandLine.arguments.firstIndex(of: "--render"),
         // it in a window that is laid out and never shown. `ImageRenderer` leaves every
         // scroll view blank, and the layout inside one is the layout you get on screen.
         let live = CommandLine.arguments.contains("--live")
+        // The glass shows what is behind the window, and a render has nothing behind it: a
+        // gradient stands in for the desktop, `--backdrop dark` for a dark one.
+        let backdrop = Backdrop.named(CommandLine.arguments.firstIndex(of: "--backdrop")
+            .flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil } ?? "light",
+                                      size: size)
         let view = CommandLine.arguments.contains("--settings")
             ? AnyView(ControlCenterView(controller: controller).frame(width: 420, height: 620))
             : AnyView(OverlayView(controller: controller, eagerLayout: !live)
-                .frame(width: size.width, height: size.height))
+                .frame(width: size.width, height: size.height)
+                .background(LinearGradient(colors: backdrop.colors, startPoint: .top, endPoint: .bottom))
+                .environment(\.renderBackdrop, backdrop))
         if live {
             let host = NSHostingView(rootView: view)
             host.frame = CGRect(origin: .zero, size: size)

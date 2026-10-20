@@ -129,7 +129,6 @@ struct PluginColumn: View {
         HubColumn(title: block.title.uppercased(),
                   count: block.groups.reduce(0) { $0 + $1.items.count },
                   tint: block.color,
-                  fill: block.color.darkened(0.48),
                   topInset: 5,
                   collapsed: !open) {
             if scrolling {
@@ -170,7 +169,7 @@ struct PluginColumn: View {
                         Text(title.uppercased())
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(1.1)
-                            .foregroundStyle(block.color.lightened(0.65))
+                            .foregroundStyle(block.color.bright.darkened(0.6))
                     }
                     if block.layout == "faces" {
                         // Three to a line, the picture over the name.
@@ -181,7 +180,7 @@ struct PluginColumn: View {
                                     face(item)
                                     Text(item.text)
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.white.opacity(0.9))
+                                        .foregroundStyle(Site.ink)
                                         .lineLimit(1)
                                 }
                                 .help(item.help ?? "")
@@ -192,12 +191,12 @@ struct PluginColumn: View {
                         ForEach(Array(group.items.enumerated()), id: \.offset) { _, item in
                             HStack(spacing: 8) {
                                 Text(item.text)
-                                    .foregroundStyle(.white.opacity(0.9))
+                                    .foregroundStyle(Site.ink)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 if let detail = item.detail {
                                     Text(detail)
-                                        .foregroundStyle(.white.opacity(0.55))
+                                        .foregroundStyle(Site.ink.opacity(0.7))
                                         .lineLimit(1)
                                 }
                             }
@@ -220,20 +219,20 @@ struct PluginColumn: View {
             } else {
                 Text(item.text.prefix(1))
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(block.color.opacity(0.5))
             }
         }
         .frame(width: 48, height: 48)
         .clipShape(Circle())
-        .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 1))
+        .overlay(Circle().stroke(Site.line, lineWidth: 1))
     }
 
     /// CRONS's rule between its families: a frame round a group is a block inside a block.
     private var rule: some View {
         Rectangle()
-            .fill(.white.opacity(0.6))
+            .fill(Site.line)
             .frame(height: 1)
             .scaleEffect(x: 0.85)
             .padding(.vertical, 3)
