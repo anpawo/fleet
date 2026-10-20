@@ -130,11 +130,12 @@ final class OverlayWindowController {
     /// Focus back to whatever we interrupted. Falls back to `NSApp.deactivate` when that app
     /// is gone (quit while the panel was up) or is us.
     private func restorePreviousApp() {
-        defer { previousApp = nil }
         // The user may have clicked straight through the invisible window into some other app
         // during the grace period. If we are no longer frontmost, that was their choice — don't
-        // drag focus back to whatever happened to be there before the panel opened.
+        // drag focus back to whatever happened to be there before the panel opened. Kept for
+        // `passFocusOn`.
         guard NSApp.isActive else { return }
+        defer { previousApp = nil }
         guard let app = previousApp,
               !app.isTerminated,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
@@ -142,6 +143,14 @@ final class OverlayWindowController {
             return
         }
         app.activate()
+    }
+
+    /// Activated with nothing up. alt-tab closed the panel by taking focus, and cancelling it
+    /// hands focus back to the app it took it from, which is us: it goes on to the app the panel
+    /// was opened over rather than staying with an app that has no window to type into.
+    func passFocusOn() {
+        guard teardown == nil, NSApp.keyWindow == nil else { return }
+        restorePreviousApp()
     }
 
     /// The screen the user is actually on. `NSScreen.main` is the one holding the key window,

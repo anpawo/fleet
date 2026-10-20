@@ -213,6 +213,7 @@ final class AppController: ObservableObject {
         // Whatever the last run left behind is not evidence about this one.
         Hooks.writeMachineState(struggling: false, reason: "", hogs: [])
         observeSleepWake()
+        observeActivation()
         schedule(Config.idlePollDormant)
         tick()
         // A moment after the first scan, so the panel is built around the fleet it will show.
@@ -499,6 +500,25 @@ final class AppController: ObservableObject {
         isPanelVisible = false
         overlay?.dismissForHandoff()
         schedule(Config.idlePollActive)
+    }
+
+    // MARK: - Activation
+
+    /// Another app taking over — alt-tab, a window that pops up — puts the panel away, as it
+    /// does Echo's: left up, the panel would sit over that app while it takes the keys.
+    private func observeActivation() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil,
+                           queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hidePanel() }
+        }
+        center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
+                           queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isPanelVisible else { return }
+                self.overlay?.passFocusOn()
+            }
+        }
     }
 
     // MARK: - Sleep
