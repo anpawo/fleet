@@ -74,19 +74,32 @@ final class Glass: NSVisualEffectView {
 
     required init?(coder: NSCoder) { nil }
 
+    private static var warned = false
+
     override func updateLayer() { super.updateLayer(); takeFilters() }
     override func layout() { super.layout(); takeFilters() }
 
     /// The material's layer holds the backdrop and the tints over it: the tints go, the backdrop
     /// takes the site's filters after the system's HDR one. Done again whenever the view
     /// rebuilds them.
+    ///
+    /// The backdrop is `backdrop` in a dark appearance and `Backdrop` in a light one, which the
+    /// panel is: matched on the exact name, as Echo (dark) does, it was hidden with the tints
+    /// and the glass showed the screen as it is (2026-10-20). Not found, the system's material
+    /// stays whole rather than nothing.
     private func takeFilters() {
-        for sub in layer?.sublayers?.flatMap({ $0.sublayers ?? [] }) ?? [] {
-            guard sub.name == "backdrop" else { sub.isHidden = true; continue }
-            let names = (sub.filters ?? []).compactMap { ($0 as? NSObject)?.value(forKey: "name") as? String }
-            guard !names.contains("cssBlur"), let css = filters() else { continue }
-            sub.filters = (sub.filters ?? []).filter { ($0 as? NSObject)?.value(forKey: "name") as? String == "sdrNormalize" } + css
+        let layers = layer?.sublayers?.flatMap { $0.sublayers ?? [] } ?? []
+        guard let backdrop = layers.first(where: { $0.name?.lowercased() == "backdrop" }) else {
+            if !layers.isEmpty, !Self.warned {
+                Self.warned = true
+                NSLog("Fleet: no backdrop among the glass's layers \(layers.map { $0.name ?? "-" })")
+            }
+            return
         }
+        for sub in layers where sub !== backdrop { sub.isHidden = true }
+        let names = (backdrop.filters ?? []).compactMap { ($0 as? NSObject)?.value(forKey: "name") as? String }
+        guard !names.contains("cssBlur"), let css = filters() else { return }
+        backdrop.filters = (backdrop.filters ?? []).filter { ($0 as? NSObject)?.value(forKey: "name") as? String == "sdrNormalize" } + css
     }
 }
 
