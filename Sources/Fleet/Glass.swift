@@ -30,6 +30,13 @@ final class Glass: NSVisualEffectView {
         return Color(.sRGB, red: out[0], green: out[1], blue: out[2])
     }
 
+    /// What macOS captures behind a glass, against the screen's pixels. Its own 1/8 left a thin
+    /// line round whatever part of the screen it redrew alone, flickering as the card under the
+    /// pointer grew, and none of it in a screenshot, which draws the whole screen at once
+    /// (2026-10-21). The blur radius counts captured pixels, so it grows as much: `blur` is the
+    /// radius at macOS's 1/8, the look the panel had.
+    static let capture = 0.5
+
     let blur: Double
     /// Nil: the blur alone.
     let tone: [[Double]]?
@@ -42,8 +49,7 @@ final class Glass: NSVisualEffectView {
         }
         guard let gauss = make("gaussianBlur") else { return nil }
         gauss.setValue("cssBlur", forKey: "name")
-        let tuned = tone == nil ? nil : UserDefaults.standard.object(forKey: "glassBlur") as? Double
-        gauss.setValue(tuned ?? blur, forKey: "inputRadius")
+        gauss.setValue(blur * Self.capture / 0.125, forKey: "inputRadius")
         gauss.setValue(true, forKey: "inputNormalizeEdges")
         guard let tone else { return [gauss] }
         guard let colour = make("colorMatrix") else { return nil }
@@ -96,21 +102,8 @@ final class Glass: NSVisualEffectView {
         let names = (backdrop.filters ?? []).compactMap { ($0 as? NSObject)?.value(forKey: "name") as? String }
         guard !names.contains("cssBlur"), let css = filters() else { return }
         backdrop.filters = (backdrop.filters ?? []).filter { ($0 as? NSObject)?.value(forKey: "name") as? String == "sdrNormalize" } + css
-        // ponytail: knobs and log for the faint square that flickers over the glass on hover
-        // and that no screenshot shows (2026-10-21); out once its cause is known.
-        applied += 1
-        if applied > 1, Self.resets < 20 {
-            Self.resets += 1
-            NSLog("Fleet: the system put its own filters back on a glass (blur \(blur)), ours again (\(applied)x)")
-        }
-        let tune = UserDefaults.standard
-        guard tone != nil else { return }
-        if let scale = tune.object(forKey: "glassScale") as? Double { backdrop.setValue(scale, forKey: "scale") }
-        if tune.bool(forKey: "glassNoCache") { backdrop.setValue(true, forKey: "disableFilterCache") }
+        backdrop.setValue(Self.capture, forKey: "scale")
     }
-
-    private var applied = 0
-    private static var resets = 0
 }
 
 private struct GlassView: NSViewRepresentable {
