@@ -453,19 +453,24 @@ if let i = CommandLine.arguments.firstIndex(of: "--reel-digest"),
     RunLoop.main.run()
 }
 
-// `--check-reel <shortcode>` runs the whole pipeline on one document and writes the verdict,
-// the way the timer would — the one way to watch a check happen.
+// `--check-reel <shortcode>…` runs the whole pipeline on each document and writes the verdict,
+// the way the timer would — the one way to watch a check happen. The collection is read once
+// before and once after, not twice per Reel: each check's write makes the next read a whole one.
 if let i = CommandLine.arguments.firstIndex(of: "--check-reel"),
    i + 1 < CommandLine.arguments.count {
-    let id = CommandLine.arguments[i + 1]
+    let ids = CommandLine.arguments[(i + 1)...]
     Task { @MainActor in
         do {
-            guard let doc = try await Firestore.collection("factcheck").first(where: { $0.id == id })
-            else { print("no such reel"); exit(1) }
-            let reel = Reel(doc)
-            await ReelCheck.run(reel)
-            let after = try await Firestore.collection("factcheck").first(where: { $0.id == id }).map(Reel.init)
-            print(after.map { "\($0.badge)  \($0.summary)\n\($0.fleetError)" } ?? "gone")
+            let before = try await Firestore.collection("factcheck")
+            for id in ids {
+                guard let doc = before.first(where: { $0.id == id }) else { print("\(id): no such reel"); continue }
+                await ReelCheck.run(Reel(doc))
+            }
+            let after = try await Firestore.collection("factcheck")
+            for id in ids {
+                print(after.first { $0.id == id }.map(Reel.init)
+                    .map { "\(id)  \($0.badge)  \($0.summary)\n\($0.fleetError)" } ?? "\(id): gone")
+            }
         } catch { print(error.localizedDescription); exit(1) }
         exit(0)
     }

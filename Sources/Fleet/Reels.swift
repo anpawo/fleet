@@ -157,7 +157,7 @@ struct Reel: Identifiable {
 /// Link in, verdict out — the phone's pipeline, run from this Mac.
 ///
 ///     yt-dlp → .mp4 → ffmpeg → .wav → whisper.cpp → transcript → claude -p (web search) → JSON
-///                  ↘ nothing said, or a photo slide → stills → Vision → the text on screen ↗
+///                  ↘ stills, or a photo slide → Vision → the text on screen ↗
 ///
 /// Each step is a binary already installed for other reasons, called by absolute path because a
 /// LaunchAgent has no `PATH`. Everything a step writes lands in one directory under the temp
@@ -278,9 +278,9 @@ enum ReelCheck {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
             if !said.isEmpty { spoken.append(said) }
-            // Nothing said, or a "Thank you." heard over the music: the content is on the
-            // picture, so look at it — one still every `stillEvery` seconds.
-            guard said.split(separator: " ").count < spokenEnough else { continue }
+            // The picture is read even under a voice: what is said is often not the point, the
+            // text on screen is (2026-10-20, a Reel left unverifiable for want of it). One
+            // still every `stillEvery` seconds.
             progress("Reading the screen\u{2026}")
             _ = try? await exec(ffmpeg, ["-loglevel", "error", "-y", "-i", video,
                                      "-vf", "fps=1/\(stillEvery),scale=960:-2",
@@ -343,12 +343,10 @@ enum ReelCheck {
         (verdict["resume"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Seconds between two stills of a video that says nothing, and how many at most: a
-    /// minute of Reel is twenty pictures, and a slide of text stays up longer than three seconds.
+    /// Seconds between two stills, and how many at most: a minute of Reel is twenty pictures,
+    /// a slide of text stays up longer than three seconds, and the longest Reels run four minutes.
     private static let stillEvery = 3
-    private static let maxStills = 40
-    /// Fewer words than this and the transcript is not what the video is about.
-    private static let spokenEnough = 8
+    private static let maxStills = 80
 
     /// Every line of text on these pictures, in order, each once: a caption burnt into a video
     /// is on twenty stills in a row.
