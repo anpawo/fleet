@@ -447,6 +447,21 @@ enum ReelDigest {
             .filter { $0.hasSuffix(".md") }.map { String($0.dropLast(3)) }.sorted()
     }
 
+    /// The sub-categories each theme already has in `graph.jsonl` — the Reels page's second row
+    /// of pills. A new one is added by hand there; the digest only picks among them.
+    static func subs() -> [String: [String]] {
+        let text = (try? String(contentsOfFile: "\(notes)/graph.jsonl", encoding: .utf8)) ?? ""
+        var found: [String: [String]] = [:]
+        for line in text.split(separator: "\n") {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let note = object["note"] as? String, note.hasPrefix("reels/"), note.hasSuffix(".md"),
+                  let sub = object["sub"] as? String, !sub.isEmpty else { continue }
+            let theme = String(note.dropFirst("reels/".count).dropLast(".md".count))
+            if !(found[theme] ?? []).contains(sub) { found[theme, default: []].append(sub) }
+        }
+        return found
+    }
+
     /// The model's words become file names: nothing that is not a plain slug gets that far.
     static func safe(_ name: String) -> Bool {
         name.range(of: "^[a-z0-9][a-z0-9-]{1,30}$", options: .regularExpression) != nil
@@ -531,7 +546,7 @@ enum ReelDigest {
             "note": digest.note != nil && safe(digest.theme) ? "reels/\(digest.theme).md" : "",
             "projects": digest.projects.map(\.0),
             "tags": digest.tags,
-            "screen": digest.screen ?? "",
+            "sub": digest.sub ?? "",
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
               let line = String(data: data, encoding: .utf8) else { return }
