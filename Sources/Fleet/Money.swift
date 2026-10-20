@@ -334,6 +334,7 @@ struct MoneyColumn: View {
         HubColumn(title: "SPENDING",
                   count: 0,
                   tint: BlockTint.money,
+                  fill: BlockTint.money.darkened(0.48),
                   badge: months.first.map { "\($0.name) \(Money.euros($0.total))" },
                   topInset: 5,
                   collapsed: months.isEmpty || !open) {
@@ -390,7 +391,7 @@ struct MoneyColumn: View {
                 Button { shown += 3 } label: {
                     Text("Load more")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Site.ink.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.7))
                         .titleGround()
                         // The chip's ground hangs past its words, and the scroll view cuts
                         // what hangs past its own edge.
@@ -406,7 +407,7 @@ struct MoneyColumn: View {
     /// block inside a block.
     private var rule: some View {
         Rectangle()
-            .fill(Site.line)
+            .fill(.white.opacity(0.6))
             .frame(height: 1)
             .scaleEffect(x: 0.85)
             .padding(.vertical, 3)
@@ -633,10 +634,10 @@ private struct MoneyMonth: View {
                         let left = min(max(centre.x + spot.x - label.width / 2, 0), size.width - label.width)
                         let x = left + spot.across * label.width, y = centre.y + spot.y
                         let anchor = UnitPoint(x: spot.across, y: 0.5)
-                        context.draw(name.foregroundStyle(Site.ink.opacity(lit ? 1 : 0.7)),
+                        context.draw(name.foregroundStyle(.white.opacity(lit ? 0.95 : 0.5)),
                                      at: CGPoint(x: x, y: y - Self.pitch / 2), anchor: anchor)
-                        context.draw(percent.foregroundStyle(Site.ink)
-                                         + price.foregroundStyle(Site.ink.opacity(0.8)),
+                        context.draw(percent.foregroundStyle(.white.opacity(0.85))
+                                         + price.foregroundStyle(.white.opacity(0.75)),
                                      at: CGPoint(x: x, y: y + Self.pitch / 2), anchor: anchor)
                     }
                 }
@@ -662,11 +663,11 @@ private struct MoneyMonth: View {
                 HStack {
                     Text(month.name)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Site.ink)
+                        .foregroundStyle(.white.opacity(0.85))
                     Spacer()
                     Text(Money.euros(month.total))
                         .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(Site.ink.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
             }
             .overlay(alignment: .top) {
@@ -747,13 +748,13 @@ private struct MoneyMonth: View {
                 .foregroundStyle(kind.tint)
             Text(kind.title)
                 .font(.system(size: 9))
-                .foregroundStyle(Site.ink.opacity(0.7))
+                .foregroundStyle(.white.opacity(0.5))
             Text(Money.euros(month.covered[kind] ?? month.awaited[kind] ?? 0))
                 .font(.system(size: 9, weight: .medium).monospacedDigit())
-                .foregroundStyle(Site.ink.opacity(0.8))
+                .foregroundStyle(.white.opacity(0.75))
             Text(month.covered[kind] != nil ? "covered, not counted" : "cover awaited, not counted")
                 .font(.system(size: 9))
-                .foregroundStyle(Site.ink.opacity(0.5))
+                .foregroundStyle(.white.opacity(0.35))
         }
         .lineLimit(1)
     }

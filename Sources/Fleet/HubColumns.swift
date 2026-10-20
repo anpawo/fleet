@@ -38,6 +38,7 @@ struct MailColumn: View {
                   count: hub.mail.count,
                   showsZero: true,
                   tint: BlockTint.mail,
+                  fill: BlockTint.mail.darkened(0.36),
                   collapsed: hub.mailEmpty) {
             // As tall as its mails (asked 2026-09-28: one mail sat on three rows of empty
             // block), up to `limit`; past it the list scrolls rather than running down over
@@ -148,6 +149,7 @@ struct CronColumn: View {
                   count: all.count,
                   showsZero: true,
                   tint: Self.tint,
+                  fill: Self.tint.darkened(0.48),
                   minRows: 0,
                   fills: false,
                   topInset: 5,
@@ -213,7 +215,7 @@ struct CronColumn: View {
 
     private var rule: some View {
         Rectangle()
-            .fill(Site.line)
+            .fill(.white.opacity(0.6))
             .frame(height: 1)
             .scaleEffect(x: 0.85)
             .padding(.vertical, 3)
@@ -257,7 +259,7 @@ struct CronColumn: View {
             Text(family == "app" ? "APPS" : family.uppercased())
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.1)
-                .foregroundStyle(Self.tint.darkened(0.5))
+                .foregroundStyle(Self.tint.lightened(0.65))
                 .fixedSize()
                 .padding(.leading, 7)
                 .padding(.trailing, 2)
@@ -323,12 +325,12 @@ struct CronColumn: View {
                     }
                 }
                 .font(.system(size: 10))
-                .foregroundStyle(Site.ink.opacity(0.75))
+                .foregroundStyle(.white.opacity(0.55))
                 if let state = job.hung.map({ "hung — running for \(Launchd.span($0))" })
                     ?? (job.deferred ? "deferred — no network" : nil) {
                     Text(state)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle((job.deferred ? SessionState.apiError : SessionState.running).tint.darkened(0.35))
+                        .foregroundStyle((job.deferred ? SessionState.apiError : SessionState.running).tint)
                 }
                 if let address = job.address {
                     let link = address.hasPrefix("http://") ? URL(string: address) : nil
@@ -338,7 +340,7 @@ struct CronColumn: View {
                     // the one that says when, and nothing else wears it.
                     Text(address)
                         .font(.system(size: 10))
-                        .foregroundStyle(link == nil ? Site.ink.opacity(0.75) : CronCard.tint.darkened(0.35))
+                        .foregroundStyle(link == nil ? .white.opacity(0.55) : CronCard.tint.opacity(0.9))
                         .underline(link != nil)
                         .onTapGesture { if let link { NSWorkspace.shared.open(link) } }
                 }
@@ -346,16 +348,16 @@ struct CronColumn: View {
                 // box is the only place that says which this one is.
                 Text(job.schedule)
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Site.ink.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.32))
             }
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Site.card)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: CronCard.radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CronCard.radius, style: .continuous)
-                    .strokeBorder(Site.line, lineWidth: 1)
+                    .strokeBorder(.white.opacity(0.2), lineWidth: 1)
             )
             .padding(.horizontal, inset ? 6 : 0)
             .transition(.opacity)
@@ -412,9 +414,9 @@ struct CronCard: View {
         // going wrong that is not the routine's, and not a thing to go and fix. Not for a slot
         // made up late: the run happened and went well, which is nothing to show.
         let border: Color = !job.ok ? SessionState.running.tint.opacity(0.5)
-            : job.deferred ? SessionState.apiError.tint.opacity(0.5) : Site.line
+            : job.deferred ? SessionState.apiError.tint.opacity(0.5) : .white.opacity(0.07)
         // Set like the state pills on the session cards: small, and no wider than the name.
-        Text(label).foregroundColor(Site.ink)
+        Text(label).foregroundColor(.white.opacity(0.92))
             .font(.system(size: 10, weight: .semibold))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -422,7 +424,7 @@ struct CronCard: View {
             .padding(.horizontal, 6)
             // One ground for routines and residents alike: the kind is in the ⌘ box's schedule
             // line, and two grounds in one block read as two meanings (asked 2026-09-28).
-            .background(Site.card)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                 .strokeBorder(border, lineWidth: 1))
@@ -490,6 +492,7 @@ struct TodoColumn: View {
                   count: hub.todos.count,
                   onAdd: { withAnimation(Self.unroll) { hub.compose() } },
                   tint: BlockTint.todo,
+                  fill: BlockTint.todo.darkened(0.44),
                   fills: true,
                   collapsed: hub.todoEmpty) {
             // The list scrolls, the heading does not, and the rest of the panel does not
@@ -551,7 +554,7 @@ struct TodoColumn: View {
                         Text(todo.bucket.title)
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(1)
-                            .foregroundStyle(Site.ink.opacity(0.55))
+                            .foregroundStyle(.white.opacity(0.35))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 2)
                             .padding(.top, index == 0 ? 0 : 6)
@@ -667,8 +670,12 @@ struct HubColumn<Content: View>: View {
     var showsZero = false
     /// The + on the heading, for a column you can write into. Nil on one that only reports.
     var onAdd: (() -> Void)?
-    /// The block's colour — see `BlockTint`.
+    /// The colour of the chip behind the name — see `BlockTint`.
     var tint: Color = Color(white: 0.24)
+    /// The wash inside the frame, when the tint's own is too much of it. The two blue blocks
+    /// are the only ones deep enough in colour for the wash to read as a coloured card rather
+    /// than as black paper with a coloured edge.
+    var fill: Color?
     /// What goes top right in place of the count, when a number of rows is not the figure worth
     /// having there.
     var badge: String?
@@ -707,7 +714,7 @@ struct HubColumn<Content: View>: View {
         } else if let cornerLabel {
             Text(cornerLabel)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Site.ink.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.45))
                 .titleGround()
         }
     }
@@ -715,12 +722,12 @@ struct HubColumn<Content: View>: View {
     var body: some View {
         // The verdict halfway between the name and the count, not on the bar's centre, which
         // the name's chip pulls it toward.
-        Block(title: title, tint: tint, bodyGap: 8 + topInset,
+        Block(title: title, tint: tint, fill: fill, bodyGap: 8 + topInset,
               middleBetween: healthy != nil) {
             if let healthy {
                 Image(systemName: healthy ? "checkmark" : "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle((healthy ? SessionState.ready.tint : SessionState.running.tint).darkened(0.25))
+                    .foregroundStyle(healthy ? SessionState.ready.tint : SessionState.running.tint)
                     .titleGround()
             }
         } trailing: {
@@ -778,7 +785,7 @@ struct HubEmptyLine: View {
     var body: some View {
         Text(text)
             .font(.system(size: 11))
-            .foregroundStyle(Site.ink.opacity(0.5))
+            .foregroundStyle(.white.opacity(0.25))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 2)
             .padding(.top, 2)
@@ -830,17 +837,17 @@ struct MailCard: View {
                 // the document. See the note in `Mail`.
                 Text(mail.gist)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Site.ink)
+                    .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Text(shortAge(since: mail.receivedAt))
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Site.ink.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.28))
             }
 
             Text(mail.sender)
                 .font(.system(size: 9.5, design: .monospaced))
-                .foregroundStyle(Site.ink.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.42))
                 .lineLimit(1)
 
             if expanded {
@@ -849,7 +856,7 @@ struct MailCard: View {
                 if !mail.summary.isEmpty {
                     Text(mail.summary)
                         .font(.system(size: 10))
-                        .foregroundStyle(Site.ink.opacity(0.75))
+                        .foregroundStyle(.white.opacity(0.62))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                 }
@@ -871,11 +878,11 @@ struct MailCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(Site.card)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(expanded ? Site.ink.opacity(0.3) : Site.line, lineWidth: 1)
+                .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { onHover($0) }
@@ -911,11 +918,11 @@ struct MailActionButton: View {
             Text(action.label)
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.6)
-                .foregroundStyle(tint.darkened(hovering ? 0.55 : 0.4))
+                .foregroundStyle(tint.opacity(hovering ? 1 : 0.75))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
                 .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(tint.opacity(hovering ? 0.28 : 0.16)))
+                    .fill(tint.opacity(hovering ? 0.22 : 0.10)))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -965,7 +972,7 @@ struct TodoCard: View {
     /// this week, blue for next week, green beyond. Grey for a line with no day in it — most
     /// of the list, and the point of the colour is that the dated ones stand out of it.
     private var dueTint: Color {
-        guard let due = todo.due else { return Site.ink.opacity(0.35) }
+        guard let due = todo.due else { return .white.opacity(0.32) }
         let calendar = Calendar.current
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
                                            to: calendar.startOfDay(for: due)).day ?? 0
@@ -1005,8 +1012,8 @@ struct TodoCard: View {
                 TextField("", text: $hub.editDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: Self.fontSize))
-                    .foregroundStyle(Site.ink)
-                    .tint(Site.ink)
+                    .foregroundStyle(.white.opacity(0.95))
+                    .tint(.white.opacity(0.8))
                     .lineLimit(1 ... 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused($typing)
@@ -1014,7 +1021,7 @@ struct TodoCard: View {
             } else {
             Text(todo.name)
                 .font(.system(size: Self.fontSize))
-                .foregroundStyle(Site.ink)
+                .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
                 // Takes the whole width rather than sitting next to a spacer, so what the
@@ -1029,7 +1036,7 @@ struct TodoCard: View {
                     if !expanded, metrics.truncated {
                         Text("\u{2026}")
                             .font(.system(size: Self.fontSize))
-                            .foregroundStyle(Site.ink)
+                            .foregroundStyle(.white.opacity(0.85))
                             .offset(x: metrics.firstLineWidth + 1)
                     }
                 }
@@ -1062,7 +1069,7 @@ struct TodoCard: View {
             ZStack(alignment: .trailing) {
                 Text(shortAge(since: todo.createdAt))
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Site.ink.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.28))
                     .opacity(commandHeld ? 0 : 1)
                 if commandHeld { finish }
             }
@@ -1075,7 +1082,8 @@ struct TodoCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, Self.verticalPadding)
-        .background(spotlit ? Color.white : Site.card)
+        .background(spotlit ? Color(red: 0.15, green: 0.15, blue: 0.18)
+                            : Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1085,7 +1093,7 @@ struct TodoCard: View {
                 //
                 // One row *being dragged* is the exception: that one is answering your hand,
                 // and it is the only thing on the panel that is.
-                .strokeBorder(lifted ? Site.ink.opacity(0.3) : spotlit ? Site.ink.opacity(0.4) : Site.line, lineWidth: 1)
+                .strokeBorder(.white.opacity(lifted ? 0.34 : spotlit ? 0.4 : 0.07), lineWidth: 1)
         )
         // Cast only while lifted, and from a shape of its own. As a modifier on the row it was
         // there at rest too, invisible — and a shadow taken from a group of layers is an
@@ -1093,8 +1101,8 @@ struct TodoCard: View {
         .background {
             if lifted {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                    .fill(.black)
+                    .shadow(color: .black.opacity(0.55), radius: 12, y: 4)
             }
         }
         .contentShape(Rectangle())
@@ -1110,9 +1118,9 @@ struct TodoCard: View {
         Button { hub.edit(todo) } label: {
             Image(systemName: "pencil")
                 .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Self.editTint.darkened(hoveringEdit ? 0.55 : 0.4))
+                .foregroundStyle(Self.editTint.opacity(hoveringEdit ? 1 : 0.75))
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(Self.editTint.opacity(hoveringEdit ? 0.28 : 0.16)))
+                .background(Circle().fill(Self.editTint.opacity(hoveringEdit ? 0.22 : 0.10)))
         }
         .buttonStyle(.plain)
         .onHover { hoveringEdit = $0 }
@@ -1123,9 +1131,9 @@ struct TodoCard: View {
         Button(action: onFinish) {
             Image(systemName: "xmark")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Self.finishTint.darkened(hoveringFinish ? 0.55 : 0.4))
+                .foregroundStyle(Self.finishTint.opacity(hoveringFinish ? 1 : 0.75))
                 .frame(width: 16, height: 16)
-                .background(Circle().fill(Self.finishTint.opacity(hoveringFinish ? 0.28 : 0.16)))
+                .background(Circle().fill(Self.finishTint.opacity(hoveringFinish ? 0.22 : 0.10)))
         }
         .buttonStyle(.plain)
         .onHover { hoveringFinish = $0 }
@@ -1149,16 +1157,16 @@ struct AddButton: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Site.ink.opacity(hovering ? 1 : 0.6))
+                    .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
                 if let count {
                     Text(count)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Site.ink.opacity(hovering ? 0.8 : 0.6))
+                        .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.45))
                 }
             }
             .titleGround()
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Site.ink.opacity(hovering ? 0.06 : 0))
+                .fill(.white.opacity(hovering ? 0.10 : 0))
                 .padding(.horizontal, -7)
                 .padding(.vertical, -3))
             .contentShape(Rectangle())
@@ -1182,7 +1190,7 @@ struct NewTodoRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Circle()
-                .fill(Site.ink.opacity(0.35))
+                .fill(.white.opacity(0.32))
                 .frame(width: 3.5, height: 3.5)
                 .padding(.top, 6)
 
@@ -1192,8 +1200,8 @@ struct NewTodoRow: View {
             TextField("New todo", text: $hub.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Site.ink)
-                .tint(Site.ink)
+                .foregroundStyle(.white.opacity(0.9))
+                .tint(.white.opacity(0.8))
                 .lineLimit(1 ... 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .focused($editing)
@@ -1201,13 +1209,13 @@ struct NewTodoRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(Site.card)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 // Brighter than a todo's border: this row is being typed into, and the only
                 // other lit thing on the panel is the prompt field.
-                .strokeBorder(Site.ink.opacity(0.35), lineWidth: 1)
+                .strokeBorder(.white.opacity(0.22), lineWidth: 1)
         )
         // A click in the padding around the field would otherwise be an unclaimed tap, and an
         // unclaimed tap on this panel puts it away — mid-sentence.
@@ -1356,6 +1364,7 @@ struct EpitechColumn: View {
                   count: hub.epitech?.projectsDue ?? 0,
                   showsZero: true,
                   tint: BlockTint.epitech,
+                  fill: BlockTint.epitech.darkened(0.62),
                   badge: credits,
                   badgeText: ledger,
                   minRows: 3,
@@ -1432,15 +1441,15 @@ struct EpitechColumn: View {
     /// colour: green banked, orange under way, the plain grey for what has not begun.
     private var ledger: Text? {
         guard let plan = hub.epitech?.plan else { return nil }
-        let grey = Site.ink.opacity(0.6)
+        let grey = Color.white.opacity(0.45)
         let plus = Text(" + ").foregroundColor(grey)
-        var text = Text("\(plan.banked)").foregroundColor(LedgerTint.banked.darkened(0.4))
-            + plus + Text("\(plan.ongoing)").foregroundColor(LedgerTint.ongoing.darkened(0.35))
+        var text = Text("\(plan.banked)").foregroundColor(LedgerTint.banked)
+            + plus + Text("\(plan.ongoing)").foregroundColor(LedgerTint.ongoing)
             + plus + Text("\(plan.upcoming)").foregroundColor(grey)
         // The total in red while it falls short of the target: that is the one thing to see.
         text = text + Text(" = ").foregroundColor(grey)
             + Text("\(plan.reachable)")
-                .foregroundColor(plan.missing > 0 ? LedgerTint.missing.darkened(0.35) : Site.ink)
+                .foregroundColor(plan.missing > 0 ? LedgerTint.missing : .white.opacity(0.85))
         return text + Text(" / \(plan.target)").foregroundColor(grey)
     }
 
@@ -1473,16 +1482,16 @@ struct CreditCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(line.credits) CR")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Site.ink.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.6))
                 Spacer(minLength: 4)
                 if banked {
                     Image(systemName: "checkmark")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(SessionState.ready.tint.darkened(0.25))
+                        .foregroundStyle(SessionState.ready.tint)
                 } else {
                     Text(line.awaitingGrade ? "grading" : "planned")
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Site.ink.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.28))
                 }
             }
         }
@@ -1507,12 +1516,12 @@ struct LedgerTitle: View {
             if ongoing {
                 // Held on the first line's baseline, a little above it: level with the letters
                 // whether the name shrank to fit or wrapped with ⌘.
-                Circle().fill(Site.ink).frame(width: 5, height: 5)
+                Circle().fill(.white).frame(width: 5, height: 5)
                     .alignmentGuide(.firstTextBaseline) { $0.height / 2 + 3.5 }
             }
             Text(wraps ? name : short)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Site.ink.opacity(dimmed ? 0.6 : 1))
+                .foregroundStyle(.white.opacity(dimmed ? 0.55 : 0.92))
                 .lineLimit(wraps ? 3 : 1)
                 // 0.7, not 0.8: the dot's 11pt cut "Administrative Meetings" at 0.8.
                 .minimumScaleFactor(0.7)
@@ -1545,10 +1554,10 @@ struct KindPill: View {
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
             .fixedSize()
-            .foregroundStyle(tint.darkened(0.5))
+            .foregroundStyle(tint)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(tint.opacity(0.18), in: Capsule())
+            .background(tint.opacity(0.16), in: Capsule())
     }
 }
 
@@ -1581,11 +1590,11 @@ extension View {
             .padding(.vertical, 7)
             .padding(.horizontal, 12)
             .background((tint ?? .clear).opacity(0.16))
-            .background(Site.card)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(lit ? Site.ink.opacity(0.3) : Site.line, lineWidth: 1)
+                    .strokeBorder(.white.opacity(lit ? 0.2 : 0.07), lineWidth: 1)
             )
     }
 }
@@ -1622,12 +1631,12 @@ struct ModuleCard: View {
                 if let credits = module.credits {
                     Text("\(credits) CR")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Site.ink.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer(minLength: 4)
                 Text("due \(Self.day.string(from: module.end))")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Site.ink.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.28))
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -1735,8 +1744,9 @@ struct AlertsBlock: View {
         // The mark on the block's own name: what it says is that this block is a warning,
         // whatever is broken.
         Block(title: "ALERT", icon: "exclamationmark.triangle.fill",
-              titleColor: SessionState.running.tint.darkened(0.4),
+              titleColor: SessionState.running.tint,
               tint: SessionState.running.tint,
+              fill: SessionState.running.tint.darkened(0.58),
               middleBetween: true) {
             // One chip per thing that is broken. 22 rather than 8: a chip's ground hangs 7pt past
             // its words either side. The 3 makes the name's own gap to the first chip 22 too.
@@ -1753,7 +1763,7 @@ struct AlertsBlock: View {
                             }
                             Text(name)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(SessionState.running.tint.darkened(0.4))
+                                .foregroundStyle(SessionState.running.tint)
                                 .lineLimit(1)
                         }
                         .titleGround()
@@ -1812,7 +1822,7 @@ struct ReelBlock: View {
         let pointed = open || hub.contextReelID != nil
         let roomy = room - Self.chrome >= MailCard.room(forRows: 1) / 2
         let listing = (pointed || roomy) && !hub.readReels.isEmpty
-        Block(title: "REELS", tint: Self.tint) {
+        Block(title: "REELS", tint: Self.tint, fill: Self.tint.darkened(0.58)) {
             if hub.checkingReel != nil || hub.reinterpreting {
                 ProgressView()
                     .progressViewStyle(.circular)
@@ -1823,7 +1833,7 @@ struct ReelBlock: View {
         } trailing: {
             Text("\(hub.reelsReadToday)")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Site.ink.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.45))
                 .titleGround()
         } content: {
             if listing {
@@ -1881,25 +1891,25 @@ struct ReelCard: View {
                 // Reels read before the note was kept on the document have only the summary.
                 Text([reel.reminder, reel.summary, reel.label].first { !$0.isEmpty } ?? reel.id)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Site.ink)
+                    .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let read = reel.digestedAt {
                     Text(shortAge(since: read))
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Site.ink.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.28))
                 }
             }
             Text(reel.outcome.isEmpty ? (reel.author.isEmpty ? " " : "@" + reel.author) : reel.outcome)
                 .font(.system(size: 9.5, design: .monospaced))
-                .foregroundStyle(Site.ink.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.42))
                 .lineLimit(1)
 
             if expanded {
                 if !reel.summary.isEmpty {
                     Text(reel.summary)
                         .font(.system(size: 10))
-                        .foregroundStyle(Site.ink.opacity(0.75))
+                        .foregroundStyle(.white.opacity(0.62))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                 }
@@ -1908,15 +1918,15 @@ struct ReelCard: View {
                 TextField("", text: $hub.reelContext, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Site.ink)
-                    .tint(Site.ink)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .tint(.white.opacity(0.8))
                     .lineLimit(1 ... 3)
                     .focused($typing)
                     .background(alignment: .leading) {
                         if hub.reelContext.isEmpty || hub.contextReelID != reel.id {
                             Text("Add context to correct the reading")
                                 .font(.system(size: 10.5))
-                                .foregroundStyle(Site.ink.opacity(0.45))
+                                .foregroundStyle(.white.opacity(0.3))
                                 .allowsHitTesting(false)
                         }
                     }
@@ -1933,11 +1943,11 @@ struct ReelCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(Site.card)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(expanded ? Site.ink.opacity(0.3) : Site.line, lineWidth: 1)
+                .strokeBorder(.white.opacity(expanded ? 0.2 : 0.07), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { onHover($0) }

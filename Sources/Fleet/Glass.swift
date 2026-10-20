@@ -1,31 +1,26 @@
 import SwiftUI
 
-/// The panel's look since 2026-10-20, Echo's (my-lab/echo), which is the light dialog of the
-/// reconciliation site (s14 `recon-v3-mr/web`: app/globals.css `.light`, components/mail.tsx):
-/// the screen blurred and dimmed behind, each block a frosted glass, the rows on it whiter
-/// glass with a thin grey border, the words in dark ink.
-enum Site {
-    static let ink = Color(red: 0x1C / 255, green: 0x21 / 255, blue: 0x27 / 255)
-    static let line = Color(red: 0xC5 / 255, green: 0xCB / 255, blue: 0xD3 / 255)
-    /// lightGray2 at 0.4, over what the glass shows.
-    static let glass = Color(red: 220 / 255, green: 224 / 255, blue: 229 / 255).opacity(0.4)
-    /// A row on the glass: the site's `bg-muted/40` in `.light`.
-    static let card = Color.white.opacity(0.6)
-    static let radius: CGFloat = 14
-}
-
-/// The site's `.light` glass, `backdrop-filter: blur(40px) saturate(200%) brightness(1.15)`, on
-/// what is behind the window: a behind-window effect view whose backdrop layer takes those
-/// filters, its own tints hidden. macOS's own blur has one radius; the private CAFilter on the
-/// backdrop layer is how Echo dials it, measured there through CARenderer.
+/// The panel's glass since 2026-10-20, Echo's (my-lab/echo), which is the reconciliation site's
+/// `backdrop-filter: blur(40px) saturate(200%) brightness(1.15)`, on what is behind the window:
+/// a behind-window effect view whose backdrop layer takes those filters, its own tints hidden.
+/// macOS's own blur has one radius; the private CAFilter on the backdrop layer is how Echo dials
+/// it, measured there through CARenderer. Echo's glass is light; the panel's stays dark, its
+/// blocks' colours washed over it (asked the same day, the light one tried and dropped).
 final class Glass: NSVisualEffectView {
-    /// CSS `saturate(200%) brightness(1.15)` on sRGB values, rows R, G, B. Times 0.7 first: the
-    /// glass stands on the veil, black at 0.3, and shows the screen through it.
+    /// How dark the panel sits over your desktop: the veil's black. Lower shows more of what is
+    /// behind it.
+    static let dim = 0.6
+    /// How much of a block's colour lies over its glass: the rest is the blur.
+    static let wash = 0.72
+    static let radius: CGFloat = 12
+
+    /// CSS `saturate(200%) brightness(1.15)` on sRGB values, rows R, G, B. Times the veil's
+    /// light first: the glass stands on the veil and shows the screen through it.
     static let matrix: [[Double]] = {
         let s = 2.0
         return [[0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
                 [0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
-                [0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]].map { $0.map { $0 * 0.7 * 1.15 } }
+                [0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]].map { $0.map { $0 * (1 - dim) * 1.15 } }
     }()
 
     static func filtered(_ color: Color) -> Color {
@@ -83,8 +78,8 @@ final class Glass: NSVisualEffectView {
     /// takes the site's filters after the system's HDR one. Done again whenever the view
     /// rebuilds them.
     ///
-    /// The backdrop is `backdrop` in a dark appearance and `Backdrop` in a light one, which the
-    /// panel is: matched on the exact name, as Echo (dark) does, it was hidden with the tints
+    /// The backdrop is `backdrop` in a dark appearance and `Backdrop` in a light one: matched on
+    /// the exact name, as Echo does, it was hidden with the tints the day the panel was light,
     /// and the glass showed the screen as it is (2026-10-20). Not found, the system's material
     /// stays whole rather than nothing.
     private func takeFilters() {
@@ -116,12 +111,16 @@ struct Backdrop {
     var colors: [Color]
     var size: CGSize
 
-    /// His wallpaper's kind of light, as Echo's renders have it, or a dark desktop.
+    /// His wallpaper's kind of light, as Echo's renders have it, a dark desktop, or a white
+    /// window (his terminal).
     static func named(_ name: String, size: CGSize) -> Backdrop {
-        Backdrop(colors: name == "dark"
-                    ? [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)]
-                    : [Color(red: 0.55, green: 0.70, blue: 0.85), Color(red: 0.85, green: 0.82, blue: 0.70)],
-                 size: size)
+        let colors: [String: [Color]] = [
+            "dark": [Color(red: 0.05, green: 0.15, blue: 0.40), Color(red: 0.10, green: 0.30, blue: 0.60)],
+            "white": [.white, .white],
+        ]
+        return Backdrop(colors: colors[name] ?? [Color(red: 0.55, green: 0.70, blue: 0.85),
+                                                 Color(red: 0.85, green: 0.82, blue: 0.70)],
+                        size: size)
     }
 }
 
@@ -149,30 +148,20 @@ struct FrostedGlass: View {
                     .offset(x: -at.minX, y: -at.minY)
             }
         } else {
-            GlassView(blur: 40, tone: Glass.matrix, radius: Site.radius)
+            GlassView(blur: 40, tone: Glass.matrix, radius: Glass.radius)
         }
     }
 }
 
 /// The site's overlay under its dialog, over the whole screen: what is behind blurred 4 pt
-/// (`backdrop-blur-xs`) under black at 0.3.
+/// (`backdrop-blur-xs`) under black — 0.3 on the site, `Glass.dim` here.
 struct Veil: View {
     @Environment(\.renderBackdrop) private var renderBackdrop
 
     var body: some View {
         ZStack {
             if renderBackdrop == nil { GlassView(blur: 4, tone: nil, radius: 0) }
-            Color.black.opacity(0.3)
+            Color.black.opacity(Glass.dim)
         }
-    }
-}
-
-extension Color {
-    /// The same hue and saturation at a light theme's brightness: the block tints and the ones
-    /// the blocks' files give were chosen dark, for the black panel.
-    var bright: Color {
-        let c = NSColor(self).usingColorSpace(.sRGB) ?? .gray
-        return Color(hue: c.hueComponent, saturation: c.saturationComponent,
-                     brightness: max(c.brightnessComponent, 0.9))
     }
 }

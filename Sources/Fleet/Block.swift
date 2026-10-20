@@ -12,11 +12,11 @@ import SwiftUI
 struct Block<Middle: View, Trailing: View, Content: View>: View {
     let title: String
     var icon: String?
-    /// Nil: the block's own colour, deep enough to read on its glass.
-    var titleColor: Color?
+    var titleColor: Color = .white.opacity(0.92)
     var tracking: CGFloat = 3.2
-    /// The wash on the block's glass — see `blockFrame`.
+    /// The outline, and the wash inside it unless `fill` says otherwise — see `blockFrame`.
     let tint: Color
+    var fill: Color?
     var spread: CGFloat = 13
     var bottomSpread: CGFloat?
     /// From the frame to the chips, either side and never on top. The fleet's is its tiles'
@@ -47,7 +47,7 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(tracking)
                 }
-                .foregroundStyle(titleColor ?? tint.bright.darkened(0.6))
+                .foregroundStyle(titleColor)
                 // Never squeezed: ALERT's chips take the rest of the line.
                 .fixedSize()
                 // Opaque on the line, which a translucent chip lets run through the words.
@@ -69,7 +69,7 @@ struct Block<Middle: View, Trailing: View, Content: View>: View {
             .zIndex(titleOnLine ? 1 : 0)
             content()
         }
-        .blockFrame(tint, spread: spread, bottomSpread: bottomSpread, level: level)
+        .blockFrame(tint, fill: fill, spread: spread, bottomSpread: bottomSpread, level: level)
     }
 }
 
