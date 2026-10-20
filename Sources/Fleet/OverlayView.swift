@@ -1212,7 +1212,7 @@ struct SessionTile: View {
             .font(.system(size: 10.5, design: .monospaced))
             .foregroundStyle(.white.opacity(0.4))
             .lineLimit(1)
-            .truncationMode(.head)
+            .truncationMode(.tail)
             // Capped so a long path outside ~/self truncates instead of stacking the pills.
             .frame(maxWidth: 110, alignment: .leading)
     }
