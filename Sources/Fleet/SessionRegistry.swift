@@ -8,7 +8,7 @@ final class SessionRegistry {
     /// Previous CPU sample per pid, for computing CPU% between refreshes.
     private var cpuSamples: [pid_t: (nanos: UInt64, at: Date)] = [:]
     /// Sticky pid -> transcript bindings, so a session keeps its file once identified.
-    private var bindings: [pid_t: String] = [:]
+    var bindings: [pid_t: String] = [:]
     /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
     private var lastWideScan = Date.distantPast
     private let screens = TerminalWatch()
@@ -105,7 +105,7 @@ final class SessionRegistry {
 
     /// Several sessions frequently share one working directory, so the directory alone can't
     /// identify a transcript. Resolution runs in three passes, most reliable first.
-    private func bind(_ procs: [ClaudeProcess]) {
+    func bind(_ procs: [ClaudeProcess]) {
         // Told, not guessed — and not second-guessed either: these are left alone below, since
         // a hook-named file need not even live in the directory the process reports.
         let told = bindFromHooks(procs)
@@ -118,10 +118,9 @@ final class SessionRegistry {
             // Nothing to resolve when every process is named by its hook or keeps a binding
             // whose file is still there: listing and stat-ing the directory's every transcript
             // (127 in ~) on each refresh was most of a tick (28-09 sample).
-            let dir = TranscriptStore.projectDirectory(for: cwd) + "/"
             guard group.contains(where: { proc in
                 !told.contains(proc.pid) && !(bindings[proc.pid].map {
-                    $0.hasPrefix(dir) && FileManager.default.fileExists(atPath: $0)
+                    FileManager.default.fileExists(atPath: $0)
                 } ?? false)
             }) else { continue }
             let files = TranscriptStore.transcripts(for: cwd)
@@ -131,9 +130,11 @@ final class SessionRegistry {
             var unresolved: [ClaudeProcess] = []
 
             for proc in group where !told.contains(proc.pid) {
-                // Already bound and still valid.
+                // Already bound and still valid, in this folder or rescued from another: one
+                // held to its own folder was taken from a resumed session by the next file born
+                // there (22-10: two m3-labs cards NEW, their 10:00 scout runs on the old ones).
                 if let existing = bindings[proc.pid],
-                   files.contains(where: { $0.path == existing }) {
+                   FileManager.default.fileExists(atPath: existing) {
                     continue
                 }
 

@@ -21,6 +21,7 @@ enum SelfCheck {
         cutLine(expect)
         queuedPrompt(expect)
         freshSession(expect)
+        rescuedBinding(expect)
         heldPrompt(expect)
         ghosts(expect)
         ports(expect)
@@ -660,6 +661,29 @@ enum SelfCheck {
         let before = Hooks.Record(state: .ready, at: Date(timeIntervalSince1970: floor(stop.timeIntervalSince1970) + 1), pids: [])
         expect(SessionRegistry.ranked(before, heuristic: .running, info: info, cpu: 0, now: Date()) == .ready ? 1 : 0, 1,
                "and a Stop after the prompt still reads ready")
+    }
+
+    /// A session resumed in a renamed folder is bound to its file in the old one. The next file
+    /// born in the new folder (a headless run's) is not its, and once took its place (22-10).
+    private static func rescuedBinding(_ expect: (Bool, Bool, String) -> Void) {
+        let cwd = NSTemporaryDirectory() + "fleet-selftest-bind-\(getpid())"
+        let dir = TranscriptStore.projectDirectory(for: cwd)
+        let old = cwd + ".jsonl"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(atPath: dir)
+            try? FileManager.default.removeItem(atPath: old)
+        }
+        try? "".write(toFile: old, atomically: true, encoding: .utf8)
+        try? "".write(toFile: dir + "/headless.jsonl", atomically: true, encoding: .utf8)
+        let registry = SessionRegistry()
+        // No such pid: macOS stops at 99998, so nothing names a `--resume` for it.
+        let proc = ClaudeProcess(pid: 999_999, ppid: 1, cwd: cwd, tty: "",
+                                 startedAt: Date().addingTimeInterval(-3600), cpuNanos: 0)
+        registry.bindings[proc.pid] = old
+        registry.bind([proc])
+        expect(registry.bindings[proc.pid] == old, true,
+               "a session bound outside its folder keeps its file when a new one appears there")
     }
 
     private static func freshSession(_ expect: (Int, Int, String) -> Void) {
