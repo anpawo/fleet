@@ -101,109 +101,37 @@ enum SelfCheck {
 
     // MARK: - Grid
 
-    /// How the grid stands its directories: every one unfolded, the one holding the most sessions
-    /// placed first, past the room the way that ends the grid highest.
+    /// How the grid stands its directories: each one column wide, a cell down for each session.
     private static func grid(_ expect: (Bool, Bool, String) -> Void) {
-        let grid = FleetLayout(tile: CGSize(width: 310, height: 186), spacing: 26, columns: 2)
-        // A group of four, a session alone, a group of two — unfolded, 100pt a session, and
-        // 150 on the larger cards.
-        func laid(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> FleetLayout {
-            grid.unfolding(sizes, room: room) { count, large, _ in
-                CGSize(width: 646, height: CGFloat(count) * (large ? 150 : 100))
-            }
-        }
-        func unfolded(_ sizes: [Int] = [4, 1, 2], room: CGFloat) -> [Bool] {
-            laid(sizes, room: room).wide.map { $0 != nil }
-        }
-        expect(unfolded(room: 838) == [true, false, true] && unfolded(room: 0) == [true, false, true], true,
-               "grid: every directory unfolded, whether it fits or not")
-        expect(laid([2, 2], room: 526).large == [0], true, "grid: of two the same size, the first on the larger cards")
-        let rest = laid(room: 838).rest(3)
-        expect(rest.frames.map(\.minY) == [0, 652, 426] && rest.height == 838, true,
-               "grid: unfolded directories lead, the other sessions under them")
-        expect(laid(room: 838).large == [] && laid(room: 938).large == [2] && laid(room: 1138).large == [0, 2], true,
-               "grid: the larger cards where room is left once every directory that fits is unfolded")
         // The panel's own grid: three columns of 212 and two gaps of 26.
-        func size(_ count: Int, large: Bool = false, most: Int? = nil) -> CGSize {
-            GroupTile.size(holding: count, large: large, most: most, in: 688, spacing: 26)
-        }
+        func size(_ count: Int) -> CGSize { GroupTile.size(holding: count, in: 688, spacing: 26) }
+        func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.001 }
         let cell = GroupTile.cell(688, spacing: 26)
         expect(cell == CGSize(width: 212, height: SessionTile.height)
-               && size(6).height - size(4).height == cell.height + 26, true,
-               "grid: an unfolded directory stands its sessions in the grid's own cells, two to a row")
-        expect(size(1, large: true).height == size(2, large: true).height
-               && size(3, large: true).height - size(2, large: true).height
-                   == SessionTile.height(width: GroupTile.inner(688, large: true, spacing: 26)) + GroupTile.gap(26), true,
-               "grid: and two to a row on the larger cards")
-        expect(size(2) == CGSize(width: 450, height: SessionTile.height) && size(3).width == 450
-               && size(2, large: true).width == 688, true,
-               "grid: a directory of two takes two cells' room, in width and height, and so does every row of more")
-        let inside = GroupTile.flushCard(count: 2, in: 688, spacing: 26)
-        expect(abs(2 * inside.width + 3 * GroupTile.inset - 450) < 0.001
-               && abs(inside.height + 2 * GroupTile.inset + GroupTile.flushNameBand - SessionTile.height) < 0.001, true,
+               && size(2).width == 212 && size(5).width == 212
+               && near(size(3).height, 3 * cell.height + 2 * 26), true,
+               "grid: a directory stands in one of the grid's columns, a cell down for each session")
+        let card = GroupTile.card(count: 3, in: 688, spacing: 26)
+        expect(near(card.width + 2 * GroupTile.inset, 212)
+               && near(3 * card.height + 4 * GroupTile.inset + GroupTile.nameBand, size(3).height), true,
                "grid: its cards inside its border, the one gap all round, its name in a band over them")
-        let stacked = GroupTile.flushCard(count: 3, most: 1, in: 688, spacing: 26)
-        expect(abs(3 * stacked.height + 4 * GroupTile.inset + GroupTile.flushNameBand
-                   - size(3, most: 1).height) < 0.001, true,
-               "grid: one column wide, its name in a band over the cards")
-        expect(size(3).height - size(2).height == cell.height + 26
-               && size(4).height == size(3).height && size(5).width == 450, true,
-               "grid: three stand two and one, four two and two")
-        expect(size(4, large: true).height + 26 + SessionTile.height <= 658, true,
-               "grid: four on the larger cards stand over one row of the grid on a laptop screen")
-        var beside = FleetLayout(tile: CGSize(width: 212, height: SessionTile.height), spacing: 26,
-                                 columns: 3)
-        beside.wide = [size(2), nil, nil]
-        let besideRest = beside.rest(3)
-        beside.wide = [size(3), nil, nil, nil]
-        let tallRest = beside.rest(4)
-        expect(besideRest.frames[1].minX == 476 && besideRest.frames[1].minY == 0
-               && besideRest.frames[2].origin == CGPoint(x: 0, y: size(2).height + 26)
-               && tallRest.frames[1].origin == CGPoint(x: 476, y: 0)
-               && tallRest.frames[3].origin == CGPoint(x: 0, y: size(3).height + 26), true,
-               "grid: sessions beside a directory two columns wide stack from the top right corner, a lone one under them on the left")
-        let roomy = beside.unfolding([2, 1], room: 2000) { size($0, large: $1, most: $2) }
-        expect(roomy.large.isEmpty && roomy.wide[0] == size(2, most: 1), true,
-               "grid: a directory of two stands in one column, on its smaller cards while a session can stand beside it")
-        // Five two to a row, then three: two rows of them two to a row end at 700, one column
-        // of three beside the five at 555 with the session under it. With 750, both stand in
-        // one column first, five or fewer (asked 2026-10-15), and end at 700.
-        func three(room: CGFloat) -> FleetLayout {
-            beside.unfolding([5, 3, 1], room: room) { size($0, large: $1, most: $2) }
-        }
-        let column = three(room: 600).rest(3)
-        expect(three(room: 600).most == [1: 1] && three(room: 600).wide[1] == size(3, most: 1)
-               && column.frames[1].origin == CGPoint(x: 476, y: 0)
-               && column.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && column.height == 555
-               && three(room: 750).most == [0: 1, 1: 1] && three(room: 750).rest(3).height == size(5, most: 1).height, true,
-               "grid: five or fewer stand in one column first, then two to a row, and in one column beside another where that is what fits")
-        // Four in one column are a row taller than the five: the session takes the cell under
-        // the five (asked 2026-10-15).
-        func four(room: CGFloat) -> FleetLayout {
-            beside.unfolding([5, 4, 1], room: room) { size($0, large: $1, most: $2) }
-        }
-        let under = four(room: 600).rest(3)
-        expect(four(room: 600).most == [1: 1] && under.frames[1].origin == CGPoint(x: 476, y: 0)
-               && under.frames[2].origin == CGPoint(x: 0, y: size(5).height + 26) && under.height == 555, true,
-               "grid: a column taller than the directory beside it leaves the cells under that one to the sessions")
-        // Five and two in one column each, three sessions: all three in the column right of
-        // both, none under the two (asked 2026-10-16).
-        beside.wide = [size(5, most: 1), size(2, most: 1), nil, nil, nil]
-        let right = beside.rest(5)
-        expect(right.frames[2...].map(\.origin) == (0 ..< 3).map { CGPoint(x: 476, y: CGFloat($0) * (cell.height + 26)) }, true,
+        expect(GroupTile.card(count: 2, in: 688, spacing: 26).height >= 0.75 * SessionTile.height, true,
+               "grid: a directory of two keeps its cards most of a session's height (2026-10-22: 60 of 119 two to a row)")
+        var grid = FleetLayout(tile: CGSize(width: 212, height: SessionTile.height), spacing: 26, columns: 3)
+        // Five and two, three sessions: all three in the column right of both, none under the
+        // two (asked 2026-10-16).
+        grid.wide = [size(5), size(2), nil, nil, nil]
+        let right = grid.rest(5)
+        expect(zip(right.frames[2...].map(\.origin), 0 ..< 3).allSatisfy {
+                   near($0.x, 476) && near($0.y, CGFloat($1) * (cell.height + 26))
+               }, true,
                "grid: sessions stand right of every directory before they take the cells under a shorter one")
-        // Three and three sessions: two to a row, the three end under the group at 410; in one
-        // column 410 as well, but three to a row in one row at 265.
-        expect(beside.unfolding([3, 1, 1, 1], room: 300) { size($0, large: $1, most: $2) }.most == [0: 3], true,
-               "grid: a directory that fits neither two to a row nor in one column stands three to a row")
-        // Six and six: under the first two to a row the second fits no way, three to a row
-        // ending at 700; under the first stood three to a row, both end at 555.
-        let sixes = beside.unfolding([6, 6], room: 600) { size($0, large: $1, most: $2) }
-        expect(sixes.most == [0: 3, 1: 3] && sixes.rest(2).height == 555, true,
-               "grid: a directory that fits no way of its own unfolds under another stood three to a row")
-        // Six: two to a row end at 410, in one column at 845, three to a row at 265.
-        expect(beside.unfolding([6], room: 0) { size($0, large: $1, most: $2) }.most == [0: 3], true,
-               "grid: a directory that fits no way still unfolds, the way that ends the grid highest")
+        // Four, two and three: every column holds one, the session under the shortest.
+        grid.wide = [size(4), size(2), size(3), nil]
+        let under = grid.rest(4)
+        expect(near(under.frames[3].minX, 238) && near(under.frames[3].minY, 2 * (cell.height + 26))
+               && near(under.height, size(4).height), true,
+               "grid: with a directory in every column, a session takes the cell under the shortest")
     }
 
     // MARK: - Plugins
