@@ -712,7 +712,10 @@ struct FleetLayout: Layout {
         let step = CGSize(width: tile.width + spacing, height: tile.height + spacing)
         let cells = { (height: CGFloat) in max(1, Int((height + spacing) / step.height)) }
         let unfolded = (0 ..< min(count, wide.count)).filter { wide[$0] != nil }
+        // The one with the most rows on the left (asked 2026-10-22); two of a height keep the
+        // order they come in, or they would trade places once a second.
         let narrow = unfolded.filter { taken(wide[$0]!.width) == 1 }
+            .sorted { (wide[$1]!.height, $0) < (wide[$0]!.height, $1) }
         var placed = Set<Int>()
         var y: CGFloat = 0
         for i in unfolded.filter({ !narrow.contains($0) }) + narrow where !placed.contains(i) {

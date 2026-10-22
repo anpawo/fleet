@@ -129,9 +129,14 @@ enum SelfCheck {
         // Four, two and three: every column holds one, the session under the shortest.
         grid.wide = [size(4), size(2), size(3), nil]
         let under = grid.rest(4)
-        expect(near(under.frames[3].minX, 238) && near(under.frames[3].minY, 2 * (cell.height + 26))
+        expect(near(under.frames[3].minX, 476) && near(under.frames[3].minY, 2 * (cell.height + 26))
                && near(under.height, size(4).height), true,
                "grid: with a directory in every column, a session takes the cell under the shortest")
+        expect(under.frames[0...2].map(\.minX).map { ($0 / 238).rounded() } == [0, 2, 1], true,
+               "grid: directories stand from the most rows on the left to the fewest")
+        grid.wide = [size(2), size(3), size(3)]
+        expect(grid.rest(3).frames.map(\.minX).map { ($0 / 238).rounded() } == [2, 0, 1], true,
+               "grid: two of a height keep the order they come in")
     }
 
     // MARK: - Plugins
