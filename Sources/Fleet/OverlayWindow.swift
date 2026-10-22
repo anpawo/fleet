@@ -203,6 +203,7 @@ final class OverlayWindowController {
         window.onCancel = { [weak self] in self?.controller.escape() }
         window.onModifiers = { [weak self] flags in self?.controller.modifiersChanged(flags) }
         window.onReturn = { [weak self] in self?.controller.submitPrompt() ?? false }
+        window.onCommandDelete = { [weak self] in self?.controller.plugins.removeHovered() ?? false }
 
         let root = OverlayView(controller: controller)
         let hosting = FrameCountingHost(rootView: root)
@@ -322,6 +323,7 @@ final class PanelWindow: NSWindow {
     private static let escKeyCode: UInt16 = 53
     /// Return and the numeric keypad's Enter — both send the prompt.
     private static let returnKeyCodes: Set<UInt16> = [36, 76]
+    private static let deleteKeyCode: UInt16 = 51
 
     var onCancel: (() -> Void)?
     /// Every change to the modifier keys while the panel holds focus. ⌘ turns the todo column
@@ -330,6 +332,8 @@ final class PanelWindow: NSWindow {
     /// Return, with no Shift. Returns whether it was used — when it isn't, the key goes on to
     /// the field as an ordinary newline.
     var onReturn: () -> Bool = { false }
+    /// ⌘⌫, the same way: when it takes out nothing, the field deletes to the start of the line.
+    var onCommandDelete: () -> Bool = { false }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -379,6 +383,9 @@ final class PanelWindow: NSWindow {
             // insert a newline: the field wraps vertically, so Return is not its own submit.
             // Shift-Return is left alone, which is how you get a second paragraph.
             if onReturn() { return }
+            super.sendEvent(event)
+        case .keyDown where event.keyCode == Self.deleteKeyCode && event.modifierFlags.contains(.command):
+            if onCommandDelete() { return }
             super.sendEvent(event)
         default:
             super.sendEvent(event)

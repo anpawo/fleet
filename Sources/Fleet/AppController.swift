@@ -425,6 +425,9 @@ final class AppController: ObservableObject {
         // A panel that comes back up with ⌘ still latched from last time would show its ✕s to
         // somebody who is not holding anything.
         commandHeld = false
+        // The pointer may never leave a panel that goes away under it, and a ⌘⌫ typed in the
+        // next one must not take out what it rested on then.
+        plugins.hovered = nil
         hub.stopEditing()
         hub.stopComposing()
         overlay?.hide()

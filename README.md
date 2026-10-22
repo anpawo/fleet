@@ -404,8 +404,8 @@ Prints every session it can see, with the transcript it bound, the state it deri
 
 Any program can put a block on the panel without touching Fleet: it writes
 `~/.local/state/fleet/blocks/<name>.json`, and the block shows under SPENDING, folded to its
-title until the pointer is on it. Fleet only reads the file, so whatever gathers the data runs
-on its own schedule, and if it dies the block keeps its last state.
+title until the pointer is on it. Whatever gathers the data runs on its own schedule, and if it
+dies the block keeps its last state.
 
 ```json
 {
@@ -420,8 +420,13 @@ on its own schedule, and if it dies the block keeps its last state.
 
 `layout` is `rows` (one line per item, `detail` at the right) or `faces` (three to a line, a
 round `image` over the `text`; `image` is a path relative to the blocks folder). `help` shows
-under the pointer. A group with no items is skipped, a block with none is not drawn, and a file
-that does not parse is logged to `/tmp/fleet.log`. Blocks are ordered by file name.
+under the pointer. A group with no items is drawn only while ⌘ is held over the block, a block
+with none is not drawn, and a file that does not parse is logged to `/tmp/fleet.log`. Blocks are
+ordered by file name.
+
+With ⌘ held over a block, an item follows the pointer from a press and moves to the end of the
+group it is let go over, and ⌘⌫ removes the item under the pointer. Fleet then writes the file
+itself, keeping every key it does not know.
 
 ## Options
 

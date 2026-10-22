@@ -330,6 +330,7 @@ struct OverlayView: View {
                         MoneyColumn(store: controller.money,
                                     scrolling: !eagerLayout, limit: max(0, free * 3 / 4))
                         PluginColumns(store: controller.plugins,
+                                      commandHeld: controller.commandHeld,
                                       scrolling: !eagerLayout, limit: max(0, free * 3 / 4))
                         TodoColumn(hub: controller.hub,
                                    commandHeld: controller.commandHeld,

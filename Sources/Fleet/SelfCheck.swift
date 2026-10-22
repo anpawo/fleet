@@ -141,17 +141,40 @@ enum SelfCheck {
 
     // MARK: - Plugins
 
-    /// An empty group left out, the file's order kept, an empty block and a broken file not drawn.
+    /// An empty group kept to drop into, the file's order kept, an empty block and a broken file
+    /// not drawn; an item carried to another group or taken out, the file's other keys kept.
     private static func plugins(_ expect: (Bool, Bool, String) -> Void) {
         let json = #"{"title":"T","groups":[{"title":"a","items":[]},"#
             + #"{"title":"b","items":[{"text":"B"},{"text":"A","detail":"x"}]}]}"#
         let block = PluginStore.decode(Data(json.utf8), id: "t.json")
-        expect(block?.groups.map(\.title) == ["b"], true, "plugins: a group with nothing in it left out")
-        expect(block?.groups.first?.items.map(\.text) == ["B", "A"], true, "plugins: the file's order kept")
+        expect(block?.groups.map(\.title) == ["a", "b"], true, "plugins: a group with nothing in it kept")
+        expect(block?.groups.last?.items.map(\.text) == ["B", "A"], true, "plugins: the file's order kept")
         expect(PluginStore.decode(Data(#"{"title":"T","groups":[{"items":[]}]}"#.utf8), id: "e") == nil, true,
                "plugins: a block with nothing in it is not drawn")
         expect(PluginStore.decode(Data(#"{"groups":[]"#.utf8), id: "b") == nil, true,
                "plugins: a broken file is not drawn")
+
+        let folder = FileManager.default.temporaryDirectory.appending(path: "fleet-selfcheck-\(getpid())")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "t.json")
+        try? Data((String(json.dropLast()) + #","by":"p"}"#).utf8).write(to: file)
+        let store = PluginStore()
+        store.folder = folder
+        let a = PluginBlock.Item(text: "A", detail: "x")
+        store.rewrite(.init(block: "t.json", group: 1, item: a), to: 0)
+        expect(store.blocks.first?.groups.map { $0.items.map(\.text) } == [["A"], ["B"]], true,
+               "plugins: a carried item lands at the end of the group it is let go over")
+        store.hovered = .init(block: "t.json", group: 1, item: PluginBlock.Item(text: "B"))
+        expect(store.removeHovered(), true, "plugins: ⌘⌫ takes out the item under the pointer")
+        expect(store.blocks.first?.groups.map { $0.items.map(\.text) } == [["A"], []], true,
+               "plugins: nothing else goes with it")
+        expect(store.removeHovered(), false, "plugins: ⌘⌫ over nothing goes on to the field")
+        store.rewrite(.init(block: "t.json", group: 1, item: a), to: 0)
+        expect(store.blocks.first?.groups.first?.items.count == 1, true,
+               "plugins: an item no longer where it was seen is left alone")
+        let root = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        expect(root?["by"] as? String == "p", true, "plugins: a key Fleet does not know survives the write")
     }
 
     // MARK: - Money
