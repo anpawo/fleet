@@ -32,6 +32,7 @@ enum SelfCheck {
         money(expect)
         plugins(expect)
         grid(expect)
+        projects(expect)
         reads(expect)
 
         print(failures == 0 ? "\nall ok" : "\n\(failures) FAILED")
@@ -137,6 +138,26 @@ enum SelfCheck {
         grid.wide = [size(2), size(3), size(3)]
         expect(grid.rest(3).frames.map(\.minX).map { ($0 / 238).rounded() } == [2, 0, 1], true,
                "grid: two of a height keep the order they come in")
+    }
+
+    // MARK: - Projects
+
+    /// What groups sessions under `~/self`: the project, or the repo inside a plain folder that
+    /// gathers repos, as the status line names it.
+    private static func projects(_ expect: (String, String, String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appending(path: "fleet-projects-\(getpid())").path + "/"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        for dir in ["repo/.git", "repo/sub/.git", "plain/a/.git", "plain/b"] {
+            try? FileManager.default.createDirectory(atPath: root + dir, withIntermediateDirectories: true)
+        }
+        expect(Session.project(for: root + "plain/a/src", under: root), "plain/a",
+               "projects: a repo inside a plain folder is its own group")
+        expect(Session.project(for: root + "plain/b", under: root), "plain",
+               "projects: a plain sub-folder stays in its folder's group")
+        expect(Session.project(for: root + "plain", under: root), "plain",
+               "projects: the plain folder itself is its group")
+        expect(Session.project(for: root + "repo/sub", under: root), "repo",
+               "projects: a repo inside a repo stays in the outer one's group")
     }
 
     // MARK: - Plugins

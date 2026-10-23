@@ -390,11 +390,19 @@ struct Session: Identifiable {
 
     /// The same rule, applied to a bare path: the registry needs a session's project name
     /// before it has a session to ask — it is what the pinned tile numbers are keyed on.
-    static func project(for cwd: String) -> String {
-        let projects = NSHomeDirectory() + "/self/"
-        if cwd.hasPrefix(projects),
-           let project = cwd.dropFirst(projects.count).split(separator: "/").first {
-            return String(project)
+    ///
+    /// The project is what the status line names (`~/.claude/statusline.sh`): a plain folder
+    /// that gathers repos (hackathon/{deepfake,agents}) names the repo
+    /// under it, so its sessions group by repo (asked 2026-10-23).
+    static func project(for cwd: String, under projects: String = NSHomeDirectory() + "/self/") -> String {
+        if cwd.hasPrefix(projects) {
+            let parts = cwd.dropFirst(projects.count).split(separator: "/").prefix(2).map(String.init)
+            if parts.count == 2,
+               !FileManager.default.fileExists(atPath: projects + parts[0] + "/.git"),
+               FileManager.default.fileExists(atPath: projects + parts[0] + "/" + parts[1] + "/.git") {
+                return parts[0] + "/" + parts[1]
+            }
+            if let project = parts.first { return project }
         }
         let n = (cwd as NSString).lastPathComponent
         return n.isEmpty ? cwd : n
@@ -433,8 +441,8 @@ struct Session: Identifiable {
     /// sub-folder the session sits in, and elsewhere the whole path.
     var folder: String {
         let projects = NSHomeDirectory() + "/self/"
-        guard cwd.hasPrefix(projects) else { return displayPath }
-        return cwd.dropFirst(projects.count).split(separator: "/").first.map(String.init) ?? displayPath
+        guard cwd.hasPrefix(projects), cwd.count > projects.count else { return displayPath }
+        return dirName
     }
 
     /// Working directory with $HOME collapsed to "~".

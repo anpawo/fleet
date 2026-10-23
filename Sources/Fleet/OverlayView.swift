@@ -849,12 +849,21 @@ struct GroupTile: View {
                     // full one, they ran out past the border.
                     .frame(width: box.size.width, height: box.size.height, alignment: .topLeading)
 
+                // A repo inside a plain folder is named with its folder, too wide for a column
+                // at full size: the name shrinks into the band rather than run under the border.
+                // Measured again at the smaller size: the system font sets small text looser,
+                // and a size cut by the ratio alone still ran into the border.
+                let room = box.size.width - 2 * Self.inset
+                let size = (0 ..< 3).reduce(Self.nameSize) { size, _ in
+                    min(size, size * room / nameWidth(size))
+                }
                 Text(name)
-                    .font(.system(size: Self.nameSize, weight: .semibold))
+                    .font(.system(size: size, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
-                    .offset(x: (box.size.width - nameWidth) / 2, y: Self.inset + Self.nameAir)
+                    .offset(x: (box.size.width - nameWidth(size)) / 2,
+                            y: Self.inset + Self.nameAir + 1.2 * (Self.nameSize - size) / 2)
             }
             // The empty room inside the card belongs to the directory: a click there does not
             // fall through to the panel's dismiss layer. The cards inside take their own clicks.
@@ -878,8 +887,8 @@ struct GroupTile: View {
 
     /// The name's width at rest, measured rather than laid out: the text is placed by hand, so
     /// centring it needs a number before anything is drawn.
-    private var nameWidth: CGFloat {
-        let font = NSFont.systemFont(ofSize: Self.nameSize, weight: .semibold)
+    private func nameWidth(_ size: CGFloat) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: size, weight: .semibold)
         return (name as NSString).size(withAttributes: [.font: font]).width
     }
 
