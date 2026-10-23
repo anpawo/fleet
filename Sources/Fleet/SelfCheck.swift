@@ -142,22 +142,24 @@ enum SelfCheck {
 
     // MARK: - Projects
 
-    /// What groups sessions under `~/self`: the project, or the repo inside a plain folder that
-    /// gathers repos, as the status line names it.
+    /// What groups sessions under `~/self`: the nearest repository, or the top folder.
     private static func projects(_ expect: (String, String, String) -> Void) {
         let root = FileManager.default.temporaryDirectory.appending(path: "fleet-projects-\(getpid())").path + "/"
         defer { try? FileManager.default.removeItem(atPath: root) }
-        for dir in ["repo/.git", "repo/sub/.git", "plain/a/.git", "plain/b"] {
+        for dir in ["repo/.git", "repo/sub/.git", "repo/wt", "plain/a/.git", "plain/b"] {
             try? FileManager.default.createDirectory(atPath: root + dir, withIntermediateDirectories: true)
         }
-        expect(Session.project(for: root + "plain/a/src", under: root), "plain/a",
-               "projects: a repo inside a plain folder is its own group")
+        FileManager.default.createFile(atPath: root + "repo/wt/.git", contents: Data("gitdir: x".utf8))
+        expect(Session.project(for: root + "plain/a/src", under: root), "a",
+               "projects: a repo inside a plain folder is its own group, named alone")
         expect(Session.project(for: root + "plain/b", under: root), "plain",
-               "projects: a plain sub-folder stays in its folder's group")
+               "projects: a folder with no repo up to the top stays in the top folder's group")
         expect(Session.project(for: root + "plain", under: root), "plain",
                "projects: the plain folder itself is its group")
-        expect(Session.project(for: root + "repo/sub", under: root), "repo",
-               "projects: a repo inside a repo stays in the outer one's group")
+        expect(Session.project(for: root + "repo/sub", under: root), "sub",
+               "projects: a repo inside a repo is its own group")
+        expect(Session.project(for: root + "repo/wt/src", under: root), "repo",
+               "projects: a worktree stays in the group of the repo it was cut from")
     }
 
     // MARK: - Plugins

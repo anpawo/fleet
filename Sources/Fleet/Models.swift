@@ -391,16 +391,19 @@ struct Session: Identifiable {
     /// The same rule, applied to a bare path: the registry needs a session's project name
     /// before it has a session to ask — it is what the pinned tile numbers are keyed on.
     ///
-    /// The project is what the status line names (`~/.claude/statusline.sh`): a plain folder
-    /// that gathers repos (hackathon/{deepfake,agents}) names the repo
-    /// under it, so its sessions group by repo (asked 2026-10-23).
+    /// The project is the nearest folder holding a repository, named alone: a plain folder
+    /// that gathers repos (hackathon/{deepfake,agents}) and a repo inside a repo group by
+    /// repo (asked 2026-10-23). Only a `.git` folder counts: a worktree's is a file, and its
+    /// sessions belong to the repo it was cut from. No repository: the top folder.
     static func project(for cwd: String, under projects: String = NSHomeDirectory() + "/self/") -> String {
         if cwd.hasPrefix(projects) {
-            let parts = cwd.dropFirst(projects.count).split(separator: "/").prefix(2).map(String.init)
-            if parts.count == 2,
-               !FileManager.default.fileExists(atPath: projects + parts[0] + "/.git"),
-               FileManager.default.fileExists(atPath: projects + parts[0] + "/" + parts[1] + "/.git") {
-                return parts[0] + "/" + parts[1]
+            let parts = cwd.dropFirst(projects.count).split(separator: "/").map(String.init)
+            for depth in stride(from: parts.count, to: 0, by: -1) {
+                var folder: ObjCBool = false
+                let git = projects + parts.prefix(depth).joined(separator: "/") + "/.git"
+                if FileManager.default.fileExists(atPath: git, isDirectory: &folder), folder.boolValue {
+                    return parts[depth - 1]
+                }
             }
             if let project = parts.first { return project }
         }
