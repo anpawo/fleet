@@ -640,6 +640,11 @@ enum SelfCheck {
         let before = Hooks.Record(state: .ready, at: Date(timeIntervalSince1970: floor(stop.timeIntervalSince1970) + 1), pids: [])
         expect(SessionRegistry.ranked(before, heuristic: .running, info: info, cpu: 0, now: Date()) == .ready ? 1 : 0, 1,
                "and a Stop after the prompt still reads ready")
+        let later = Date().addingTimeInterval(60)
+        expect(SessionRegistry.derivedState(info: info, cpu: 0, startedAt: stop.addingTimeInterval(-60), now: later) == .awaitingAnswer ? 1 : 0, 1,
+               "a turn owed and silent reads as a question")
+        expect(SessionRegistry.derivedState(info: info, cpu: 0, startedAt: Date(), now: later) == .ready ? 1 : 0, 1,
+               "and the same turn owed from before a resume reads ready")
     }
 
     /// A session resumed in a renamed folder is bound to its file in the old one. The next file

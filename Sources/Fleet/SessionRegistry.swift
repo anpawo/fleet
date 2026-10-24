@@ -48,7 +48,7 @@ final class SessionRegistry {
             // only one reached purely by inference — from silence, which is also what a failed
             // request and a long thinking turn look like. Nothing else is re-examined; the
             // terminal costs a round trip to read.
-            var state = state(for: bindings[proc.pid], info: info, cpu: cpu, now: now)
+            var state = state(for: bindings[proc.pid], info: info, cpu: cpu, startedAt: proc.startedAt, now: now)
             // An async agent leaves the session looking finished: its call was answered the
             // moment it launched, the turn closed, and the hook said `ready` — all true of the
             // main thread, and all beside the point while three agents are still out. Only
@@ -331,8 +331,8 @@ final class SessionRegistry {
     /// stamps `ai-title` and `last-prompt` into the file just after a turn ends, and those must
     /// not count as the session getting back to work.
     private func state(for transcriptPath: String?, info: TranscriptInfo?,
-                       cpu: Double, now: Date) -> SessionState {
-        let heuristic = derivedState(info: info, cpu: cpu, now: now)
+                       cpu: Double, startedAt: Date, now: Date) -> SessionState {
+        let heuristic = Self.derivedState(info: info, cpu: cpu, startedAt: startedAt, now: now)
         guard let transcriptPath else { return heuristic }
         let sessionID = ((transcriptPath as NSString).lastPathComponent as NSString)
             .deletingPathExtension
@@ -372,13 +372,18 @@ final class SessionRegistry {
     /// either work in progress or a prompt sitting on screen waiting for you — the transcript
     /// looks identical in both cases, so the tie is broken on whether the session is actually
     /// burning CPU or writing to its transcript.
-    private func derivedState(info: TranscriptInfo?, cpu: Double, now: Date) -> SessionState {
+    static func derivedState(info: TranscriptInfo?, cpu: Double, startedAt: Date, now: Date) -> SessionState {
         guard let info else {
             // No transcript to read: either a session that has never been prompted, or one whose
             // file we could not find. Green is the right guess for the first and a lie for the
             // second, so let sustained CPU speak for a session we otherwise know nothing about.
             return cpu >= Config.busyCPUPercent ? .running : .ready
         }
+
+        // `--resume` brings back the conversation, not the turn it was cut in: a call or a
+        // result written before this process started is owed by a process that is gone (24-10:
+        // two sessions closed by /ck mid-turn, reopened after a reboot, sat blue at their prompt).
+        if info.lastWord < startedAt { return .ready }
 
         guard info.hasPendingTool else {
             // Nothing pending, but the last word was yours — a prompt Claude has not started
