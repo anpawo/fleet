@@ -643,7 +643,9 @@ enum SelfCheck {
     private static func queuedPrompt(_ expect: (Int, Int, String) -> Void) {
         let path = NSTemporaryDirectory() + "fleet-selftest-queued-\(getpid()).jsonl"
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let stop = Date().addingTimeInterval(-10)
+        // Half a second past a whole one: a Stop is kept to the second, and a prompt 42 ms after
+        // a Stop taken in the last 42 ms of its second fell in the next one (2 runs in 40).
+        let stop = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) - 9.5)
         func stamp(_ d: Date) -> String {
             let f = ISO8601DateFormatter()
             f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

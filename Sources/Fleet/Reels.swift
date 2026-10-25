@@ -507,16 +507,13 @@ enum ReelDigest {
 
     /// Writes everything but the todo. Only names the model was offered are acted on.
     static func apply(_ digest: Claude.Digest, _ reel: Reel, sessions: [String: String]) {
-        var touched = false
         if let note = digest.note, safe(digest.theme) {
             append(line(note, reel), to: "\(notes)/reels/\(digest.theme).md", heading: digest.theme)
-            touched = true
         }
         let known = Set(projects().map(\.name))
         for (name, text) in digest.projects where known.contains(name) {
             append(line(text, reel), to: "\(notes)/projects/\(name).md", heading: name)
             link(project: name)
-            touched = true
         }
         for (id, text) in digest.sessions where sessions[id] != nil {
             tell(session: id, "Fleet: a Reel Marius saved bears on what you are doing — \(text) "
