@@ -79,20 +79,34 @@ enum Money {
         }
     }
 
+    /// Who pays a debit back, from `payback.json` beside the export: his own arrangement, kept
+    /// out of this repository. A rule gives `share` of a debit (all of it, unless told) to `who`
+    /// when its category or merchant holds `match`, from the month `from` and for a debit of
+    /// `atLeast` that much; a debit takes the rules in order until it is all given.
+    struct Rule: Decodable {
+        let who: String
+        let match: String
+        let share: Double?
+        let atLeast: Double?
+        let from: String?
+    }
+
     struct Month: Identifiable, Equatable {
         /// `2026-10`.
         let id: String
-        /// What the month cost, by kind: its debits, less what somebody else paid of them.
+        /// What the month cost, by kind: its debits, less what somebody else paid of them. A
+        /// loan's instalment and the transfer that covers it are money passing through the
+        /// account, not spending (asked 2026-10-12): see `months`.
         var spent: [Kind: Double] = [:]
-        /// What a credit sent for the purpose paid of the month's debits, by kind. A loan's
-        /// instalment and the transfer that covers it are money passing through the account,
-        /// not spending (asked 2026-10-12) — see `months`.
-        var covered: [Kind: Double] = [:]
-        /// In the newest month only: a debit of a kind earlier months had covered, whose own
-        /// cover is not in yet. Kept out of `spent` meanwhile: the month's figure would
-        /// otherwise carry an instalment for the weeks its cover takes to come.
-        var awaited: [Kind: Double] = [:]
+        /// What somebody pays back of the month's debits, by who: see `Rule`.
+        var back: [String: Double] = [:]
+        /// What came back into the account: the credits the bank files as refunds, its code
+        /// 1209 (read off a card refund and a health insurer's; a transfer from a person, his
+        /// parents' or his own included, is 1214).
+        var refunds: Double = 0
         var total: Double { spent.values.reduce(0, +) }
+        /// What is left of the month his own once all of that is in.
+        var yours: Double { max(0, total - back.values.reduce(0, +) - refunds) }
 
         /// Each kind's part of what was spent, in whole percent that add up to 100: rounded
         /// one by one they can come to 99 or 101. The points left over go to the kinds that
@@ -177,10 +191,14 @@ enum Money {
     ///
     /// One credit does count, against a debit: a cover, by the word in its category ("loan
     /// instalment cover"), pays for the kind that category names, in its own month. That
-    /// much of the kind is `covered` and not spent; what a cover did not reach stays spent.
-    static func months(csv: String) -> (months: [Month], latest: String?) {
+    /// much of the kind is not spent; what a cover did not reach stays spent. In the newest
+    /// month, a debit of a kind earlier months had covered is not spent either while its cover
+    /// is not in: the month's figure would otherwise carry an instalment for the weeks its
+    /// cover takes to come.
+    static func months(csv: String, rules: [Rule] = []) -> (months: [Month], latest: String?) {
         var months: [String: Month] = [:]
         var covers: [String: [Kind: Double]] = [:]
+        var refunds: [String: Double] = [:]
         var latest: String?
         for line in csv.split(whereSeparator: \.isNewline).dropFirst() {
             let row = fields(line, 7)
@@ -189,21 +207,29 @@ enum Money {
             let id = String(row[0].prefix(7))
             let kind = Kind(category: row[2], bankCode: row.count > 6 ? row[6] : "")
             if amount > 0 {
+                if row.count > 6, row[6] == "1209" { refunds[id, default: 0] += amount }
                 guard row[2].localizedCaseInsensitiveContains("cover") else { continue }
                 covers[id, default: [:]][kind, default: 0] += amount
             } else if !row[2].localizedCaseInsensitiveContains("saving") {
                 months[id, default: Month(id: id)].spent[kind, default: 0] -= amount
+                let named = row[2] + " " + (row.count > 3 ? row[3] : "")
+                var left = 1.0
+                for rule in rules where left > 0 && id >= rule.from ?? "" && -amount >= rule.atLeast ?? 0
+                    && named.localizedCaseInsensitiveContains(rule.match) {
+                    let share = min(rule.share ?? 1, left)
+                    months[id]?.back[rule.who, default: 0] -= amount * share
+                    left -= share
+                }
             }
         }
         let newest = months.keys.max()
         for id in months.keys {
+            months[id]?.refunds = refunds[id] ?? 0
             for (kind, paid) in months[id]?.spent ?? [:] {
                 let cover = min(paid, covers[id]?[kind] ?? 0)
                 if cover > 0 {
-                    months[id]?.covered[kind] = cover
                     months[id]?.spent[kind] = paid > cover ? paid - cover : nil
                 } else if id == newest, covers.contains(where: { $0.key < id && $0.value[kind] != nil }) {
-                    months[id]?.awaited[kind] = paid
                     months[id]?.spent[kind] = nil
                 }
             }
@@ -283,15 +309,17 @@ final class MoneyStore: ObservableObject {
     /// The real export, unless a picture of an invented one is being drawn — see
     /// `DemoFleet.fill`. Kept, so the next tick does not read the real one back over it.
     var file = Money.file { didSet { rereadIfWritten() } }
-    private var written: Date?
+    private var written: [Date?] = []
 
     init() { rereadIfWritten() }
 
     func rereadIfWritten() {
-        let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        guard date != written || date == nil else { return }
-        written = date
-        let read = (try? String(contentsOf: file, encoding: .utf8)).map(Money.months)
+        let files = [file, file.deletingLastPathComponent().appending(path: "payback.json")]
+        let dates = files.map { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate }
+        guard dates != written || dates[0] == nil else { return }
+        written = dates
+        let rules = (try? Data(contentsOf: files[1])).flatMap { try? JSONDecoder().decode([Money.Rule].self, from: $0) }
+        let read = (try? String(contentsOf: file, encoding: .utf8)).map { Money.months(csv: $0, rules: rules ?? []) }
         months = read?.months ?? []
         latest = read?.latest
     }
@@ -683,8 +711,11 @@ private struct MoneyMonth: View {
                     }
                     .padding(.top, over - radius)
             }
-            ForEach(Money.Kind.allCases.filter { month.covered[$0] != nil || month.awaited[$0] != nil },
-                    id: \.self) { kind in through(kind) }
+            if !month.back.isEmpty || month.refunds > 0 {
+                line("arrow.uturn.backward", "Back", month.back.sorted { $0.value > $1.value }
+                     + (month.refunds > 0 ? [("Refunds", month.refunds)] : []))
+                line("equal", "Yours", [("", month.yours)], "once it is all back")
+            }
         }
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
     }
@@ -738,23 +769,37 @@ private struct MoneyMonth: View {
         }
     }
 
-    /// What went through the account without being the month's own: a debit somebody else's
-    /// transfer paid. Under the pie and no slice of it — it is no part of what the month
-    /// cost — and one line, so that the instalment has not simply vanished.
-    private func through(_ kind: Money.Kind) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(kind.tint)
-            Text(kind.title)
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.5))
-            Text(Money.euros(month.covered[kind] ?? month.awaited[kind] ?? 0))
-                .font(.system(size: 9, weight: .medium).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.75))
-            Text(month.covered[kind] != nil ? "covered, not counted" : "cover awaited, not counted")
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.35))
+    /// What comes back of the month, under the pie and no slice of it: the pie is what was
+    /// paid (asked 2026-10-25, in place of the loan's line, the month's figure being more than
+    /// his own). Two lines, not one a payer: the block is as tall as its column lets it be, and
+    /// four lines left the last under its edge.
+    private func line(_ symbol: String, _ lead: String, _ amounts: [(String, Double)], _ note: String = "") -> some View {
+        HStack(spacing: 9) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(lead)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+            ForEach(amounts, id: \.0) { title, amount in
+                HStack(spacing: 4) {
+                    if !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    Text(Money.euros(amount))
+                        .font(.system(size: 9, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+            }
+            if !note.isEmpty {
+                Text(note)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.35))
+            }
         }
         .lineLimit(1)
     }
