@@ -81,7 +81,7 @@ enum Money {
 
     /// Who pays a debit back, from `payback.json` beside the export: his own arrangement, kept
     /// out of this repository. A rule gives `share` of a debit (all of it, unless told) to `who`
-    /// when its category or merchant holds `match`, from the month `from` and for a debit of
+    /// when its category or merchant holds `match`, from the day or month `from` and for a debit of
     /// `atLeast` that much; a debit takes the rules in order until it is all given.
     struct Rule: Decodable {
         let who: String
@@ -214,7 +214,7 @@ enum Money {
                 months[id, default: Month(id: id)].spent[kind, default: 0] -= amount
                 let named = row[2] + " " + (row.count > 3 ? row[3] : "")
                 var left = 1.0
-                for rule in rules where left > 0 && id >= rule.from ?? "" && -amount >= rule.atLeast ?? 0
+                for rule in rules where left > 0 && row[0] >= rule.from ?? "" && -amount >= rule.atLeast ?? 0
                     && named.localizedCaseInsensitiveContains(rule.match) {
                     let share = min(rule.share ?? 1, left)
                     months[id]?.back[rule.who, default: 0] -= amount * share

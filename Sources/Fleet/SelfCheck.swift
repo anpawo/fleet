@@ -297,13 +297,14 @@ enum SelfCheck {
                "money: a debit a credit was sent to cover is not spent, past what the credit paid, nor one whose cover is to come")
 
         let rules = try? JSONDecoder().decode([Money.Rule].self, from: Data("""
-        [{"who": "S14", "match": "anthropic", "from": "2026-10"},
+        [{"who": "S14", "match": "anthropic", "from": "2026-09-16"},
          {"who": "S14", "match": "bus", "share": 0.5, "atLeast": 20, "from": "2026-10"},
          {"who": "Parents", "match": "bus"}, {"who": "Parents", "match": "train"}]
         """.utf8))
         let back = Money.months(csv: """
         date,amount,category,merchant,wording,bank_category,bank_subcategory
         2026-09-15,-100.00,Subscriptions & apps,Anthropic* Clau
+        2026-09-20,-10.00,Subscriptions & apps,Anthropic* Clau
         2026-10-05,-100.00,"Bus, metro & parking",B Gr Aix
         2026-10-06,-2.50,"Bus, metro & parking",La Metropole Mo
         2026-10-07,-20.00,Train,Sncf
@@ -312,8 +313,8 @@ enum SelfCheck {
         2026-10-12,50.25,Other income,Air Transat,x,1200,1209
         2026-10-22,130.96,Other income,Himself,x,1200,1214
         """, rules: rules ?? []).months
-        expect(back.first?.back == ["S14": 266, "Parents": 72.5] && back.last?.back == [:], true,
-               "money: a debit goes back to who its rules name, a pass in two halves, none before a rule's month")
+        expect(back.first?.back == ["S14": 266, "Parents": 72.5] && back.last?.back == ["S14": 10], true,
+               "money: a debit goes back to who its rules name, a pass in two halves, none before a rule's day")
         expect(back.first?.refunds == 50.25 && back.first?.yours == 79.75, true,
                "money: a refund the bank files as one comes back, a transfer from a person does not")
     }
