@@ -94,6 +94,9 @@ if CommandLine.arguments.contains("--memory") {
         let swap = MemoryPressure.swap()
         print("pressure: \(MemoryPressure.level())")
         print("swap:     \(byteLabel(swap.used)) of \(byteLabel(swap.total))")
+        let ram = MemoryPressure.footprint(own: MemoryPressure.ownFootprint())
+        print("yours:    \(byteLabel(ram.own)) of \(byteLabel(ram.room)) "
+              + "(\(Int((ram.ownShare * 100).rounded()))%)")
 
         // Two samples: a CPU percentage is a difference between them, so one alone says
         // nothing — the same reason a freshly launched Fleet reaps nothing for two minutes.
@@ -154,6 +157,7 @@ if CommandLine.arguments.contains("--bench") {
         time("Reaper.candidates") { _ = Reaper.candidates() }
         time("Reaper.topHogs") { _ = Reaper.topHogs(reapable: []) }
         time("MemoryPressure.footprint") { _ = MemoryPressure.footprint() }
+        time("MemoryPressure.ownFootprint") { _ = MemoryPressure.ownFootprint() }
         for session in sessions {
             time("AX read \(session.dirName)") {
                 _ = TerminalFocus.visibleText(pid: session.proc.pid, tty: session.proc.tty,

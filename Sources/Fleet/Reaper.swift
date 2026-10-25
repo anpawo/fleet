@@ -69,9 +69,56 @@ enum MemoryPressure {
         /// needed, hence the zero on a machine that has never had to swap.
         var swapTotal: UInt64 = 0
         var total: UInt64 = ProcessInfo.processInfo.physicalMemory
+        var free: UInt64 = 0
+        /// Your own apps: see `ownFootprint`.
+        var own: UInt64 = 0
+
+        /// What macOS leaves you: your apps plus the cache and free pages they can still take.
+        /// The rest (firmware, wired, macOS's own processes) is never yours to use, about 5.6 GB
+        /// of 16 when measured on 2026-10-25. Capped because footprint counts compressed pages
+        /// at full size.
+        var room: UInt64 { min(own + cached + free, total) }
+        var ownShare: Double { room > 0 ? Double(own) / Double(room) : 0 }
     }
 
-    static func footprint() -> Footprint {
+    /// Activity Monitor's Memory column summed over your processes that are not part of
+    /// macOS. Other users' processes are all macOS's, and `proc_pid_rusage` cannot read them.
+    static func ownFootprint() -> UInt64 {
+        let me = getuid()
+        var total: UInt64 = 0
+        for pid in ProcessScanner.allPIDs() where pid > 0 {
+            guard let bsd = ProcessScanner.bsdInfo(pid), bsd.pbi_uid == me else { continue }
+            let started = UInt64(bsd.pbi_start_tvsec)
+            let mine: Bool
+            if let known = ownVerdicts[pid], known.started == started {
+                mine = known.mine
+            } else {
+                mine = isOwn(ProcessScanner.executablePath(pid))
+                ownVerdicts[pid] = (started, mine)
+            }
+            if mine { total += ProcessScanner.footprint(pid) }
+        }
+        if ownVerdicts.count > 2048 {
+            let live = Set(ProcessScanner.allPIDs())
+            ownVerdicts = ownVerdicts.filter { live.contains($0.key) }
+        }
+        return total
+    }
+
+    /// Same cache as `Reaper.kinds`: a path is fixed at exec, and looking it up for every
+    /// process each scan is what made Fleet stutter once.
+    private nonisolated(unsafe) static var ownVerdicts: [pid_t: (started: UInt64, mine: Bool)] = [:]
+
+    static func isOwn(_ path: String) -> Bool {
+        // A Linux VM (Docker's) runs in an Apple XPC service, but its memory is the VM's.
+        if path.hasSuffix("com.apple.Virtualization.VirtualMachine") { return true }
+        if ["/System/Applications/", "/System/Volumes/Preboot/Cryptexes/App/", "/usr/local/"]
+            .contains(where: path.hasPrefix) { return true }
+        return !path.isEmpty && !["/System/", "/usr/", "/bin/", "/sbin/", "/Library/Apple/"]
+            .contains(where: path.hasPrefix)
+    }
+
+    static func footprint(own: UInt64 = 0) -> Footprint {
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size
                                            / MemoryLayout<integer_t>.size)
@@ -81,7 +128,7 @@ enum MemoryPressure {
             }
         }
         let paged = swap()
-        var out = Footprint(swap: paged.used, swapTotal: paged.total)
+        var out = Footprint(swap: paged.used, swapTotal: paged.total, own: own)
         guard ok == KERN_SUCCESS else { return out }
 
         let page = UInt64(vm_kernel_page_size)
@@ -91,6 +138,8 @@ enum MemoryPressure {
         out.compressed = UInt64(stats.compressor_page_count) * page
         out.used = (app + UInt64(stats.wire_count)) * page + out.compressed
         out.cached = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * page
+        // The kernel counts speculative pages as free too, and they are already in `external`.
+        out.free = UInt64(max(Int(stats.free_count) - Int(stats.speculative_count), 0)) * page
         return out
     }
 }
@@ -152,7 +201,7 @@ final class Reaper: ObservableObject {
     /// Drawn whenever the panel is open and nothing is wrong — the quiet half of the strip.
     /// Read once here as well as on every tick, so the first panel of a session shows the
     /// machine rather than a row of zeroes.
-    @Published private(set) var footprint = MemoryPressure.footprint()
+    @Published private(set) var footprint = MemoryPressure.footprint(own: MemoryPressure.ownFootprint())
 
     /// Whether the machine has stopped keeping up — see `sampleFluidity`.
     @Published private(set) var struggling = false
@@ -197,11 +246,12 @@ final class Reaper: ObservableObject {
     /// for a problem that takes days to build up.
     func tick(lateness: TimeInterval = 0, allowed: TimeInterval = 0) {
         pressure = MemoryPressure.level()
-        footprint = MemoryPressure.footprint()
+        footprint = MemoryPressure.footprint(own: footprint.own)
         sampleFluidity(lateness: lateness, allowed: allowed)
 
         guard Date().timeIntervalSince(lastScan) >= Config.reapInterval else { return }
         lastScan = Date()
+        footprint.own = MemoryPressure.ownFootprint()
 
         let candidates = Reaper.candidates()
         sampleIdleness(candidates)

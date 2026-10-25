@@ -238,6 +238,18 @@ enum ProcessScanner {
         return result
     }
 
+    /// Activity Monitor's Memory column for this process; 0 for one that is not ours to read.
+    static func footprint(_ pid: pid_t) -> UInt64 {
+        var info = rusage_info_v0()
+        var result: UInt64 = 0
+        withUnsafeMutablePointer(to: &info) { p in
+            p.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { rp in
+                if proc_pid_rusage(pid, RUSAGE_INFO_V0, rp) == 0 { result = p.pointee.ri_phys_footprint }
+            }
+        }
+        return result
+    }
+
     /// Full argv via `sysctl(KERN_PROCARGS2)`. Used to read `--resume <sessionId>`, which
     /// binds a resumed session to its transcript exactly.
     static func arguments(_ pid: pid_t) -> [String] {

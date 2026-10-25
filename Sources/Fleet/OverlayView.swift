@@ -1125,13 +1125,13 @@ struct MemoryStrip: View {
         let hasBody = tight && commandHeld && hovered
 
         // The one block that is a reading rather than a list, so the only one drawn as a
-        // gauge: a dark pane filled from the left to the share of the RAM in use. Every other
+        // gauge: a dark pane filled from the left to your apps' share of the RAM macOS leaves you. Every other
         // block is a flat tint because every other block is a count of things; this is a level.
         return Block(title: "MEMORY",
                      titleColor: tight ? tint : .white.opacity(0.92),
                      tint: ramTint.opacity(0.45),
                      fill: .black.opacity(0.41),
-                     level: BlockLevel(share: share(reaper.footprint.used), tint: ramTint.opacity(0.42)),
+                     level: BlockLevel(share: reaper.footprint.ownShare, tint: ramTint.opacity(0.42)),
                      // 10pt of pane between the chips' ground and the first process, as round
                      // the chips: at 6 the list sat 3pt under them (asked 2026-09-28).
                      bodyGap: 13, middleBetween: true) {
@@ -1152,7 +1152,7 @@ struct MemoryStrip: View {
             // the one line where it can be read as a figure.
             (Text("RAM \u{00B7} ").foregroundColor(.white.opacity(0.9))
                 + Text(percentLabel).foregroundColor(ramTint)
-                + Text(" \u{00B7} \(gigabytes(reaper.footprint.total))").foregroundColor(.white.opacity(0.9)))
+                + Text(" \u{00B7} \(byteLabel(reaper.footprint.room))").foregroundColor(.white.opacity(0.9)))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .titleGround()
         } content: {
@@ -1177,33 +1177,22 @@ struct MemoryStrip: View {
         .onHover { hovered = $0 }
     }
 
-    /// What colour the block is: the share of the RAM in use, on the scale the figure itself
+    /// What colour the block is: your apps' share of the RAM, on the scale the figure itself
     /// used to be drawn in — and red outright once Fleet is holding sessions back, whatever
     /// the share says.
     private var ramTint: Color {
         if reaper.struggling { return SessionState.running.tint }
-        return Self.scale(share(reaper.footprint.used), 0.60, 0.75, 0.88) ?? BlockTint.memory
-    }
-
-    private func share(_ bytes: UInt64) -> Double {
-        let total = reaper.footprint.total
-        return total > 0 ? Double(bytes) / Double(total) : 0
+        return Self.scale(reaper.footprint.ownShare, 0.60, 0.75, 0.88) ?? BlockTint.memory
     }
 
     private func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
 
-    /// A machine's RAM is a round number of gigabytes, and the tenth on the end of it was one
-    /// digit of noise beside a figure that changes.
-    private func gigabytes(_ bytes: UInt64) -> String {
-        String(format: "%.0f GB", Double(bytes) / 1_073_741_824)
-    }
-
     /// Why the block is amber, in the few words the heading has room for. The long version of
     /// the same sentence is what the sessions are told — see `Hooks.machinePath`.
 
-    /// How full the RAM is — the figure itself, since the gigabytes behind it say less at a
+    /// How full your part of the RAM is — the figure itself, since the gigabytes behind it say less at a
     /// glance than the share does.
-    private var percentLabel: String { percent(share(reaper.footprint.used)) }
+    private var percentLabel: String { percent(reaper.footprint.ownShare) }
 
     /// A share on the panel's own four colours: green while there is room, then the blue and
     /// the amber the tiles use for "someone is waiting", then the red they use for trouble.
