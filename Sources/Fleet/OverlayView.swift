@@ -923,7 +923,7 @@ struct SessionTile: View {
     /// inside a group, where every card shares that directory.
     var heading: String?
     /// Inside a group, whose heading already names the directory: no folder in the
-    /// corner, which leaves the pills the whole line.
+    /// corner.
     var grouped = false
     let onSelect: () -> Void
 
@@ -965,21 +965,22 @@ struct SessionTile: View {
                 // long workflow pill beside a sub-agent count used to shrink one and break the
                 // other over two lines, and eat the folder name.
                 HStack(alignment: .top, spacing: 5) {
-                    // The folder gives way, down to nothing: the fit used to count it and a
-                    // 16 pt gap, and "~" beside two pills stacked them for half a point (02-10).
-                    if !grouped { folder.frame(minWidth: 0, maxWidth: .infinity, alignment: .leading) }
-                    // Served first and at full size: the folder's 110pt cap squeezed the pills
-                    // — BACKGROUND-TASK shrunk to 70%, then cut to "BACKGROU…SK" (28-09).
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 5) { subagentPill; statePill }.fixedSize()
                         // A 16:9 card has one line of pills to give: stacked, the second sat
                         // on the name.
                         statePill
                     }
-                    .layoutPriority(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(11)
+
+                // Bottom left, the top line left to the pills (asked 2026-10-26).
+                if !grouped {
+                    folder
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .padding(11)
+                }
             }
             // Inside a group, the height its row gives it — see `GroupTile.Cards`.
             .frame(height: grouped ? nil : Self.height, alignment: .top)
@@ -1027,8 +1028,6 @@ struct SessionTile: View {
             .foregroundStyle(.white.opacity(0.4))
             .lineLimit(1)
             .truncationMode(.tail)
-            // Capped so a long path outside ~/self truncates instead of stacking the pills.
-            .frame(maxWidth: 110, alignment: .leading)
     }
 
     /// Sits next to the state pill while sub-agents are out. The pill says the session is
