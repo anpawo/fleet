@@ -100,10 +100,15 @@ if CommandLine.arguments.contains("--memory") {
 
         // Two samples: a CPU percentage is a difference between them, so one alone says
         // nothing — the same reason a freshly launched Fleet reaps nothing for two minutes.
+        let before = MemoryPressure.cpuTicks()
         let reaper = Reaper()
         reaper.tick()
         Thread.sleep(forTimeInterval: 1.5)
         reaper.tick()               // the second sample is the one that yields a percentage
+        if let before, let after = MemoryPressure.cpuTicks() {
+            let busy = MemoryPressure.busyShare(from: before, to: after)
+            print("cpu:      \(Int((busy * 100).rounded()))% busy (strained at \(Int(Config.strainedCPU * 100))% for \(Int(Config.strainedCPUFor)) s)")
+        }
 
         print("\ncandidates:")
         for candidate in Reaper.candidates() {

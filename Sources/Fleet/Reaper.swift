@@ -28,21 +28,36 @@ enum MemoryPressure {
         return Level(rawValue: value) ?? .normal
     }
 
-    /// How many threads are queued for each core, averaged over the last minute.
+    /// Ticks the CPU has spent at work and idle since boot, summed over every core.
     ///
-    /// One per core means every core is busy and the next thread waits. Nothing else Fleet
+    /// Their share between two reads says whether every core is busy. Nothing else Fleet
     /// reads says that: memory can be fine, the kernel's pressure normal, Fleet's own tick
     /// perfectly on time — a five-millisecond block still gets placed — while every window on
-    /// the machine stutters because the run queue is full.
-    static func loadPerCore() -> Double {
-        var load = loadavg()
-        var size = MemoryLayout<loadavg>.size
-        guard sysctlbyname("vm.loadavg", &load, &size, nil, 0) == 0, load.fscale > 0 else {
-            return 0
+    /// the machine stutters because no core is free.
+    ///
+    /// Not the load average, which said it before 26-10: it counts threads waiting as well as
+    /// running, read 6 to 7 on these 10 cores with half the CPU idle, and as a one-minute
+    /// average it kept sessions held for a minute after the work had stopped.
+    static func cpuTicks() -> (busy: UInt32, idle: UInt32)? {
+        var info = host_cpu_load_info()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
+        let ok = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
+            }
         }
-        let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
-        return cores > 0 ? Double(load.ldavg.0) / Double(load.fscale) / cores : 0
+        guard ok == KERN_SUCCESS else { return nil }
+        let t = info.cpu_ticks
+        // Counters wrap, so every sum and difference wraps with them.
+        return (t.0 &+ t.1 &+ t.3, t.2)
     }
+    /// The share of the CPU at work between two reads of `cpuTicks`.
+    static func busyShare(from a: (busy: UInt32, idle: UInt32), to b: (busy: UInt32, idle: UInt32)) -> Double {
+        let work = Double(b.busy &- a.busy), rest = Double(b.idle &- a.idle)
+        return work + rest > 0 ? work / (work + rest) : 0
+    }
+    /// Once: every `mach_host_self()` adds a reference to the port that nothing releases.
+    private static let host = mach_host_self()
 
     /// Bytes of swap in use, and the size of the swap file backing it.
     static func swap() -> (used: UInt64, total: UInt64) {
@@ -214,8 +229,10 @@ final class Reaper: ObservableObject {
 
     /// Consecutive ticks that arrived late. See `Config.stallStreak`.
     private var lateStreak = 0
-    /// Consecutive samples with every core spoken for. See `Config.strainedLoadStreak`.
-    private var loadStreak = 0
+    /// The CPU's ticks at the last sample, and how long every sample since has found it full.
+    /// See `Config.strainedCPU`.
+    private var lastTicks: (ticks: (busy: UInt32, idle: UInt32), at: Date)?
+    private var busyFor: TimeInterval = 0
     /// When the expensive half of a tick last ran.
     private var lastScan = Date.distantPast
 
@@ -293,9 +310,18 @@ final class Reaper: ObservableObject {
         }
         let stalling = lateStreak >= Config.stallStreak
 
-        let load = MemoryPressure.loadPerCore()
-        loadStreak = load >= Config.strainedLoad ? loadStreak + 1 : 0
-        let saturated = loadStreak >= Config.strainedLoadStreak
+        // Back to zero at the first sample with a core to spare: that is when a held session
+        // can go again, not a minute later.
+        var busy = 0.0
+        if let ticks = MemoryPressure.cpuTicks() {
+            let at = Date()
+            if let last = lastTicks {
+                busy = MemoryPressure.busyShare(from: last.ticks, to: ticks)
+                busyFor = busy >= Config.strainedCPU ? busyFor + at.timeIntervalSince(last.at) : 0
+            }
+            lastTicks = (ticks, at)
+        }
+        let saturated = busyFor >= Config.strainedCPUFor
 
         let full = footprint.total > 0
             && Double(footprint.used) / Double(footprint.total) >= Config.strainedRAM
@@ -311,7 +337,7 @@ final class Reaper: ObservableObject {
         // Named in the order they arrive, so the line says the earliest true thing rather
         // than the worst one: a full run queue precedes a late tick, which precedes the RAM.
         if saturated {
-            struggleReason = String(format: "every core is busy (load %.1f per core)", load)
+            struggleReason = String(format: "every core is busy (%.0f%% of the CPU)", busy * 100)
         } else if stalling {
             struggleReason = String(format: "Fleet's own tick is %.1fs late", lateness)
         } else {
@@ -326,7 +352,7 @@ final class Reaper: ObservableObject {
     /// For `--render --strain`: the amber state, over whatever is really holding the memory.
     func simulateStrain() {
         struggling = true
-        struggleReason = "every core is busy (load 4.2 per core)"
+        struggleReason = "every core is busy (98% of the CPU)"
         hogs = Reaper.topHogs(reapable: [])
     }
 

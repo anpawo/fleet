@@ -5,17 +5,18 @@ enum Config {
     /// Full-refresh cadence when at least one session is alive but the panel is hidden. Fleet
     /// keeps its picture current in the background so the panel is never a moment out of date
     /// when it appears — a stale first frame is worse than the wakeups cost.
-    /// How deep the run queue has to be, per core, before the machine counts as not keeping
-    /// up. One means every core has a thread on it and the next one waits — which is what a
-    /// full build does, and what everything else on the machine pays for.
+    /// How much of the CPU, over every core, has to be at work before the machine counts as not
+    /// keeping up. Nine tenths of ten cores leaves less than one for the window you are typing
+    /// in — which is what a full build does, and what everything else on the machine pays for.
     ///
-    /// This is the signal that arrives *first*. Memory fills over minutes and a late tick only
-    /// shows once the scheduler is already missing appointments, but the load average moves the
-    /// second the work starts.
-    static let strainedLoad = 1.0
-    /// Two samples, not one: `vm.loadavg` is already a one-minute average, so a spike has been
-    /// smoothed away before it gets here, and two in a row is ten seconds of a full machine.
-    static let strainedLoadStreak = 2
+    /// This is the signal that arrives *first*, and leaves first. Memory fills over minutes and
+    /// a late tick only shows once the scheduler is already missing appointments, but the CPU
+    /// is full the second the work starts and has room again the second it ends — when the
+    /// sessions held meanwhile have to go (asked 26-10). See `MemoryPressure.cpuTicks`.
+    static let strainedCPU = 0.9
+    /// For this long, not one sample: an app launching or one file compiling fills every core
+    /// for a moment and is over before anyone notices.
+    static let strainedCPUFor: TimeInterval = 10
 
     /// How full the RAM has to be before any of this is worth a word.
     ///
