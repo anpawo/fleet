@@ -116,7 +116,7 @@ enum Launchd {
             let state = live[label]
             var job = judge(label, plist, state, age: state?.pid.flatMap { ages[$0] })
             if let own = ownNote(label) { job.note = own }
-            job.address = state?.pid.flatMap { ports[$0] }
+            job.address = (state?.pid.flatMap { ports[$0] } ?? socketPort(plist))
                 .map { serves($0, probing: probing) ? "http://localhost:\($0)" : "127.0.0.1:\($0)" }
             return job
         }.sorted { $0.name < $1.name }
@@ -149,7 +149,10 @@ enum Launchd {
                    enabled: enabled,
                    failing: failing,
                    triggered: trigger != nil,
-                   ok: trigger != nil ? (enabled && !failing && hung == nil) : state?.pid != nil,
+                   // A server launchd starts at the first request (`Sockets`) has no pid between two,
+                   // and is well as long as launchd holds its port and it did not crash.
+                   ok: trigger != nil ? (enabled && !failing && hung == nil)
+                       : plist["Sockets"] != nil ? enabled && !failing : state?.pid != nil,
                    note: local?.notes?[label] ?? notes[label] ?? fallbackNote(plist),
                    busy: state?.pid != nil,
                    // A resident's last exit is history — see `ok`.
@@ -215,6 +218,14 @@ enum Launchd {
             return "on \((first as NSString).lastPathComponent)"
         }
         return nil
+    }
+
+    /// The port launchd listens on for a job it starts at the first request: between two, no
+    /// process holds it to be read off.
+    private static func socketPort(_ plist: [String: Any]) -> Int? {
+        let sockets = (plist["Sockets"] as? [String: Any])?.values.first
+        let first = (sockets as? [String: Any]) ?? (sockets as? [[String: Any]])?.first
+        return (first?["SockServiceName"] as? String).flatMap { Int($0) }
     }
 
     private static let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]

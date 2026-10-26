@@ -416,6 +416,10 @@ enum SelfCheck {
         expect(Launchd.judge("s14.web", resident, (nil, 0), age: nil).ok, false, "a resident with no pid is not ok")
         expect(Launchd.judge("s14.web", resident, (42, 75), age: nil).deferred, false,
                "a resident whose last exit was 75 is not deferred")
+        let onRequest: [String: Any] = ["Sockets": ["Listeners": ["SockServiceName": "8769"]]]
+        expect(Launchd.judge("s14.web", onRequest, (nil, 0), age: nil).ok, true,
+               "a server launchd starts at the first request is ok with no pid between two")
+        expect(Launchd.judge("s14.web", onRequest, (nil, 1), age: nil).ok, false, "one that crashed is not")
 
         var retrying = failed
         retrying.repairing = true
