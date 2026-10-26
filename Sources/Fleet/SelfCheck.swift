@@ -22,6 +22,7 @@ enum SelfCheck {
         queuedPrompt(expect)
         freshSession(expect)
         rescuedBinding(expect)
+        twinBinding(expect)
         heldPrompt(expect)
         ghosts(expect)
         ports(expect)
@@ -692,6 +693,27 @@ enum SelfCheck {
         registry.bind([proc])
         expect(registry.bindings[proc.pid] == old, true,
                "a session bound outside its folder keeps its file when a new one appears there")
+    }
+
+    /// Two windows on one conversation write the same record in turn; each keeps the file, and
+    /// a pid that only guessed it loses it (26-10: the twin showed as an empty NEW card).
+    private static func twinBinding(_ expect: (Bool, Bool, String) -> Void) {
+        let path = NSTemporaryDirectory() + "fleet-selftest-twin-\(getpid()).jsonl"
+        try? "".write(toFile: path, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let hour = Date().addingTimeInterval(-3600)
+        let procs = [99_997, 99_998, 99_999].map {
+            ClaudeProcess(pid: $0, ppid: 1, cwd: "/tmp", tty: "", startedAt: hour, cpuNanos: 0)
+        }
+        let registry = SessionRegistry()
+        registry.bindings[99_999] = path
+        for (pid, ago) in [(pid_t(99_997), 20.0), (99_998, 10)] {
+            registry.bindFromHooks(procs, records: ["twin": Hooks.Record(
+                state: .running, at: Date().addingTimeInterval(-ago), pids: [pid], transcriptPath: path)])
+        }
+        expect(registry.bindings[99_997] == path && registry.bindings[99_998] == path, true,
+               "both windows resumed on one conversation keep its file")
+        expect(registry.bindings[99_999] == nil, true, "a guess on that file gives it up")
     }
 
     private static func freshSession(_ expect: (Int, Int, String) -> Void) {

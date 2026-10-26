@@ -9,6 +9,10 @@ final class SessionRegistry {
     private var cpuSamples: [pid_t: (nanos: UInt64, at: Date)] = [:]
     /// Sticky pid -> transcript bindings, so a session keeps its file once identified.
     var bindings: [pid_t: String] = [:]
+    /// What the hooks last named each live pid as writing. Kept across passes: a record is one
+    /// file per session id, so two windows resumed on one conversation overwrite each other's
+    /// pid in it, and the one not named last showed as an empty NEW card (26-10).
+    private var named: [pid_t: (path: String, at: Date)] = [:]
     /// Throttle for the cross-project rescue scan — see `rescueUnbound`.
     private var lastWideScan = Date.distantPast
     private let screens = TerminalWatch()
@@ -212,26 +216,27 @@ final class SessionRegistry {
     /// of the pairing. The hook process is long gone by the time Fleet reads the record, but the
     /// pid it names is the session's, and that one is still there.
     @discardableResult
-    private func bindFromHooks(_ procs: [ClaudeProcess]) -> Set<pid_t> {
+    func bindFromHooks(_ procs: [ClaudeProcess],
+                       records: [String: Hooks.Record] = Hooks.records()) -> Set<pid_t> {
         let live = Set(procs.map(\.pid))
-        var newest: [pid_t: (path: String, at: Date)] = [:]
-        for (_, record) in Hooks.records() {
+        named = named.filter { live.contains($0.key) }
+        for (_, record) in records {
             guard let path = record.transcriptPath,
                   let pid = record.pids.first(where: { live.contains($0) }),
                   FileManager.default.fileExists(atPath: path) else { continue }
-            if let current = newest[pid], current.at >= record.at { continue }
-            newest[pid] = (path, record.at)
+            if let current = named[pid], current.at >= record.at { continue }
+            named[pid] = (path, record.at)
         }
-        guard !newest.isEmpty else { return [] }
+        guard !named.isEmpty else { return [] }
 
         var bound: Set<pid_t> = []
         for proc in procs {
-            guard let match = newest[proc.pid],
+            guard let match = named[proc.pid],
                   // A record older than the process itself came from whatever held this pid
                   // before — the session it names is not this one.
                   match.at >= proc.proc_startMinusGrace else { continue }
-            // The file can only belong to one session, and it now belongs to this one.
-            for (pid, path) in bindings where path == match.path && pid != proc.pid {
+            // A guess that took this file is wrong now; a twin the hooks named is not.
+            for (pid, path) in bindings where path == match.path && named[pid]?.path != path {
                 bindings[pid] = nil
             }
             if bindings[proc.pid] != match.path {
