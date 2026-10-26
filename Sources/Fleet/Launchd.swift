@@ -123,8 +123,8 @@ enum Launchd {
     }
 
     /// A routine whose sentence moves with what it holds writes it itself, in
-    /// `~/.claude/fleet/notes/<label>`: `mac.checker` lists what it is watching, one line each,
-    /// and that list changes with every answer. Read at each scan, where `routines.json` is
+    /// `~/.claude/fleet/notes/<label>`: `mac.checker` says how many answers it awaits, which
+    /// changes with every answer. Read at each scan, where `routines.json` is
     /// read once.
     private static func ownNote(_ label: String) -> String? {
         let file = URL(fileURLWithPath: Hooks.home).appending(path: "notes/\(label)")
