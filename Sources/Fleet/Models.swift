@@ -7,12 +7,12 @@ enum Config {
     /// when it appears — a stale first frame is worse than the wakeups cost.
     /// How much of the CPU, over every core, has to be at work before the machine counts as not
     /// keeping up. Nine tenths of ten cores leaves less than one for the window you are typing
-    /// in — which is what a full build does, and what everything else on the machine pays for.
+    /// in: that is what a full build does, and what everything else on the machine pays for.
     ///
     /// This is the signal that arrives *first*, and leaves first. Memory fills over minutes and
     /// a late tick only shows once the scheduler is already missing appointments, but the CPU
-    /// is full the second the work starts and has room again the second it ends — when the
-    /// sessions held meanwhile have to go (asked 26-10). See `MemoryPressure.cpuTicks`.
+    /// is full the second the work starts and has room again the second it ends, which is when
+    /// the sessions held meanwhile have to go (asked 26-10). See `MemoryPressure.cpuTicks`.
     static let strainedCPU = 0.9
     /// For this long, not one sample: an app launching or one file compiling fills every core
     /// for a moment and is over before anyone notices.
