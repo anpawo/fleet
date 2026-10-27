@@ -98,6 +98,16 @@ patched
 HOME="$FAKE" sh "$HOOK" sweep </dev/null
 wait
 check "idle session reached by the patcher's sweep" "$SID --model fable"
+# No state file from a session's start to its first prompt (2.1.312: patched twice a minute apart,
+# the sessions the first sweep had relaunched were left on the first copy).
+touch -t 202001010000 "$BIN"
+rm -f "$FAKE/.claude/fleet/state/$SID.json"
+LIFE=4 fire SessionStart start &
+sleep 1
+patched
+HOME="$FAKE" sh "$HOOK" sweep </dev/null
+wait
+check "session with no turn since it started, reached by the patcher's sweep" "$SID --model fable"
 unset BIN
 
 # Claude Code no longer hands the binary to its hooks: it is read off the process. The stand-in

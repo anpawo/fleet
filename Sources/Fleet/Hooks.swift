@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 23
+    static let version = 24
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -552,7 +552,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 23
+    # fleet-hook-version: 24
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -597,6 +597,8 @@ enum Hooks {
     # it scheduled (`<id>.bg`) at the first turn that ends with neither: ending it would lose them.
     # The text typed in its prompt and not sent comes back with it: `<id>.draft`, Fleet's mod.
     # A session closed by hand in that second is gone, and nothing brings it back.
+    # No `<id>.json` is idle too: a session has none from its start to its first prompt, and one
+    # just relaunched onto a binary patched again a minute later sat on the old one (2.1.312).
     relaunch() {
         [ -f "$dir/$1.shell" ] || return 0
         [ -f "$dir/$1.bg" ] && return 0
@@ -624,7 +626,7 @@ enum Hooks {
         fi
         model=$(plutil -extract model raw -o - "$settings" 2>/dev/null)
         /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'sleep 1
-            grep -q "$1" "$2" && kill -0 "$6" || exit 0
+            { [ ! -e "$2" ] || grep -q "$1" "$2"; } && kill -0 "$6" || exit 0
             mkdir -p "${3%/*}"
             echo "$7" > "$3.why"
             { echo "$4"; [ -z "$5" ] || { echo --model; echo "$5"; }; } > "$3"
