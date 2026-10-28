@@ -312,7 +312,7 @@ enum ProcessScanner {
     /// way returns nothing for an unprivileged caller — the walk died one step short of the
     /// terminal every single time, which is why clicking a tile did nothing. sysctl reports
     /// the whole process table regardless of owner.
-    private static func parentMap() -> [pid_t: pid_t] {
+    static func parentMap() -> [pid_t: pid_t] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var size = 0
         guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [:] }
@@ -334,8 +334,9 @@ enum ProcessScanner {
     ///
     /// Only ever called on a click, so reading the full process table here is free; it is not
     /// on any polling path.
-    static func hostApplication(of pid: pid_t) -> NSRunningApplicationBox? {
-        let parents = parentMap()
+    static func hostApplication(of pid: pid_t,
+                                parents: [pid_t: pid_t]? = nil) -> NSRunningApplicationBox? {
+        let parents = parents ?? parentMap()
         var current = pid
         for _ in 0..<12 {
             guard let parent = parents[current], parent > 1 else { return nil }

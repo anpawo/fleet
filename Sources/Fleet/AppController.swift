@@ -19,11 +19,16 @@ final class AppController: ObservableObject {
 
     @Published private(set) var sessions: [Session] = [] {
         didSet {
+            elsewhere = Spaces.elsewhere(sessions)
             statusItem?.update(off: popupsOff)
             notifier.update(sessions: sessions, panelVisible: isPanelVisible)
             nameOutsiders()
         }
     }
+
+    /// The sessions whose terminal is on another desktop: the panel shows the rest only.
+    @Published private(set) var elsewhere: Set<pid_t> = []
+    var sessionsHere: [Session] { sessions.filter { !elsewhere.contains($0.id) } }
 
     /// What to call a session the directory does not name: one outside `~/self`, where the
     /// tile would read "mr" or "Downloads", and one of several sharing a project, where every

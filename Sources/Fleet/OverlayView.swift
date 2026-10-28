@@ -374,7 +374,9 @@ struct OverlayView: View {
             legendKey
         } trailing: {
             if !controller.sessions.isEmpty {
-                Text("\(controller.sessions.count)")
+                let away = controller.elsewhere.count
+                Text("\(controller.sessions.count - away)"
+                     + (away == 0 ? "" : " · +\(away) on other desktop\(away == 1 ? "" : "s")"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.45))
                     .titleGround(1)
@@ -479,7 +481,7 @@ struct OverlayView: View {
 
     /// Every directory, and every session that has one to itself.
     private var cells: [FleetCell] {
-        groups(of: controller.sessions).compactMap { group -> FleetCell? in
+        groups(of: controller.sessionsHere).compactMap { group -> FleetCell? in
             // A directory holding one session has nothing to gather: its card is the session.
             if group.sessions.count == 1, let only = group.sessions.first {
                 return .session(only, heading: only.label ?? only.topic)

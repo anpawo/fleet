@@ -245,6 +245,22 @@ extension Spaces {
         return move(window, to: row[min(here + step, row.count - 1)])
     }
 
+    /// The sessions whose terminal has no window on the desktop in front of you: the panel
+    /// leaves them out and counts them (asked 2026-10-28). A session with no terminal at all
+    /// belongs to no desktop and shows on every one. Matched by process, which is exact for
+    /// Ghostty (one process per window); a Terminal.app holding many windows counts as here
+    /// when any one of them is.
+    static func elsewhere(_ sessions: [Session]) -> Set<pid_t> {
+        let here = Set(windowsHere().compactMap { $0[kCGWindowOwnerPID as String] as? pid_t })
+        let parents = ProcessScanner.parentMap()
+        return Set(sessions.compactMap { session in
+            guard let host = ProcessScanner.hostApplication(of: session.proc.pid,
+                                                            parents: parents)?.app,
+                  !here.contains(host.processIdentifier) else { return nil }
+            return session.id
+        })
+    }
+
     /// The windows on the desktops in front of you, frontmost first, menus and panels left out.
     private static func windowsHere() -> [[String: Any]] {
         (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
