@@ -106,7 +106,9 @@ enum SelfCheck {
     /// How the grid stands its directories: each one column wide, a cell down for each session.
     private static func grid(_ expect: (Bool, Bool, String) -> Void) {
         // The panel's own grid: three columns of 212 and two gaps of 26.
-        func size(_ count: Int) -> CGSize { GroupTile.size(holding: count, in: 688, spacing: 26) }
+        func size(_ count: Int, across: Int = 1) -> CGSize {
+            GroupTile.size(holding: count, across: across, in: 688, spacing: 26)
+        }
         func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.001 }
         let cell = GroupTile.cell(688, spacing: 26)
         expect(cell == CGSize(width: 212, height: SessionTile.height)
@@ -139,6 +141,27 @@ enum SelfCheck {
         grid.wide = [size(2), size(3), size(3)]
         expect(grid.rest(3).frames.map(\.minX).map { ($0 / 238).rounded() } == [2, 0, 1], true,
                "grid: two of a height keep the order they come in")
+
+        // Two across (asked 2026-10-28): only where one column runs past the room.
+        func standing(_ counts: [Int], room: CGFloat) -> [Int] {
+            let laid = FleetLayout(tile: grid.tile, spacing: 26, columns: 3).widening(counts, room: room) {
+                GroupTile.size(holding: $0, across: $1, in: 688, spacing: 26)
+            }
+            return laid.wide.map { $0.map { laid.taken($0.width) } ?? 0 }
+        }
+        expect(standing([5, 1], room: size(5).height) == [1, 0], true,
+               "grid: a directory that fits in one column stays in one")
+        expect(standing([5, 1], room: size(5).height - 1) == [2, 0], true,
+               "grid: one that does not stands two across, the session beside it")
+        expect(standing([5, 2, 1, 1, 1], room: size(3, across: 2).height) == [1, 1, 0, 0, 0], true,
+               "grid: not when two across pushes another card past the room")
+        expect(standing([2, 1], room: 10) == [1, 0], true, "grid: never a directory of two")
+        expect(standing([3, 6, 1], room: size(6).height - 1) == [1, 2, 0], true,
+               "grid: the one with the most sessions stands two across first")
+        let pair = GroupTile.card(count: 5, across: 2, in: 688, spacing: 26)
+        expect(near(2 * pair.width + 3 * GroupTile.inset, size(5, across: 2).width)
+               && pair.height >= 0.75 * SessionTile.height, true,
+               "grid: two across, its cards keep most of a session's height")
     }
 
     // MARK: - Projects

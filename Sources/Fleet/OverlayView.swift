@@ -47,6 +47,11 @@ struct OverlayView: View {
     @State private var schoolOpen = CommandLine.arguments.contains("--school-open")
     /// MAIL's list, measured — see `reelsRoom`.
     @State private var mailNeed: CGFloat = 0
+    /// How tall the grid's own area is, measured: the heading above it is laid out, not
+    /// arithmetic. See `room`.
+    @State private var gridSpace: CGFloat = 0
+    /// What the grid takes off that height: its own padding, top and bottom.
+    private static let gridPadding: CGFloat = 38
 
 
     /// Fixed tiles per row and fixed width, rather than adaptive: a partial last row, and a
@@ -415,6 +420,11 @@ struct OverlayView: View {
                 // The height the block was given — the same one the two columns either side
                 // were given, so all three end on the same line. Whatever is past it scrolls.
                 .frame(maxHeight: .infinity, alignment: .top)
+                .background(GeometryReader { room in
+                    Color.clear
+                        .onAppear { gridSpace = room.size.height }
+                        .onChange(of: room.size.height) { _, height in gridSpace = height }
+                })
             } else {
                 grid.padding(.top, 18).padding(.bottom, 20)
             }
@@ -491,22 +501,30 @@ struct OverlayView: View {
     }
 
 
+    /// The room the grid has. Offscreen nothing has been laid out to measure, so the block's
+    /// height less a heading stands in.
+    private var room: CGFloat {
+        gridSpace > 0 ? gridSpace - Self.gridPadding
+                      : max(0, Self.blockHeight - Self.gridPadding - 132)
+    }
+
     /// Every card, in rows of three, laid out by hand rather than by stacks — see `FleetLayout`.
     private var grid: some View {
         let cells = self.cells
         // Every directory stands unfolded in the grid itself, its sessions in view with nothing
         // to click (asked 2026-10-12; never folded since 2026-10-18), in one column (asked
-        // 2026-10-22).
+        // 2026-10-22), or two where that alone keeps the grid on the screen (asked 2026-10-28).
         let layout = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
-                                 spacing: tileSpacing, columns: Self.tilesPerRow,
-                                 wide: cells.map {
-                                     $0.count > 1 ? GroupTile.size(holding: $0.count, in: centerWidth, spacing: tileSpacing) : nil
-                                 })
+                                 spacing: tileSpacing, columns: Self.tilesPerRow)
+            .widening(cells.map(\.count), room: room) {
+                GroupTile.size(holding: $0, across: $1, in: centerWidth, spacing: tileSpacing)
+            }
         return layout {
-            ForEach(cells) { cell in
+            ForEach(Array(cells.enumerated()), id: \.element.id) { i, cell in
                 switch cell {
                 case let .group(name, sessions):
                     GroupTile(name: name, sessions: sessions,
+                              across: layout.wide[i].map { layout.taken($0.width) } ?? 1,
                               spacing: tileSpacing, width: centerWidth,
                               onActivate: { controller.activate($0) })
                 case let .session(session, heading):
@@ -760,8 +778,25 @@ struct FleetLayout: Layout {
     }
 
     /// How many of the grid's columns a card this wide covers.
-    private func taken(_ width: CGFloat) -> Int {
+    func taken(_ width: CGFloat) -> Int {
         Int(((width + spacing) / (tile.width + spacing) - 0.01).rounded(.up))
+    }
+
+    /// This grid with every directory one column wide, unless that runs it past `room`: then
+    /// the fewest directories stood two cells across, the most sessions first, that end it
+    /// inside `room` (asked 2026-10-28). None does, every one stays one column wide and the
+    /// grid scrolls. Never a directory of two: side by side they share one row, and their
+    /// cards lose the name's band (2026-10-22). `size` takes the count and the cells across.
+    func widening(_ counts: [Int], room: CGFloat, size: (Int, Int) -> CGSize) -> FleetLayout {
+        let order = counts.indices.filter { counts[$0] > 2 }.sorted { (counts[$1], $0) < (counts[$0], $1) }
+        let tries = (0 ... order.count).map { k in
+            var layout = self
+            layout.wide = counts.indices.map {
+                counts[$0] > 1 ? size(counts[$0], order.prefix(k).contains($0) ? 2 : 1) : nil
+            }
+            return layout
+        }
+        return tries.first { $0.rest(counts.count).height <= room } ?? tries[0]
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -799,10 +834,13 @@ enum FleetCell: Identifiable {
 
 /// One working directory, its sessions as cards inside its own border, in the one colour no
 /// state wears: one of the grid's columns, a cell down for each of its sessions (asked
-/// 2026-10-22: two side by side in one row were left half a card's height under the name).
+/// 2026-10-22: two side by side in one row were left half a card's height under the name),
+/// or two of them, a cell down for each pair, where one would not fit (asked 2026-10-28).
 struct GroupTile: View {
     let name: String
     let sessions: [Session]
+    /// The grid's cells it stands across, and so its cards to a row.
+    var across = 1
     var spacing: CGFloat
     /// The grid's width, which its cards are laid out at.
     var width: CGFloat
@@ -813,11 +851,14 @@ struct GroupTile: View {
     /// and a card that borrowed one of those would read as a session in that state.
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
-    /// What the card takes: one of the grid's cells across, and as many down as it holds.
-    static func size(holding count: Int, in width: CGFloat, spacing: CGFloat) -> CGSize {
+    /// What the card takes: `across` of the grid's cells, and a row of them down for each
+    /// `across` sessions it holds.
+    static func size(holding count: Int, across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
         let cell = cell(width, spacing: spacing)
-        return CGSize(width: cell.width, height: CGFloat(count) * (cell.height + spacing) - spacing)
+        return CGSize(width: CGFloat(across) * (cell.width + spacing) - spacing,
+                      height: CGFloat(rows(count, across)) * (cell.height + spacing) - spacing)
     }
+    private static func rows(_ count: Int, _ across: Int) -> Int { (count + across - 1) / across }
     /// One cell of the grid a block this wide holds.
     static func cell(_ width: CGFloat, spacing: CGFloat) -> CGSize {
         let across = CGFloat(OverlayView.tilesPerRow)
@@ -836,17 +877,19 @@ struct GroupTile: View {
     /// The name stands centred over the cards, in a band of its own.
     static let nameBand = nameAir + nameLine + nameFoot
     /// One of its cards: the group's cells less the gaps and the name's band.
-    static func card(count: Int, in width: CGFloat, spacing: CGFloat) -> CGSize {
-        let outer = size(holding: count, in: width, spacing: spacing)
-        let rows = CGFloat(count)
-        return CGSize(width: outer.width - 2 * inset,
+    static func card(count: Int, across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
+        let outer = size(holding: count, across: across, in: width, spacing: spacing)
+        let rows = CGFloat(rows(count, across))
+        let across = CGFloat(across)
+        return CGSize(width: (outer.width - (across + 1) * inset) / across,
                       height: (outer.height - (rows + 1) * inset - nameBand) / rows)
     }
 
     var body: some View {
         GeometryReader { box in
             ZStack(alignment: .topLeading) {
-                Cards(sessions: sessions, spacing: spacing, width: width, onActivate: onActivate)
+                Cards(sessions: sessions, across: across, spacing: spacing, width: width,
+                      onActivate: onActivate)
                     // Held to the card's own size as far as the stack goes: left to their
                     // full one, they ran out past the border.
                     .frame(width: box.size.width, height: box.size.height, alignment: .topLeading)
@@ -888,22 +931,27 @@ struct GroupTile: View {
     /// The sessions, under the name, in the order the grid has them.
     private struct Cards: View {
         let sessions: [Session]
+        let across: Int
         let spacing: CGFloat
         let width: CGFloat
         let onActivate: (Session) -> Void
 
         var body: some View {
-            let card = GroupTile.card(count: sessions.count, in: width, spacing: spacing)
+            let card = GroupTile.card(count: sessions.count, across: across, in: width, spacing: spacing)
             VStack(alignment: .leading, spacing: GroupTile.inset) {
-                ForEach(sessions, id: \.id) { session in
-                    // Inside a directory the card wears its topic: the directory is
-                    // what these sessions have in common, and a row of cards all
-                    // saying "portfolio" is a row you cannot choose from.
-                    SessionTile(session: session, heading: session.label ?? session.topic,
-                                grouped: true) {
-                        onActivate(session)
+                ForEach(Array(stride(from: 0, to: sessions.count, by: across)), id: \.self) { start in
+                    HStack(spacing: GroupTile.inset) {
+                        ForEach(sessions[start ..< min(start + across, sessions.count)], id: \.id) { session in
+                            // Inside a directory the card wears its topic: the directory is
+                            // what these sessions have in common, and a row of cards all
+                            // saying "portfolio" is a row you cannot choose from.
+                            SessionTile(session: session, heading: session.label ?? session.topic,
+                                        grouped: true) {
+                                onActivate(session)
+                            }
+                            .frame(width: card.width, height: card.height)
+                        }
                     }
-                    .frame(width: card.width, height: card.height)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
