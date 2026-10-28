@@ -5,6 +5,7 @@
 # été rejoués et leur code tient toujours.
 set -e
 BIN="$(dirname "$0")/.build/release/fleet"
+[ -x "$BIN" ] || BIN="$HOME/apps/Fleet.app/Contents/MacOS/fleet"
 [ -x "$BIN" ] || BIN="$HOME/Applications/Fleet.app/Contents/MacOS/fleet"
 DIR=$(mktemp -d)
 trap 'rm -rf "$DIR"' EXIT

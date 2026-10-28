@@ -152,7 +152,7 @@ cd fleet
 ./install.sh
 ```
 
-That builds the app, installs it to `~/Applications`, registers a LaunchAgent so it starts at
+That builds the app, installs it to `~/apps` (else `~/Applications`), registers a LaunchAgent so it starts at
 every login and restarts if it ever dies, and drops a `fleet` command in `~/.local/bin`. Nothing
 else to configure.
 

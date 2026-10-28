@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Builds, installs to ~/Applications, and registers a LaunchAgent so Fleet
+# Builds, installs to ~/apps (else ~/Applications), and registers a LaunchAgent so Fleet
 # starts at login and stays running.
 set -euo pipefail
+APPS="$HOME/apps"; [ -d "$APPS" ] || APPS="$HOME/Applications"
 
 cd "$(dirname "$0")"
 
 LABEL="app.fleet"
-DEST="$HOME/Applications/Fleet.app"
+DEST="$APPS/Fleet.app"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 BIN="$HOME/.local/bin"
 
@@ -14,11 +15,11 @@ BIN="$HOME/.local/bin"
 
 # One-time migration: the app used to install itself as ClaudeFleet. Leaving that copy in
 # place would mean two agents scanning and two Spotlight hits for the same tool.
-if [ -e "$HOME/Applications/ClaudeFleet.app" ] || [ -e "$HOME/Library/LaunchAgents/com.mr.claudefleet.plist" ]; then
+if [ -e "$APPS/ClaudeFleet.app" ] || [ -e "$HOME/Library/LaunchAgents/com.mr.claudefleet.plist" ]; then
 	echo "==> Removing the previous ClaudeFleet install"
 	launchctl bootout "gui/$UID/com.mr.claudefleet" 2>/dev/null || true
 	rm -f "$HOME/Library/LaunchAgents/com.mr.claudefleet.plist"
-	rm -rf "$HOME/Applications/ClaudeFleet.app"
+	rm -rf "$APPS/ClaudeFleet.app"
 fi
 # One-time migration: the agent was `com.mr.fleet` until 2026-09-27, when app agents took the
 # `app.` prefix. The bundle id stays `com.mr.fleet` — the TCC grants and the Keychain items are
@@ -29,7 +30,7 @@ if [ -e "$HOME/Library/LaunchAgents/com.mr.fleet.plist" ]; then
 fi
 
 echo "==> Installing to $DEST"
-mkdir -p "$HOME/Applications"
+mkdir -p "$APPS"
 # Stop the running copy, but do NOT bootout: unregistering the agent and registering it again
 # is what makes macOS post the "App Background Activity" banner on every install. `kill` stops
 # the process and KeepAlive is suppressed until we kickstart it below.
