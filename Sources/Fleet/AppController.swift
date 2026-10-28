@@ -256,6 +256,12 @@ final class AppController: ObservableObject {
                 if self.isPanelVisible { self.hidePanel() } else { self.forceShow() }
             }
         }
+        HotKey.register(Settings.sendLeft, id: 2) {
+            MainActor.assumeIsolated { Spaces.sendFrontWindow(by: -1) }
+        }
+        HotKey.register(Settings.sendRight, id: 3) {
+            MainActor.assumeIsolated { Spaces.sendFrontWindow(by: 1) }
+        }
     }
 
     /// Manual trigger — Spotlight, the `fleet` command, `--demo`. Skips the idle timer

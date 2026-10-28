@@ -631,6 +631,17 @@ if CommandLine.arguments.contains("--new-desktop") {
     }
 }
 
+// `--send-window <window id> <-1|1>` is ⌥⌘← / ⌥⌘→ on a window named by id rather than the one in
+// front, so a test can move a window of its own and leave his alone.
+if let i = CommandLine.arguments.firstIndex(of: "--send-window"), i + 2 < CommandLine.arguments.count,
+   let window = CGWindowID(CommandLine.arguments[i + 1]), let step = Int(CommandLine.arguments[i + 2]) {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        print("sent: \(Spaces.send(window: window, by: step) ? "ok" : "failed")")
+        exit(0)
+    }
+}
+
 // `--start <directory> ["<prompt>"]` opens a session the way the panel does — new window, its
 // own desktop — without going through the classifier. The placement is the part that breaks,
 // and typing a sentence into the panel every time is a poor way to test a window server.
@@ -1006,7 +1017,7 @@ let knownFlags: Set<String> = [
     "--deferred", "--empty-terminals", "--epitech", "--fake", "--fix", "--fixing", "--focus", "--hung", "--idle", "--install-hooks",
     "--launch", "--mail", "--memory", "--new-desktop", "--no-mail", "--parse", "--reap", "--reel", "--reel-digest", "--reels", "--reels-open",
     "--live", "--money-open", "--reels-run", "--render", "--render-settings", "--route", "--scan", "--school-open", "--screen",
-    "--selftest", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
+    "--selftest", "--send-window", "--settings", "--strain", "--shadows", "--show", "--size", "--spaces-bar", "--start",
     "--todos", "--uninstall-hooks", "--windows",
 ]
 if let unknown = CommandLine.arguments.dropFirst().first(where: {

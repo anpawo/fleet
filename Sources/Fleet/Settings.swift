@@ -26,8 +26,13 @@ enum Settings {
             UInt16(kVK_ANSI_L): "L", UInt16(kVK_ANSI_F): "F", UInt16(kVK_ANSI_M): "M",
             UInt16(kVK_Space): "Space", UInt16(kVK_Escape): "⎋",
             UInt16(kVK_ANSI_N): "N", UInt16(kVK_ANSI_K): "K",
+            UInt16(kVK_LeftArrow): "←", UInt16(kVK_RightArrow): "→",
         ]
     }
+
+    /// Send the window in front to the desktop on that side: `Spaces.sendFrontWindow`.
+    static let sendLeft = Chord(keyCode: UInt16(kVK_LeftArrow), modifiers: UInt32(cmdKey | optionKey))
+    static let sendRight = Chord(keyCode: UInt16(kVK_RightArrow), modifiers: UInt32(cmdKey | optionKey))
 
     /// The chords on offer. A recorder that captures whatever you press would be the general
     /// answer; a list of five is a tenth of the code and covers the chords that are actually

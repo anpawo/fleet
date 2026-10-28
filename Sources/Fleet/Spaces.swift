@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import MachO
 
 /// Making a desktop — a real Space, the one Mission Control's `+` creates.
 ///
@@ -207,3 +208,160 @@ enum Spaces {
 /// Undocumented, but exported from HIServices and callable with no entitlement at all.
 @_silgen_name("CoreDockSendNotification")
 private func CoreDockSendNotification(_ name: CFString, _ reserved: Int32)
+
+// MARK: - Sending a window to the desktop beside it
+
+/// ⌥⌘← and ⌥⌘→ (asked 2026-10-28): the window in front goes to the desktop on that side and
+/// you stay where you are, so a pile of windows is sorted one press each.
+///
+/// macOS 14.5 shut `SLSMoveWindowsToManagedSpace` to everyone but the Dock: it still returns,
+/// and moves nothing (measured here on 26.6). What moves a window now is the operation the Dock
+/// is handed, performed through a function SkyLight has but does not export, so it is looked up
+/// in SkyLight's symbol table, as yabai does since asmvik/yabai#2788. No SIP change.
+extension Spaces {
+
+    /// Past the last desktop a new one is made for the window (Mission Control flashes, see
+    /// `addDesktop`); past the first nothing happens.
+    static func sendFrontWindow(by step: Int) {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != getpid(),
+              let window = windowsHere().first(where: {
+                  $0[kCGWindowOwnerPID as String] as? pid_t == app.processIdentifier
+              }),
+              let id = window[kCGWindowNumber as String] as? CGWindowID else { return }
+        send(window: id, by: step)
+    }
+
+    @discardableResult
+    static func send(window: CGWindowID, by step: Int) -> Bool {
+        guard let space = spaces(of: window).first,
+              var row = desktops(beside: space),
+              let here = row.firstIndex(of: space), here + step >= 0 else { return false }
+        if here + step >= row.count {
+            guard addDesktop(on: display(of: window)),
+                  let grown = waitForDesktops(beside: space, beyond: row.count) else { return false }
+            row = grown
+        }
+        return move(window, to: row[min(here + step, row.count - 1)])
+    }
+
+    /// The windows on the desktops in front of you, frontmost first, menus and panels left out.
+    private static func windowsHere() -> [[String: Any]] {
+        (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                    kCGNullWindowID) as? [[String: Any]] ?? [])
+            .filter { $0[kCGWindowLayer as String] as? Int == 0 }
+    }
+
+    private static func spaces(of window: CGWindowID) -> [UInt64] {
+        (CGSCopySpacesForWindows(CGSMainConnectionID(), 0x7, [window] as CFArray)
+            as? [NSNumber] ?? []).map(\.uint64Value)
+    }
+
+    /// The desktops of the screen holding `space`, left to right. Fullscreen spaces (type 4)
+    /// are stepped over: no window can join one.
+    private static func desktops(beside space: UInt64) -> [UInt64]? {
+        let screens = CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] ?? []
+        return screens.lazy.map { screen in
+            (screen["Spaces"] as? [[String: Any]] ?? [])
+                .filter { $0["type"] as? Int == 0 }
+                .compactMap { ($0["id64"] as? NSNumber)?.uint64Value }
+        }.first { $0.contains(space) }
+    }
+
+    /// The Dock writes a new desktop down a moment after its `+` is pressed.
+    private static func waitForDesktops(beside space: UInt64, beyond count: Int) -> [UInt64]? {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if let row = desktops(beside: space), row.count > count { return row }
+            usleep(20_000)
+        }
+        NSLog("Fleet: Mission Control made no desktop for the window to go to")
+        return nil
+    }
+
+    /// Where a new desktop has to go for the window: on its own screen.
+    private static func display(of window: CGWindowID) -> CGDirectDisplayID {
+        var display = CGMainDisplayID()
+        var count: UInt32 = 0
+        if let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, window)
+                        as? [[String: Any]])?.first,
+           let bounds = (info[kCGWindowBounds as String] as! CFDictionary?)
+               .flatMap({ CGRect(dictionaryRepresentation: $0) }) {
+            CGGetDisplaysWithPoint(CGPoint(x: bounds.midX, y: bounds.midY), 1, &display, &count)
+        }
+        return display
+    }
+
+    private static func move(_ window: CGWindowID, to space: UInt64) -> Bool {
+        guard let perform = performBridged,
+              let type = NSClassFromString("SLSBridgedMoveWindowsToManagedSpaceOperation")
+                as? NSObject.Type,
+              let initialize = class_getMethodImplementation(type, initWithWindows) else {
+            NSLog("Fleet: this macOS has no bridged window move, the window stays where it is")
+            return false
+        }
+        let operation = unsafeBitCast(initialize, to: Initializer.self)(
+            type.perform(NSSelectorFromString("alloc")).takeRetainedValue(), initWithWindows,
+            [window] as CFArray, space)
+        _ = perform(Unmanaged.passUnretained(operation).toOpaque())
+        // Asynchronous, as its name says: done once the window server agrees.
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if spaces(of: window) == [space] { return true }
+            usleep(20_000)
+        }
+        NSLog("Fleet: window \(window) was sent to desktop \(space) and did not go")
+        return false
+    }
+
+    private typealias Initializer = @convention(c) (AnyObject, Selector, CFArray, UInt64) -> AnyObject
+    private typealias Perform = @convention(c) (UnsafeMutableRawPointer) -> Int64
+    private static let initWithWindows = NSSelectorFromString("initWithWindows:spaceID:")
+
+    private static let performBridged: Perform? = symbol(
+        "__ZL54SLSPerformAsynchronousBridgedWindowManagementOperationP47SLSAsynchronousBridgedWindowManagementOperation",
+        in: "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight"
+    ).map { unsafeBitCast($0, to: Perform.self) }
+
+    /// A symbol of a loaded image, local ones included: what `dlsym` cannot reach.
+    private static func symbol(_ name: String, in image: String) -> UnsafeMutableRawPointer? {
+        for i in 0..<_dyld_image_count()
+        where _dyld_get_image_name(i).map({ String(cString: $0) }) == image {
+            guard let header = _dyld_get_image_header(i) else { return nil }
+            let slide = _dyld_get_image_vmaddr_slide(i)
+            var command = UnsafeRawPointer(header).advanced(by: MemoryLayout<mach_header_64>.size)
+            var linkedit: segment_command_64?
+            var symtab: symtab_command?
+            for _ in 0..<header.pointee.ncmds {
+                let kind = command.load(as: load_command.self)
+                if kind.cmd == LC_SYMTAB { symtab = command.load(as: symtab_command.self) }
+                if kind.cmd == LC_SEGMENT_64 {
+                    let segment = command.load(as: segment_command_64.self)
+                    let segname = withUnsafeBytes(of: segment.segname) {
+                        String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
+                    }
+                    if segname == "__LINKEDIT" { linkedit = segment }
+                }
+                command = command.advanced(by: Int(kind.cmdsize))
+            }
+            guard let linkedit, let symtab else { return nil }
+            let base = Int(linkedit.vmaddr) - Int(linkedit.fileoff) + slide
+            guard let names = UnsafePointer<CChar>(bitPattern: base + Int(symtab.stroff)),
+                  let entries = UnsafePointer<nlist_64>(bitPattern: base + Int(symtab.symoff))
+            else { return nil }
+            for entry in UnsafeBufferPointer(start: entries, count: Int(symtab.nsyms))
+            where strcmp(names + Int(entry.n_un.n_strx), name) == 0 {
+                return UnsafeMutableRawPointer(bitPattern: Int(entry.n_value) + slide)
+            }
+        }
+        return nil
+    }
+}
+
+// Re-exported by CoreGraphics from SkyLight.
+@_silgen_name("CGSMainConnectionID")
+private func CGSMainConnectionID() -> Int32
+@_silgen_name("CGSCopyManagedDisplaySpaces")
+private func CGSCopyManagedDisplaySpaces(_ connection: Int32) -> CFArray
+@_silgen_name("CGSCopySpacesForWindows")
+private func CGSCopySpacesForWindows(_ connection: Int32, _ mask: Int32, _ windows: CFArray) -> CFArray
