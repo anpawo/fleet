@@ -3,15 +3,16 @@
 prompt and not sent comes back after Fleet restarts it. The session is ended the way the hook's
 `relaunch` ends it (its note, then SIGTERM) and resumed the way the fish function resumes it;
 what its prompt box holds is read off the file Fleet's mod keeps of it, not off the screen.
-Costs one haiku turn: a session with no turn has no transcript to resume.
+Costs one haiku turn, and one cut before its reply: a session with no turn has no transcript to resume.
 Run after `fleet --install-hooks`."""
-import os, pty, re, select, shutil, signal, sys, time, uuid
+import json, os, pty, re, select, shutil, signal, sys, time, uuid
 
 HOME = os.path.expanduser('~')
 FLEET = HOME + '/.claude/fleet'
 # Below ~, so that the folder is trusted as ~ is, and out of every project's own sessions.
 CWD = HOME + '/.cache/fleet/test-draft'
 DRAFT = 'half a sentence, not sent'
+CUT = 'Write a 2000-word essay about ocean tides, with headings.'
 sid = str(uuid.uuid4())
 # As the fish function sets FLEET_SHELL: the pid of the claude's parent.
 shell = str(os.getpid())
@@ -79,6 +80,19 @@ try:
     first = Session('--session-id', sid, 'Reply with the single word ok and nothing else, no tools.')
     done = first.wait(180, lambda: '"state":"ready"' in (read(f'{FLEET}/state/{sid}.json') or ''))
     check('a first turn ended', done)
+    # Esc before the reply's first word: the prompt goes back in the box and no Stop fires. The
+    # mod's `ready` is the one stamped after the send (the Stop's is a second older at least).
+    first.wait(1.5)
+    sent = int(time.time())
+    first.keys(CUT + '\r')
+    first.wait(0.3)
+    first.keys('\x1b')
+    state = lambda: json.loads(read(f'{FLEET}/state/{sid}.json') or '{}')
+    check('a turn cut before its first word ends ready',
+          first.wait(15, lambda: state().get('state') == 'ready' and state().get('at', 0) > sent), state())
+    holds(first, CUT, 'the prompt it puts back is kept on disk')
+    first.keys('\x15')
+    holds(first, '', 'and emptied with the box')
     first.keys(DRAFT)
     holds(first, DRAFT, 'the text typed and not sent is kept on disk')
     # relaunch, in the hook: the reason, the note, the kill

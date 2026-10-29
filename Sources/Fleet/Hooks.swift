@@ -373,7 +373,7 @@ enum Hooks {
         {
           "name": "fleet",
           "version": "0.1.0",
-          "description": "Keeps the text typed in the prompt and not sent yet through a restart of the session by Fleet"
+          "description": "Keeps the text typed in the prompt and not sent yet through a restart of the session by Fleet, and tells Fleet when a turn ends with no answer"
         }
 
         """),
@@ -440,6 +440,37 @@ enum Hooks {
           on('prompt.edit', ($, e, next) => {
             watch()
             return next(e)
+          })
+          // Esc before a reply's first word puts the prompt back in the box with no edit.
+          on('prompt.change', ($, e, next) => {
+            watch()
+            return next(e)
+          })
+
+          // A turn that ends with no answer fires no Stop, and the `running` its prompt's hook wrote
+          // stayed: WORKING, then NEEDS YOU, on a session sitting at its prompt. An API error that
+          // kills the turn is one; Esc before the reply's first word is the other, and it writes
+          // nothing to the transcript either, the prompt going back into the box (29-10, 2.1.312).
+          // Left alone when a turn starts within the second: that is the message sent to end it.
+          let startedAt = 0
+          on('turn.start', ($, e, next) => {
+            if (e.agentId === undefined) startedAt = Date.now()
+            return next(e)
+          })
+          on('turn.complete', async ($, e, next) => {
+            const done = await next(e)
+            if (e.agentId !== undefined || e.reason === 'answer') return done
+            const home = await $.env.get('HOME')
+            if (home === undefined) return done
+            const file = `${home}/.claude/fleet/state/${await $.session.id()}.json`
+            const ended = Date.now()
+            $.clock.after(1000, async () => {
+              if (startedAt > ended) return
+              const record = await $.fs.read(file).then(JSON.parse).catch(() => ({}))
+              if (record.state === undefined || record.state === 'ready') return
+              await $.fs.write(file, JSON.stringify({ ...record, state: 'ready', at: Math.floor(Date.now() / 1000) }))
+            })
+            return done
           })
         }
 
