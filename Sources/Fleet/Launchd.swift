@@ -22,7 +22,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "dashboard.", "my-setup.", "claude.", "checker"]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "claude.", "checker"]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
@@ -246,7 +246,6 @@ enum Launchd {
         "mac.revive": "Starts back what should be running and is not.",
         "epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
         "mac.guard": "Stops whatever is about to freeze the Mac.",
-        "sync.my-setup": "Pushes this machine's settings and dotfiles to my-setup.",
         "app.fleet": "This panel.",
         "app.screenshot": "Screenshots and screen recordings, on ⌘⇧5.",
         "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
@@ -541,12 +540,10 @@ final class LaunchdStore: ObservableObject {
 
     /// Routines that are not started again. The Epitech scan is a Claude run of up to 95
     /// minutes and reads Discord again, which its own `run.sh` refuses to retry; it catches up
-    /// at its next run of the day. sync.my-setup's failures repeat — the vet refused the diff,
-    /// or the allowlist refused every Bash call — and a retry is another 5–7 min headless
-    /// Claude session for the same answer. This machine's `routines.json` adds its own: a run
+    /// at its next run of the day. This machine's `routines.json` adds its own: a run
     /// that posts to a shared room, where a second run is a second message, or one that runs
     /// every minute and is its own retry.
-    static let noRetry = Set(["epitech.scan", "sync.my-setup"] + (Launchd.local?.noRetry ?? []))
+    static let noRetry = Set(["epitech.scan"] + (Launchd.local?.noRetry ?? []))
 
     /// When each failing routine was started again, by label. One retry per failure: a run
     /// that fails twice is broken, not unlucky, and a retry loop would hide it. Kept across
