@@ -413,6 +413,8 @@ final class AppController: ObservableObject {
         // they already have in the meantime rather than waiting on the network.
         hub.refreshIfStale()
         schedule(Config.visibleRefresh)
+        // Read on the desktop it opens on: the last tick's may be another's, up to 5 s old.
+        elsewhere = Spaces.elsewhere(sessions)
         overlay?.show()
     }
 
