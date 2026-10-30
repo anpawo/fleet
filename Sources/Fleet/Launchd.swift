@@ -22,7 +22,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "dashboard.", "my-setup.", "checker"]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "dashboard.", "my-setup.", "claude.", "checker"]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
