@@ -393,13 +393,17 @@ struct Session: Identifiable {
     /// before it has a session to ask — it is what the pinned tile numbers are keyed on.
     ///
     /// The project is the nearest folder holding a repository, named alone: a plain folder
-    /// that gathers repos (hackathon/{deepfake,agents}) and a repo inside a repo group by
-    /// repo (asked 2026-10-23). Only a `.git` folder counts: a worktree's is a file, and its
-    /// sessions belong to the repo it was cut from. No repository: the top folder.
-    static func project(for cwd: String, under projects: String = NSHomeDirectory() + "/self/") -> String {
+    /// that gathers repos (hackathon/{deepfake,agents}) groups by repo (asked 2026-10-23).
+    /// `outermost` takes the repo furthest out instead, which is what a card gathers: a repo
+    /// inside a repo (s14/scientcapital) sits in its parent's group (asked 2026-10-30). Only a
+    /// `.git` folder counts: a worktree's is a file, and its sessions belong to the repo it was
+    /// cut from. No repository: the top folder.
+    static func project(for cwd: String, under projects: String = NSHomeDirectory() + "/self/",
+                        outermost: Bool = false) -> String {
         if cwd.hasPrefix(projects) {
             let parts = cwd.dropFirst(projects.count).split(separator: "/").map(String.init)
-            for depth in stride(from: parts.count, to: 0, by: -1) {
+            let depths = Array(stride(from: parts.count, to: 0, by: -1))
+            for depth in outermost ? depths.reversed() : depths {
                 var folder: ObjCBool = false
                 let git = projects + parts.prefix(depth).joined(separator: "/") + "/.git"
                 if FileManager.default.fileExists(atPath: git, isDirectory: &folder), folder.boolValue {
@@ -426,7 +430,7 @@ struct Session: Identifiable {
     /// What puts two sessions on the same card. Outside `~/self` the directory is not a
     /// project and two sessions sharing one have nothing in common — "mr" held a bank API and
     /// a question about models — so each keeps a group of its own.
-    var groupKey: String { isSelf ? dirName : id.description }
+    var groupKey: String { isSelf ? Session.project(for: cwd, outermost: true) : id.description }
 
     /// The name Claude was asked to give this session, if it has one.
     @MainActor var label: String? {

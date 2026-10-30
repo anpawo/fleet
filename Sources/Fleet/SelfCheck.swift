@@ -166,7 +166,8 @@ enum SelfCheck {
 
     // MARK: - Projects
 
-    /// What groups sessions under `~/self`: the nearest repository, or the top folder.
+    /// What names sessions under `~/self`: the nearest repository, or the top folder; and what
+    /// groups them: the outermost repository.
     private static func projects(_ expect: (String, String, String) -> Void) {
         let root = FileManager.default.temporaryDirectory.appending(path: "fleet-projects-\(getpid())").path + "/"
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -181,7 +182,11 @@ enum SelfCheck {
         expect(Session.project(for: root + "plain", under: root), "plain",
                "projects: the plain folder itself is its group")
         expect(Session.project(for: root + "repo/sub", under: root), "sub",
-               "projects: a repo inside a repo is its own group")
+               "projects: a repo inside a repo is named by itself")
+        expect(Session.project(for: root + "repo/sub/src", under: root, outermost: true), "repo",
+               "projects: and sits in the group of the repo around it")
+        expect(Session.project(for: root + "plain/a/src", under: root, outermost: true), "a",
+               "projects: a plain folder around a repo gathers nothing")
         expect(Session.project(for: root + "repo/wt/src", under: root), "repo",
                "projects: a worktree stays in the group of the repo it was cut from")
     }
