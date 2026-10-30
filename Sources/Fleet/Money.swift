@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// What left the bank account, month by month, read off `~/.bnp/payments.csv`.
+/// What left the bank account, month by month, read off `~/.local/state/bnp/payments.csv`.
 ///
 /// Fleet only draws it: a routine outside this repository reads the bank once a day and adds
 /// the lines the file lacks. A login the bank refuses stops that routine until someone has
 /// looked, so the block says how old its newest payment is rather than pass a stale month for
 /// today's.
 enum Money {
-    static let file = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".bnp/payments.csv")
+    static let file = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".local/state/bnp/payments.csv")
 
     /// What a payment was for. Nine: the export names eighteen categories, and eighteen
     /// percentages a month are a statement, not a glance. A colour belongs to its kind in
