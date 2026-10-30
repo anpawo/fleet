@@ -106,11 +106,14 @@ echo "==> Installing the Claude Code hooks"
 # a folder listing when there is nothing new, and a Reel saved at 10:20 is read at 11 instead
 # of waiting until 13:15. A run missed while the lid is shut is coalesced by launchd into one
 # catch-up run on waking, not twelve; one missed while the Mac was off is `catchup`'s, at login.
-REELS="reels.scan"
+REELS="fleet.reels"
 REELS_PLIST="$HOME/Library/LaunchAgents/$REELS.plist"
-# Named firestore.reels until 2026-09-28: the old agent goes, or two would run the same backlog.
-launchctl bootout "gui/$UID/firestore.reels" 2>/dev/null || true
-rm -f "$HOME/Library/LaunchAgents/firestore.reels.plist"
+# Named firestore.reels until 2026-09-28, then reels.scan until 2026-10-30: the old agent goes,
+# or two would run the same backlog.
+for old in firestore.reels reels.scan; do
+	launchctl bootout "gui/$UID/$old" 2>/dev/null || true
+	rm -f "$HOME/Library/LaunchAgents/$old.plist"
+done
 echo "==> Writing $REELS_PLIST"
 cat > "$REELS_PLIST.new" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>

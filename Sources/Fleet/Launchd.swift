@@ -22,7 +22,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["app.", "mac.", "s14.", "epitech.", "reels.", "my-setup."]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "dashboard.", "my-setup.", "checker"]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
@@ -123,7 +123,7 @@ enum Launchd {
     }
 
     /// A routine whose sentence moves with what it holds writes it itself, in
-    /// `~/.claude/fleet/notes/<label>`: `mac.checker` says how many answers it awaits, which
+    /// `~/.claude/fleet/notes/<label>`: `checker` says how many answers it awaits, which
     /// changes with every answer. Read at each scan, where `routines.json` is
     /// read once.
     private static func ownNote(_ label: String) -> String? {
@@ -182,7 +182,7 @@ enum Launchd {
         return (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(Local.self, from: $0) }
     }()
 
-    /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `reels.scan`…), so a
+    /// The labels carry the names he uses since 26-09-2026 (`mac.guard`, `fleet.reels`…), so a
     /// card says its label, unless this machine gives it another.
     private static func shorten(_ label: String) -> String {
         local?.names?[label] ?? label
@@ -242,11 +242,11 @@ enum Launchd {
     /// rewritten by another project's `install.sh`, and a note kept inside them would be lost
     /// the next time that project was installed.
     private static let notes: [String: String] = [
-        "reels.scan": "Downloads and transcribes the Reels you saved, then files the notes.",
+        "fleet.reels": "Downloads and transcribes the Reels you saved, then files the notes.",
         "mac.revive": "Starts back what should be running and is not.",
         "epitech.scan": "Reads my.epitech, the intra and the mailbox, and files what is due.",
         "mac.guard": "Stops whatever is about to freeze the Mac.",
-        "my-setup.sync": "Pushes this machine's settings and dotfiles to my-setup.",
+        "sync.my-setup": "Pushes this machine's settings and dotfiles to my-setup.",
         "app.fleet": "This panel.",
         "app.screenshot": "Screenshots and screen recordings, on ⌘⇧5.",
         "config.gc": "Lists what has gone stale in ~/.claude, on Sundays.",
@@ -541,12 +541,12 @@ final class LaunchdStore: ObservableObject {
 
     /// Routines that are not started again. The Epitech scan is a Claude run of up to 95
     /// minutes and reads Discord again, which its own `run.sh` refuses to retry; it catches up
-    /// at its next run of the day. my-setup.sync's failures repeat — the vet refused the diff,
+    /// at its next run of the day. sync.my-setup's failures repeat — the vet refused the diff,
     /// or the allowlist refused every Bash call — and a retry is another 5–7 min headless
     /// Claude session for the same answer. This machine's `routines.json` adds its own: a run
     /// that posts to a shared room, where a second run is a second message, or one that runs
     /// every minute and is its own retry.
-    static let noRetry = Set(["epitech.scan", "my-setup.sync"] + (Launchd.local?.noRetry ?? []))
+    static let noRetry = Set(["epitech.scan", "sync.my-setup"] + (Launchd.local?.noRetry ?? []))
 
     /// When each failing routine was started again, by label. One retry per failure: a run
     /// that fails twice is broken, not unlucky, and a retry loop would hide it. Kept across
