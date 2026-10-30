@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// The Epitech side of the day, read off `~/.epitech/state.json`.
+/// The Epitech side of the day, read off `~/self/epitech/scanner/state.json`.
 ///
 /// That file is the epitech-scan agent's own snapshot — my.epitech, the intra, edsquare and the
 /// @epitech.eu mailbox, reconciled three times a day by launchd and left on this disk. Fleet
@@ -165,7 +165,7 @@ enum Epitech {
     }
 
     static var file: URL {
-        URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".epitech/state.json")
+        URL(fileURLWithPath: NSHomeDirectory()).appending(path: "self/epitech/scanner/state.json")
     }
 
     /// When the scan last wrote its state or its verdicts — what tells a copy in memory that it

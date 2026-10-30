@@ -169,8 +169,8 @@ final class Fixer: ObservableObject {
             """
         } else {
             facts = """
-            It is from the Epitech scan: ~/.epitech/sources.json has each reader's exit code \
-            from the last run, ~/.epitech/run.log what they printed, and the readers are in \
+            It is from the Epitech scan: ~/self/epitech/scanner/sources.json has each reader's exit code \
+            from the last run, ~/self/epitech/scanner/run.log what they printed, and the readers are in \
             ~/self/epitech/scanner. Re-run only the reader that failed (scan.mjs, edsquare.mjs, \
             outlook.mjs), never run.sh as a whole and never discord.mjs: a self-bot that \
             retries is a fingerprint, and that account is his.

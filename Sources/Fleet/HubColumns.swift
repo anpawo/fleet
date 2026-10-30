@@ -1626,7 +1626,7 @@ struct ModuleCard: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // my.epitech does not publish what a module is worth — the figures come from
-                // the term's opening amphi, kept by hand in ~/.epitech/credits.json. A module
+                // the term's opening amphi, kept by hand in ~/self/epitech/scanner/credits.json. A module
                 // missing from that table says nothing rather than a made-up number.
                 if let credits = module.credits {
                     Text("\(credits) CR")
