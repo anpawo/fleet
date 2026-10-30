@@ -253,12 +253,19 @@ extension Spaces {
     static func elsewhere(_ sessions: [Session]) -> Set<pid_t> {
         let here = Set(windowsHere().compactMap { $0[kCGWindowOwnerPID as String] as? pid_t })
         let parents = ProcessScanner.parentMap()
-        return Set(sessions.compactMap { session in
-            guard let host = ProcessScanner.hostApplication(of: session.proc.pid,
-                                                            parents: parents)?.app,
-                  !here.contains(host.processIdentifier) else { return nil }
-            return session.id
-        })
+        let hosted = sessions.compactMap { session in
+            ProcessScanner.hostApplication(of: session.proc.pid, parents: parents)
+                .map { (session: session.id, host: $0.app.processIdentifier) }
+        }
+        // A fullscreen app with no session in it (a video, a call) is a desktop of its own:
+        // hiding every session there left the panel empty over it (2026-10-30), so it hides none.
+        guard hosted.contains(where: { here.contains($0.host) }) || !inFullscreen() else { return [] }
+        return Set(hosted.filter { !here.contains($0.host) }.map(\.session))
+    }
+
+    private static func inFullscreen() -> Bool {
+        let connection = CGSMainConnectionID()
+        return CGSSpaceGetType(connection, CGSGetActiveSpace(connection)) == 4
     }
 
     /// The windows on the desktops in front of you, frontmost first, menus and panels left out.
@@ -379,5 +386,9 @@ extension Spaces {
 private func CGSMainConnectionID() -> Int32
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 private func CGSCopyManagedDisplaySpaces(_ connection: Int32) -> CFArray
+@_silgen_name("CGSGetActiveSpace")
+private func CGSGetActiveSpace(_ connection: Int32) -> UInt64
+@_silgen_name("CGSSpaceGetType")
+private func CGSSpaceGetType(_ connection: Int32, _ space: UInt64) -> Int32
 @_silgen_name("CGSCopySpacesForWindows")
 private func CGSCopySpacesForWindows(_ connection: Int32, _ mask: Int32, _ windows: CFArray) -> CFArray
