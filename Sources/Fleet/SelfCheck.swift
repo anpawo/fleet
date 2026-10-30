@@ -23,6 +23,7 @@ enum SelfCheck {
         freshSession(expect)
         rescuedBinding(expect)
         twinBinding(expect)
+        twinStates(expect)
         heldPrompt(expect)
         ghosts(expect)
         ports(expect)
@@ -742,6 +743,16 @@ enum SelfCheck {
         expect(registry.bindings[99_997] == path && registry.bindings[99_998] == path, true,
                "both windows resumed on one conversation keep its file")
         expect(registry.bindings[99_999] == nil, true, "a guess on that file gives it up")
+    }
+
+    /// Each of two windows on one conversation shows its own state (30-10: both said NEEDS
+    /// YOU when one was asking).
+    private static func twinStates(_ expect: (Bool, Bool, String) -> Void) {
+        let status: [pid_t: String] = [1: "idle", 2: "waiting", 3: "waiting"]
+        let states = SessionRegistry.twinStates([1: "a", 2: "a", 3: "b"]) { status[$0] }
+        expect(states[1] == .ready && states[2] == .awaitingAnswer, true,
+               "twins on one conversation: only the one asking needs you")
+        expect(states[3] == nil, true, "a session alone on its file keeps the hook's state")
     }
 
     private static func freshSession(_ expect: (Int, Int, String) -> Void) {

@@ -38,6 +38,7 @@ final class SessionRegistry {
         store.retain(paths: Set(bindings.values))
 
         let held = Hooks.heldSessions()
+        let twins = Self.twinStates(bindings)
         var sessions: [Session] = []
         for proc in procs {
             let cpu = cpuPercent(for: proc, now: now)
@@ -52,7 +53,8 @@ final class SessionRegistry {
             // only one reached purely by inference — from silence, which is also what a failed
             // request and a long thinking turn look like. Nothing else is re-examined; the
             // terminal costs a round trip to read.
-            var state = state(for: bindings[proc.pid], info: info, cpu: cpu, startedAt: proc.startedAt, now: now)
+            var state = twins[proc.pid]
+                ?? state(for: bindings[proc.pid], info: info, cpu: cpu, startedAt: proc.startedAt, now: now)
             // An async agent leaves the session looking finished: its call was answered the
             // moment it launched, the turn closed, and the hook said `ready` — all true of the
             // main thread, and all beside the point while three agents are still out. Only
@@ -343,6 +345,34 @@ final class SessionRegistry {
             .deletingPathExtension
         guard let hook = Hooks.record(sessionID: sessionID) else { return heuristic }
         return Self.ranked(hook, heuristic: heuristic, info: info, cpu: cpu, now: now)
+    }
+
+    /// Two windows on one conversation share its record and its transcript, so both read as
+    /// whichever wrote last: the one sitting at its prompt showed NEEDS YOU beside the one
+    /// asking (30-10). Claude Code keeps a status for each process, and only that tells them
+    /// apart. A pid alone on its file is left to the hook and the transcript.
+    static func twinStates(_ bindings: [pid_t: String],
+                           status: (pid_t) -> String? = ownStatus) -> [pid_t: SessionState] {
+        let shared = Dictionary(grouping: bindings.keys) { bindings[$0]! }.values.filter { $0.count > 1 }
+        var states: [pid_t: SessionState] = [:]
+        for pid in shared.joined() {
+            switch status(pid) {
+            case "busy": states[pid] = .running
+            case "waiting": states[pid] = .awaitingAnswer
+            case "idle": states[pid] = .ready
+            default: break
+            }
+        }
+        return states
+    }
+
+    /// `idle`, `busy` or `waiting`, from Claude Code's own `~/.claude/sessions/<pid>.json`.
+    nonisolated static func ownStatus(_ pid: pid_t) -> String? {
+        let file = NSHomeDirectory() + "/.claude/sessions/\(pid).json"
+        guard let data = FileManager.default.contents(atPath: file),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return object["status"] as? String
     }
 
     /// The hook against the transcript, once both are in hand — see `state(for:)`.
