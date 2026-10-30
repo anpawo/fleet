@@ -254,9 +254,15 @@ enum Launchd {
     /// What an agent nobody has written a line for gets: the program it runs. Worse than a
     /// sentence and better than an empty card — a new agent still has a row that says something.
     private static func fallbackNote(_ plist: [String: Any]) -> String {
-        let program = (plist["ProgramArguments"] as? [String])?.first
-            ?? plist["Program"] as? String ?? ""
+        let program = command(plist).first ?? plist["Program"] as? String ?? ""
         return program.isEmpty ? "No note yet." : "Runs \((program as NSString).lastPathComponent)."
+    }
+
+    /// The agent's command. A link in ~/.local/bin/agents named after the label may go first: it
+    /// points at /usr/bin/env, only so that Login Items names the row after the label.
+    static func command(_ plist: [String: Any]) -> [String] {
+        let args = plist["ProgramArguments"] as? [String] ?? []
+        return args.first?.contains("/.local/bin/agents/") == true ? Array(args.dropFirst()) : args
     }
 
     /// The lowest TCP port each of these processes is listening on, in one `lsof`. Lowest
@@ -409,8 +415,7 @@ enum Launchd {
     /// can overrun. Without it an hourly routine that waited 20 minutes and then ran 45 was hung.
     static func waits(_ plist: [String: Any]) -> TimeInterval {
         // Second when `catchup` goes first.
-        guard let args = plist["ProgramArguments"] as? [String],
-              args.prefix(2).contains(where: { $0.hasSuffix("/online") }) else { return 0 }
+        guard command(plist).prefix(2).contains(where: { $0.hasSuffix("/online") }) else { return 0 }
         let wait = ((plist["EnvironmentVariables"] as? [String: String])?["ONLINE_WAIT"])
             .flatMap(TimeInterval.init) ?? 1200
         return 3 * (wait + 95)
