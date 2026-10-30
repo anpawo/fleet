@@ -10,8 +10,8 @@ struct Mail: Identifiable {
     /// exists in the collection.
     var gist: String
     var sender: String
-    /// Ce que le moteur a compris du mail, en une phrase ou deux. Hors de la carte au repos —
-    /// la colonne se compte d'un œil — et c'est ce que ⌘ déplie.
+    /// What the engine understood of the mail, in a sentence or two. Off the card at rest (the
+    /// column is counted at a glance), and it is what ⌘ unfolds.
     var summary: String = ""
     /// 1–3, the engine's score. 3 is the mail you would be annoyed to have missed.
     var importance: Int
@@ -33,19 +33,18 @@ struct Mail: Identifiable {
               !doc.bool("archived"),
               !doc.bool("trashRequested") else { return nil }
 
-        // Remis à plus tard depuis le panneau : le champ n'existe que pour Fleet, et il est
-        // facultatif — un APK installé qui ne le connaît pas montre le mail, ce qui est le
-        // comportement d'avant.
+        // Put off from the panel: the field exists for Fleet alone, and it is optional. An
+        // installed APK that does not know it shows the mail, which is the behaviour from before.
         if let until = doc.date("snoozedUntil"), until > Date() { return nil }
 
         self.state = state
         id = doc.id
         gist = doc.string("gist")
         summary = doc.string("summary")
-        // Un transfert porte le nom de la boîte qui a fait suivre, pas celui de l'expéditeur :
-        // tout le courrier @epitech.eu arrivait ici signé « Marius Rousset ». Le moteur range
-        // le vrai expéditeur à part, et le téléphone lit déjà ce couple-là — y compris pour
-        // reconnaître un favori, d'où le même choix sur les deux champs.
+        // A forward carries the name of the mailbox that forwarded it, not the sender's: all the
+        // @epitech.eu mail arrived here signed "Marius Rousset". The engine files the real sender
+        // apart, and the phone already reads that pair, to recognise a favourite too, hence the
+        // same choice on both fields.
         let origin = doc.string("originSender")
         sender = origin.isEmpty ? doc.string("sender") : origin
         importance = doc.int("importance", default: 2)
@@ -463,8 +462,8 @@ final class HubStore: ObservableObject {
         return true
     }
 
-    /// Ce que le panneau sait faire d'un mail — le vocabulaire du téléphone, mot pour mot,
-    /// sauf `later`, qui n'existe que côté Fleet.
+    /// What the panel can do with a mail: the phone's vocabulary, word for word, except
+    /// `later`, which exists on Fleet's side only.
     enum MailAction: String, CaseIterable {
         case seen, done, trash, later
 
@@ -478,12 +477,12 @@ final class HubStore: ObservableObject {
         }
     }
 
-    /// Combien de temps « later » fait disparaître un mail : une nuit. Il revient en tête de la
-    /// pile `new`, là où il était, plutôt qu'à la corbeille.
+    /// How long "later" hides a mail: one night. It comes back at the top of the `new` pile,
+    /// where it was, rather than in the trash.
     private static let snooze: TimeInterval = 20 * 3600
 
-    /// Agir sur un mail depuis le panneau. La carte part tout de suite — le téléphone fait
-    /// pareil — et un refus de Firestore la ramène au prochain fetch.
+    /// Acts on a mail from the panel. The card goes at once (the phone does the same), and a
+    /// refusal from Firestore brings it back at the next fetch.
     func act(_ action: MailAction, on mail: Mail) {
         self.mail.removeAll { $0.id == mail.id }
         Task {
@@ -662,7 +661,7 @@ final class HubStore: ObservableObject {
                 kickedAt = Date()
                 let kick = Process()
                 kick.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-                kick.arguments = ["kickstart", "gui/\(getuid())/reels.scan"]
+                kick.arguments = ["kickstart", "gui/\(getuid())/fleet.reels"]
                 try? kick.run()
             }
             guard reelCheck == nil, mayCheck() else { return }
