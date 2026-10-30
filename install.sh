@@ -43,6 +43,12 @@ launchctl kill SIGTERM "gui/$UID/$LABEL" 2>/dev/null || true
 mkdir -p "$DEST"
 rsync -a --delete dist/Fleet.app/ "$DEST/"
 
+# Login Items draws an agent with the icon of the file it runs, not of the app around it: only a
+# Team ID links the two, and a self-signed app has none. So the binary carries the icon itself.
+# `codesign --strict` calls that xattr detritus; the default check, which TCC uses, passes.
+osascript -l JavaScript -e 'ObjC.import("AppKit"); function run(a) { $.NSWorkspace.sharedWorkspace.setIconForFileOptions($.NSImage.alloc.initWithContentsOfFile(a[0]), a[1], 0) }' \
+	"$DEST/Contents/Resources/AppIcon.icns" "$DEST/Contents/MacOS/Fleet" >/dev/null
+
 # Interactive, not Background: the process type covers every thread, the one that draws the
 # panel included. As Background they all ran at priority 4, on the efficiency cores and behind
 # every session on the machine: a fold cost 9 ms of CPU a frame against 0.9 (`--bench-panel`

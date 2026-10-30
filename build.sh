@@ -13,6 +13,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Fleet "$APP/Contents/MacOS/Fleet"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # macOS ties a granted permission to the app's *signing identity*, so the signature has to
 # survive a rebuild or every permission is asked for again. An ad-hoc signature cannot: it has
