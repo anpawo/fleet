@@ -22,7 +22,7 @@ enum Launchd {
 
     /// Whose agents are worth a line. Not a blocklist of the others: a new vendor dropping an
     /// updater in there must not silently appear in the panel.
-    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "claude.", "checker"]
+    private static let mine = ["app.", "mac.", "s14.", "epitech.", "fleet.", "m3.", "sync.", "claude."]
 
     struct Job: Identifiable {
         /// The launchd label, which is also the plist's file name.
@@ -123,8 +123,8 @@ enum Launchd {
     }
 
     /// A routine whose sentence moves with what it holds writes it itself, in
-    /// `~/.claude/fleet/notes/<label>`: `checker` says how many answers it awaits, which
-    /// changes with every answer. Read at each scan, where `routines.json` is
+    /// `~/.claude/fleet/notes/<label>`: `app.watcher` says how many answers its hourly check
+    /// awaits, which changes with every answer. Read at each scan, where `routines.json` is
     /// read once.
     private static func ownNote(_ label: String) -> String? {
         let file = URL(fileURLWithPath: Hooks.home).appending(path: "notes/\(label)")
