@@ -172,5 +172,19 @@ at SessionEnd end "$FAKE" >/dev/null
 ok "any other end drops it"                           '[ ! -f "$S/$SID.cwd" ]'
 ok "and the text with it"                             '[ ! -f "$S/$SID.draft" ]'
 
+# Two windows resumed on one conversation share its files: the one closing leaves them to the
+# other. The hook's own claude (here this script) has an entry for the conversation too.
+mkdir -p "$FAKE/.claude/sessions"
+entry() { printf '{"pid":%s,"sessionId":"%s","status":"idle"}' "$1" "$SID" > "$FAKE/.claude/sessions/$1.json"; }
+sleep 60 & twin=$!
+entry $$; entry "$twin"
+run Notification awaiting >/dev/null; echo "a context line" > "$S/$SID.context"
+at SessionEnd end "$FAKE" >/dev/null
+ok "a twin still open keeps the record"                '[ -f "$S/$SID.json" ]'
+ok "and the context line"                              '[ -f "$S/$SID.context" ]'
+kill "$twin"; wait "$twin" 2>/dev/null
+at SessionEnd end "$FAKE" >/dev/null
+ok "the last window to close clears them"              '[ ! -f "$S/$SID.json" ] && [ ! -f "$S/$SID.context" ]'
+
 [ $fail = 0 ] && echo "all good" || echo "FAILED"
 exit $fail

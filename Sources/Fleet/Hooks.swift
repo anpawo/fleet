@@ -210,7 +210,7 @@ enum Hooks {
     /// still works — every field is optional on the reading side — but it costs the session
     /// pairing the hooks are there to make exact, so it counts as not installed and the menu
     /// offers to bring it up to date.
-    static let version = 24
+    static let version = 25
 
     /// Whether the hooks are installed and writing. Checked for the panel's own diagnostics —
     /// the state read above degrades on its own when they are not.
@@ -583,7 +583,7 @@ enum Hooks {
     private static let script = """
     #!/bin/sh
     # Written by Fleet — do not edit; `fleet --install-hooks` overwrites this file.
-    # fleet-hook-version: 24
+    # fleet-hook-version: 25
     #
     # Records what a Claude Code session is doing, so Fleet's panel can show the state Claude
     # Code reports instead of one inferred from the transcript. Called with the state the event
@@ -706,6 +706,14 @@ enum Hooks {
     cwd() { /usr/bin/perl -MJSON::PP -e 'local $/; my $in = eval { decode_json(<STDIN>) }; print $in->{cwd} // "" if ref $in eq "HASH"'; }
 
     if [ "$state" = "end" ]; then
+        # Two windows resumed on one conversation share every file below: the one closing leaves
+        # them to the other, whose record and context line they are too (30-10: closing one
+        # emptied the card of the one still open). A claude that crashed leaves its entry behind.
+        for f in "$HOME/.claude/sessions/"*.json; do
+            p=${f##*/}; p=${p%.json}
+            [ "$p" != "$PPID" ] && grep -q "\\"sessionId\\":\\"$sid\\"" "$f" 2>/dev/null &&
+                kill -0 "$p" 2>/dev/null && exit 0
+        done
         # That folder outlives the end a relaunch causes, and so does the text left unsent in the
         # prompt, which Fleet's mod keeps beside it: the note is written before the kill.
         grep -qx -- "$sid" "$HOME/.claude/fleet/restart/$(cut -d' ' -f2 "$dir/$sid.shell" 2>/dev/null)" 2>/dev/null ||
