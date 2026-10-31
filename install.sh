@@ -112,6 +112,8 @@ echo "==> Installing the Claude Code hooks"
 # a folder listing when there is nothing new, and a Reel saved at 10:20 is read at 11 instead
 # of waiting until 13:15. A run missed while the lid is shut is coalesced by launchd into one
 # catch-up run on waking, not twelve; one missed while the Mac was off is `catchup`'s, at login.
+# Through `online` like every routine that needs the network: on 31-10 the Wi-Fi carried nothing
+# from 09:55 to 10:53, both runs timed out on Firestore, and a dead connection raised an ALERT.
 REELS="fleet.reels"
 REELS_PLIST="$HOME/Library/LaunchAgents/$REELS.plist"
 # Named firestore.reels until 2026-09-28, then reels.scan until 2026-10-30: the old agent goes,
@@ -131,6 +133,7 @@ cat > "$REELS_PLIST.new" <<PLIST_EOF
 	<key>ProgramArguments</key>
 	<array>
 		<string>$BIN/catchup</string>
+		<string>$BIN/online</string>
 		<string>$DEST/Contents/MacOS/Fleet</string>
 		<string>--reels-run</string>
 	</array>
