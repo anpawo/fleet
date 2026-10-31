@@ -518,7 +518,7 @@ struct OverlayView: View {
         // 2026-10-22), or two where that alone keeps the grid on the screen (asked 2026-10-28).
         let layouts = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
                                   spacing: tileSpacing, columns: Self.tilesPerRow)
-            .widening(sections.map { $0.map(\.count) },
+            .widening(sections.map { $0.map(\.parts) },
                       room: room - CGFloat(max(0, sections.count - 1)) * (2 * tileSpacing + 1)) {
                 GroupTile.size(holding: $0, across: $1, in: centerWidth, spacing: tileSpacing)
             }
@@ -799,10 +799,11 @@ struct FleetLayout: Layout {
     /// the fewest directories stood two cells across, the most sessions first, that end it
     /// inside `room` (asked 2026-10-28). None does, every one stays one column wide and the
     /// grid scrolls. Never a directory of two: side by side they share one row, and their
-    /// cards lose the name's band (2026-10-22). One grid a desktop, `room` shared by them all.
-    /// `size` takes the count and the cells across.
-    func widening(_ sections: [[Int]], room: CGFloat, size: (Int, Int) -> CGSize) -> [FleetLayout] {
-        let counts = sections.flatMap { $0 }
+    /// cards lose the name's band (2026-10-22). One grid a desktop, `room` shared by them all;
+    /// each card given by its parts (see `GroupTile.parts`). `size` takes the parts and the
+    /// cells across.
+    func widening(_ sections: [[[Int]]], room: CGFloat, size: ([Int], Int) -> CGSize) -> [FleetLayout] {
+        let counts = sections.flatMap { $0.map { $0.reduce(0, +) } }
         let starts = sections.indices.map { sections[..<$0].map(\.count).reduce(0, +) }
         let order = counts.indices.filter { counts[$0] > 2 }.sorted { (counts[$1], $0) < (counts[$0], $1) }
         let tries = (0 ... order.count).map { k in
@@ -845,6 +846,11 @@ enum FleetCell: Identifiable {
         return 1
     }
 
+    var parts: [Int] {
+        if case let .group(_, sessions) = self { return GroupTile.parts(sessions).map(\.count) }
+        return [1]
+    }
+
     var id: String {
         switch self {
         case let .group(name, _): return "dir:" + name
@@ -873,13 +879,30 @@ struct GroupTile: View {
     static let tint = Color(red: 0.16, green: 0.82, blue: 0.80)
 
     /// What the card takes: `across` of the grid's cells, and a row of them down for each
-    /// `across` sessions it holds.
-    static func size(holding count: Int, across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
+    /// `across` sessions of each of its parts.
+    static func size(holding parts: [Int], across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
         let cell = cell(width, spacing: spacing)
         return CGSize(width: CGFloat(across) * (cell.width + spacing) - spacing,
-                      height: CGFloat(rows(count, across)) * (cell.height + spacing) - spacing)
+                      height: CGFloat(rows(parts, across)) * (cell.height + spacing) - spacing)
     }
-    private static func rows(_ count: Int, _ across: Int) -> Int { (count + across - 1) / across }
+    private static func rows(_ parts: [Int], _ across: Int) -> Int {
+        parts.reduce(0) { $0 + ($1 + across - 1) / across }
+    }
+
+    /// The sessions in the group's own repo, none at times, then those of each repo inside it
+    /// (s14/scientcapital), each under a line and its name (asked 2026-10-31), in the order
+    /// the grid has them.
+    static func parts(_ sessions: [Session]) -> [[Session]] {
+        var parts: [[Session]] = [[]]
+        var at: [String: Int] = [:]
+        for session in sessions {
+            let dir = session.dirName
+            let part = dir == session.groupKey ? 0 : at[dir] ?? parts.count
+            if part == parts.count { at[dir] = part; parts.append([]) }
+            parts[part].append(session)
+        }
+        return parts
+    }
     /// One cell of the grid a block this wide holds.
     static func cell(_ width: CGFloat, spacing: CGFloat) -> CGSize {
         let across = CGFloat(OverlayView.tilesPerRow)
@@ -897,13 +920,16 @@ struct GroupTile: View {
     private static let nameFoot: CGFloat = 11
     /// The name stands centred over the cards, in a band of its own.
     static let nameBand = nameAir + nameLine + nameFoot
-    /// One of its cards: the group's cells less the gaps and the name's band.
-    static func card(count: Int, across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
-        let outer = size(holding: count, across: across, in: width, spacing: spacing)
-        let rows = CGFloat(rows(count, across))
+    /// A repo inside the group's: the line, and its name under it.
+    static let subBand: CGFloat = 20
+    /// One of its cards: the group's cells less the gaps and the names' bands.
+    static func card(holding parts: [Int], across: Int = 1, in width: CGFloat, spacing: CGFloat) -> CGSize {
+        let outer = size(holding: parts, across: across, in: width, spacing: spacing)
+        let rows = CGFloat(rows(parts, across))
         let across = CGFloat(across)
         return CGSize(width: (outer.width - (across + 1) * inset) / across,
-                      height: (outer.height - (rows + 1) * inset - nameBand) / rows)
+                      height: (outer.height - (rows + 1) * inset - nameBand
+                               - CGFloat(parts.count - 1) * (subBand + inset)) / rows)
     }
 
     var body: some View {
@@ -958,19 +984,33 @@ struct GroupTile: View {
         let onActivate: (Session) -> Void
 
         var body: some View {
-            let card = GroupTile.card(count: sessions.count, across: across, in: width, spacing: spacing)
+            let parts = GroupTile.parts(sessions)
+            let card = GroupTile.card(holding: parts.map(\.count), across: across, in: width, spacing: spacing)
             VStack(alignment: .leading, spacing: GroupTile.inset) {
-                ForEach(Array(stride(from: 0, to: sessions.count, by: across)), id: \.self) { start in
-                    HStack(spacing: GroupTile.inset) {
-                        ForEach(sessions[start ..< min(start + across, sessions.count)], id: \.id) { session in
-                            // Inside a directory the card wears its topic: the directory is
-                            // what these sessions have in common, and a row of cards all
-                            // saying "portfolio" is a row you cannot choose from.
-                            SessionTile(session: session, heading: session.label ?? session.topic,
-                                        grouped: true) {
-                                onActivate(session)
+                ForEach(Array(parts.enumerated()), id: \.offset) { p, part in
+                    if p > 0, let first = part.first {
+                        VStack(spacing: 3) {
+                            Rectangle().fill(GroupTile.tint).frame(height: 1)
+                            Text(first.dirName)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        .frame(width: CGFloat(across) * (card.width + GroupTile.inset) - GroupTile.inset,
+                               height: GroupTile.subBand, alignment: .top)
+                    }
+                    ForEach(Array(stride(from: 0, to: part.count, by: across)), id: \.self) { start in
+                        HStack(spacing: GroupTile.inset) {
+                            ForEach(part[start ..< min(start + across, part.count)], id: \.id) { session in
+                                // Inside a directory the card wears its topic: the directory is
+                                // what these sessions have in common, and a row of cards all
+                                // saying "portfolio" is a row you cannot choose from.
+                                SessionTile(session: session, heading: session.label ?? session.topic,
+                                            grouped: true) {
+                                    onActivate(session)
+                                }
+                                .frame(width: card.width, height: card.height)
                             }
-                            .frame(width: card.width, height: card.height)
                         }
                     }
                 }
