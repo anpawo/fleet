@@ -122,6 +122,10 @@ for old in firestore.reels reels.scan; do
 	launchctl bootout "gui/$UID/$old" 2>/dev/null || true
 	rm -f "$HOME/Library/LaunchAgents/$old.plist"
 done
+# First through its link to /usr/bin/env, like every routine since 2026-10-30: Login Items
+# names the row after the program's file, so without it the row reads `catchup`.
+mkdir -p "$BIN/agents"
+ln -sf /usr/bin/env "$BIN/agents/$REELS"
 echo "==> Writing $REELS_PLIST"
 cat > "$REELS_PLIST.new" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -132,6 +136,7 @@ cat > "$REELS_PLIST.new" <<PLIST_EOF
 	<string>$REELS</string>
 	<key>ProgramArguments</key>
 	<array>
+		<string>$BIN/agents/$REELS</string>
 		<string>$BIN/catchup</string>
 		<string>$BIN/online</string>
 		<string>$DEST/Contents/MacOS/Fleet</string>
