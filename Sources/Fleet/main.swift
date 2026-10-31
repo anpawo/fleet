@@ -566,9 +566,6 @@ if CommandLine.arguments.contains("--scan") {
         if let awake = ScreenWatcher.holdingDisplayAwake() {
             print("display held awake by \"\(awake)\" — the idle trigger is deferred")
         }
-        if let mic = MicWatcher.recording() {
-            print("\"\(mic)\" is recording — the idle trigger is deferred")
-        }
         exit(0)
     }
 }
