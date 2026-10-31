@@ -9,13 +9,23 @@ enum DemoFleet {
 
     /// What `--fake` was given: a count, or a count per directory — `4,2,1` is a group of four,
     /// a group of two and a session alone, the groups being one more shape nobody has running.
+    /// `3,4/2,1` puts the groups after the `/` on the next desktop: see `Spaces.desktops`.
     static func sessions(_ argument: String) -> [Session]? {
-        let sizes = argument.split(separator: ",").compactMap { Int($0) }
+        let desks = argument.split(separator: "/").map { $0.split(separator: ",").compactMap { Int($0) } }
+        let sizes = desks.flatMap { $0 }
         guard let count = sizes.first else { return nil }
         if sizes.count == 1 { return sessions(count) }
         let folders = sizes.enumerated().flatMap { Array(repeating: $0.offset, count: max(0, $0.element)) }
-        return sessions(folders.count, folders: folders)
+        let fleet = sessions(folders.count, folders: folders)
+        if desks.count > 1 {
+            let desk = desks.enumerated().flatMap { Array(repeating: $0.offset, count: $0.element.reduce(0) { $0 + max(0, $1) }) }
+            desktops = Dictionary(uniqueKeysWithValues: zip(fleet.map(\.id), desk))
+        }
+        return fleet
     }
+
+    /// Where `--fake` put each session, when it was given desktops.
+    static var desktops: [pid_t: Int]?
 
     static func sessions(_ count: Int, folders: [Int]? = nil) -> [Session] {
         let names = ["portfolio", "atlas", "video-code", "my-hub", "fleet", "siege",

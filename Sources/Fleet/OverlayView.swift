@@ -379,9 +379,7 @@ struct OverlayView: View {
             legendKey
         } trailing: {
             if !controller.sessions.isEmpty {
-                let away = controller.elsewhere.count
-                Text("\(controller.sessions.count - away)"
-                     + (away == 0 ? "" : " · +\(away) on other desktop\(away == 1 ? "" : "s")"))
+                Text("\(controller.sessions.count)")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.45))
                     .titleGround(1)
@@ -490,8 +488,8 @@ struct OverlayView: View {
     }
 
     /// Every directory, and every session that has one to itself.
-    private var cells: [FleetCell] {
-        groups(of: controller.sessionsHere).compactMap { group -> FleetCell? in
+    private func cells(_ sessions: [Session]) -> [FleetCell] {
+        groups(of: sessions).compactMap { group -> FleetCell? in
             // A directory holding one session has nothing to gather: its card is the session.
             if group.sessions.count == 1, let only = group.sessions.first {
                 return .session(only, heading: only.label ?? only.topic)
@@ -510,26 +508,41 @@ struct OverlayView: View {
 
     /// Every card, in rows of three, laid out by hand rather than by stacks — see `FleetLayout`.
     private var grid: some View {
-        let cells = self.cells
+        // One grid a desktop, the front one's first, a line between two (asked 2026-10-31).
+        let place = { (session: Session) in controller.desktops[session.id] ?? 0 }
+        let sections = Set(controller.sessions.map(place)).sorted().map { desk in
+            cells(controller.sessions.filter { place($0) == desk })
+        }
         // Every directory stands unfolded in the grid itself, its sessions in view with nothing
         // to click (asked 2026-10-12; never folded since 2026-10-18), in one column (asked
         // 2026-10-22), or two where that alone keeps the grid on the screen (asked 2026-10-28).
-        let layout = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
-                                 spacing: tileSpacing, columns: Self.tilesPerRow)
-            .widening(cells.map(\.count), room: room) {
+        let layouts = FleetLayout(tile: CGSize(width: tileWidth, height: SessionTile.height),
+                                  spacing: tileSpacing, columns: Self.tilesPerRow)
+            .widening(sections.map { $0.map(\.count) },
+                      room: room - CGFloat(max(0, sections.count - 1)) * (2 * tileSpacing + 1)) {
                 GroupTile.size(holding: $0, across: $1, in: centerWidth, spacing: tileSpacing)
             }
-        return layout {
-            ForEach(Array(cells.enumerated()), id: \.element.id) { i, cell in
-                switch cell {
-                case let .group(name, sessions):
-                    GroupTile(name: name, sessions: sessions,
-                              across: layout.wide[i].map { layout.taken($0.width) } ?? 1,
-                              spacing: tileSpacing, width: centerWidth,
-                              onActivate: { controller.activate($0) })
-                case let .session(session, heading):
-                    SessionTile(session: session, heading: heading) {
-                        controller.activate(session)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { s, cells in
+                if s > 0 {
+                    // The rule CRONS parts its halves with, a row's gap either side.
+                    Rectangle().fill(.white.opacity(0.6)).frame(height: 1)
+                        .padding(.vertical, tileSpacing)
+                }
+                let layout = layouts[s]
+                layout {
+                    ForEach(Array(cells.enumerated()), id: \.element.id) { i, cell in
+                        switch cell {
+                        case let .group(name, sessions):
+                            GroupTile(name: name, sessions: sessions,
+                                      across: layout.wide[i].map { layout.taken($0.width) } ?? 1,
+                                      spacing: tileSpacing, width: centerWidth,
+                                      onActivate: { controller.activate($0) })
+                        case let .session(session, heading):
+                            SessionTile(session: session, heading: heading) {
+                                controller.activate(session)
+                            }
+                        }
                     }
                 }
             }
@@ -786,17 +799,25 @@ struct FleetLayout: Layout {
     /// the fewest directories stood two cells across, the most sessions first, that end it
     /// inside `room` (asked 2026-10-28). None does, every one stays one column wide and the
     /// grid scrolls. Never a directory of two: side by side they share one row, and their
-    /// cards lose the name's band (2026-10-22). `size` takes the count and the cells across.
-    func widening(_ counts: [Int], room: CGFloat, size: (Int, Int) -> CGSize) -> FleetLayout {
+    /// cards lose the name's band (2026-10-22). One grid a desktop, `room` shared by them all.
+    /// `size` takes the count and the cells across.
+    func widening(_ sections: [[Int]], room: CGFloat, size: (Int, Int) -> CGSize) -> [FleetLayout] {
+        let counts = sections.flatMap { $0 }
+        let starts = sections.indices.map { sections[..<$0].map(\.count).reduce(0, +) }
         let order = counts.indices.filter { counts[$0] > 2 }.sorted { (counts[$1], $0) < (counts[$0], $1) }
         let tries = (0 ... order.count).map { k in
-            var layout = self
-            layout.wide = counts.indices.map {
-                counts[$0] > 1 ? size(counts[$0], order.prefix(k).contains($0) ? 2 : 1) : nil
+            sections.indices.map { s in
+                var layout = self
+                layout.wide = sections[s].indices.map { i in
+                    counts[starts[s] + i] > 1
+                        ? size(sections[s][i], order.prefix(k).contains(starts[s] + i) ? 2 : 1) : nil
+                }
+                return layout
             }
-            return layout
         }
-        return tries.first { $0.rest(counts.count).height <= room } ?? tries[0]
+        return tries.first {
+            zip($0, sections).map { $0.rest($1.count).height }.reduce(0, +) <= room
+        } ?? tries[0]
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

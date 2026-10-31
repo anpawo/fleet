@@ -245,27 +245,38 @@ extension Spaces {
         return move(window, to: row[min(here + step, row.count - 1)])
     }
 
-    /// The sessions whose terminal has no window on the desktop in front of you: the panel
-    /// leaves them out and counts them (asked 2026-10-28). A session with no terminal at all
-    /// belongs to no desktop and shows on every one. Matched by process, which is exact for
-    /// Ghostty (one process per window); a Terminal.app holding many windows counts as here
-    /// when any one of them is.
-    static func elsewhere(_ sessions: [Session]) -> Set<pid_t> {
+    /// Each session's desktop as a place in line: 0 for the ones in front of you, then the
+    /// others as Mission Control has them, screen by screen. The panel shows every desktop, the
+    /// front one first, a line between two (asked 2026-10-31; from 2026-10-28 it hid the
+    /// others). A session with no terminal belongs to no desktop and stands with the front one.
+    /// Matched by process, which is exact for Ghostty (one process per window); a Terminal.app
+    /// holding many windows stands with the first of them.
+    static func desktops(_ sessions: [Session]) -> [pid_t: Int] {
         let here = Set(windowsHere().compactMap { $0[kCGWindowOwnerPID as String] as? pid_t })
         let parents = ProcessScanner.parentMap()
-        let hosted = sessions.compactMap { session in
-            ProcessScanner.hostApplication(of: session.proc.pid, parents: parents)
-                .map { (session: session.id, host: $0.app.processIdentifier) }
+        let hosts = sessions.reduce(into: [pid_t: pid_t]()) { hosts, session in
+            hosts[session.id] = ProcessScanner.hostApplication(of: session.proc.pid, parents: parents)?
+                .app.processIdentifier
         }
-        // A fullscreen app with no session in it (a video, a call) is a desktop of its own:
-        // hiding every session there left the panel empty over it (2026-10-30), so it hides none.
-        guard hosted.contains(where: { here.contains($0.host) }) || !inFullscreen() else { return [] }
-        return Set(hosted.filter { !here.contains($0.host) }.map(\.session))
-    }
-
-    private static func inFullscreen() -> Bool {
-        let connection = CGSMainConnectionID()
-        return CGSSpaceGetType(connection, CGSGetActiveSpace(connection)) == 4
+        let away = Set(hosts.values).subtracting(here)
+        // Every window of every app is 3 ms against 0.25 for those on screen (measured
+        // 2026-10-31): read only when a terminal is on another desktop.
+        var spacesOf: [pid_t: [UInt64]] = [:]
+        if !away.isEmpty {
+            for window in CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
+                                                     kCGNullWindowID) as? [[String: Any]] ?? [] {
+                guard let owner = window[kCGWindowOwnerPID as String] as? pid_t, away.contains(owner),
+                      let id = window[kCGWindowNumber as String] as? CGWindowID else { continue }
+                spacesOf[owner, default: []] += spaces(of: id)
+            }
+        }
+        let order = (CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] ?? [])
+            .flatMap { ($0["Spaces"] as? [[String: Any]] ?? []).compactMap { ($0["id64"] as? NSNumber)?.uint64Value } }
+        return sessions.reduce(into: [pid_t: Int]()) { place, session in
+            place[session.id] = hosts[session.id].flatMap { host in
+                spacesOf[host]?.compactMap { order.firstIndex(of: $0) }.min().map { $0 + 1 }
+            } ?? 0
+        }
     }
 
     /// The windows on the desktops in front of you, frontmost first, menus and panels left out.
@@ -386,9 +397,5 @@ extension Spaces {
 private func CGSMainConnectionID() -> Int32
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 private func CGSCopyManagedDisplaySpaces(_ connection: Int32) -> CFArray
-@_silgen_name("CGSGetActiveSpace")
-private func CGSGetActiveSpace(_ connection: Int32) -> UInt64
-@_silgen_name("CGSSpaceGetType")
-private func CGSSpaceGetType(_ connection: Int32, _ space: UInt64) -> Int32
 @_silgen_name("CGSCopySpacesForWindows")
 private func CGSCopySpacesForWindows(_ connection: Int32, _ mask: Int32, _ windows: CFArray) -> CFArray

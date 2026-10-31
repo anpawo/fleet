@@ -145,9 +145,9 @@ enum SelfCheck {
 
         // Two across (asked 2026-10-28): only where one column runs past the room.
         func standing(_ counts: [Int], room: CGFloat) -> [Int] {
-            let laid = FleetLayout(tile: grid.tile, spacing: 26, columns: 3).widening(counts, room: room) {
+            let laid = FleetLayout(tile: grid.tile, spacing: 26, columns: 3).widening([counts], room: room) {
                 GroupTile.size(holding: $0, across: $1, in: 688, spacing: 26)
-            }
+            }[0]
             return laid.wide.map { $0.map { laid.taken($0.width) } ?? 0 }
         }
         expect(standing([5, 1], room: size(5).height) == [1, 0], true,
@@ -159,6 +159,13 @@ enum SelfCheck {
         expect(standing([2, 1], room: 10) == [1, 0], true, "grid: never a directory of two")
         expect(standing([3, 6, 1], room: size(6).height - 1) == [1, 2, 0], true,
                "grid: the one with the most sessions stands two across first")
+        // One grid a desktop (asked 2026-10-31): the room is theirs together.
+        let desks = FleetLayout(tile: grid.tile, spacing: 26, columns: 3)
+            .widening([[5], [3]], room: size(5, across: 2).height + size(3).height) {
+                GroupTile.size(holding: $0, across: $1, in: 688, spacing: 26)
+            }
+        expect(desks.map { $0.wide.map { $0.map { desks[0].taken($0.width) } ?? 0 } } == [[2], [1]], true,
+               "grid: desktops share the room, the most sessions on any of them two across first")
         let pair = GroupTile.card(count: 5, across: 2, in: 688, spacing: 26)
         expect(near(2 * pair.width + 3 * GroupTile.inset, size(5, across: 2).width)
                && pair.height >= 0.75 * SessionTile.height, true,
